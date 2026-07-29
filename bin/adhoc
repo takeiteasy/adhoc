@@ -1,0 +1,9 @@
+#!/usr/bin/env julia
+
+import Pkg
+Pkg.activate(joinpath(@__DIR__, ".."); io=devnull)
+
+include(joinpath(@__DIR__, "..", "src", "Adhoc.jl"))
+using .Adhoc
+
+Adhoc.main(ARGS)
