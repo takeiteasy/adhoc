@@ -26,14 +26,16 @@ Three Julia types stand in for the bottom of the tower:
 
 `npow` keeps a rational base exact for integer exponents; otherwise it falls to `Float64`.
 
-## Known limitation
+## Display
 
-Display of a non-terminating rational goes through `Float64(x)`, printing a fixed number of
-digits — `1/3` shows as `0.3333333333333333`. The target behavior (query an RRA function for
-increasing precision until enough digits are providably stable, then print those) needs the
-RRA tier, which doesn't exist yet. This is a placeholder, not a design decision: whether
-rationals should ever display as `a/b` instead of decimal is a separate open question, tracked
-on the tracker.
+Exact rationals display as `a/b` (`1/3` prints `1/3`, not `0.333...`) — `normalize` already
+collapses an integral rational back to `BigInt`, so `nshow` only ever sees a genuinely
+non-integer value here. Decimal display is reserved for the RRA tier (phase 3): once a value
+needs RRA to represent at all, it's no longer exact, so a decimal approximation is the honest
+display, obtained by repeatedly requesting tighter tolerance until enough digits are provably
+stable. Showing an *exact* rational through that same decimal machinery would have been a
+category error — `1/3` never leaves the rational tier, per the tower's own "stay at the lowest
+tier that remains exact" rule, so it never needed RRA-style display in the first place.
 
 ## What later phases add here
 

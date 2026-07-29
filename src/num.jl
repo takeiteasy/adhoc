@@ -58,12 +58,16 @@ function neq(a::AdNum, b::AdNum)
     return Rational{BigInt}(a) == Rational{BigInt}(b)
 end
 
-"Display form: decimal always (see docs/numerics.md — fraction display is a known TODO)."
+"""
+Display form. Exact rationals print as `a/b` -- `normalize` already collapses an integral
+rational back to BigInt, so this only ever fires for a genuinely non-integer exact value.
+Decimal display is reserved for the RRA tier (phase 3), not used here. See docs/numerics.md.
+"""
 function nshow(a::BigInt)
     return string(a)
 end
 function nshow(a::Rational{BigInt})
-    return string(Float64(a))
+    return string(numerator(a)) * "/" * string(denominator(a))
 end
 function nshow(a::Float64)
     return string(a)

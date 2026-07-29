@@ -13,6 +13,7 @@ need them). For the formal grammar, see `docs/grammar.md`.
 - Assignment (`x = 1`), equality-check-if-bound (`x = 1` again), force-reassign (`x := 1`).
 - `--` line comments.
 - Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`).
+- Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
 
 ## Not yet implemented
 
@@ -38,8 +39,5 @@ seeded now so later phases only need to add bindings, not touch the lexer.
 
 ## Known limitations (not bugs)
 
-- Non-terminating rationals (`1/3`) display as a fixed-precision `Float64`, not as the
-  "print digits until provably stable" behavior the full design calls for — that needs the
-  RRA tier (phase 3).
 - Error messages point at a line, not yet a column/span (phase 0 stretch item).
 - No REPL history or line editing.

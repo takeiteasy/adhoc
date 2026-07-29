@@ -29,4 +29,11 @@ using Adhoc.Num
         @test Num.neq(BigInt(4), Rational{BigInt}(8, 2))
         @test !Num.neq(BigInt(4), BigInt(5))
     end
+
+    @testset "display: exact rationals show as a/b, never decimal" begin
+        @test Num.nshow(Num.ndiv(BigInt(1), BigInt(2))) == "1/2"
+        @test Num.nshow(Num.ndiv(BigInt(1), BigInt(3))) == "1/3"
+        @test Num.nshow(Num.ndiv(BigInt(4), BigInt(2))) == "2"   # collapses to BigInt first
+        @test Num.nshow(BigInt(7)) == "7"
+    end
 end

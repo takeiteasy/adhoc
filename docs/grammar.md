@@ -56,7 +56,7 @@ reads on paper:
 1/2x     ->  1 / (2*x)      -- not (1/2)*x
 2x^2     ->  2 * (x^2)      -- ^ still tightest
 -2^2     ->  -(2^2) = -4    -- unary minus is looser than ^
-2^-1     ->  0.5
+2^-1     ->  1/2            -- exact rational, displays as a fraction (docs/numerics.md)
 2^3^2    ->  2^(3^2) = 512  -- right-associative
 1 + 2*3  ->  7
 (1+2)*3  ->  9
