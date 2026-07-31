@@ -4,7 +4,7 @@
   (:use #:cl)
   (:export
    #:make-env
-   #:ad-eval-error #:ad-eval-error-message
+   #:ad-eval-error #:ad-eval-error-message #:ad-eval-error-start #:ad-eval-error-end
    #:run!
    #:eval-expr
    #:bind-result-p #:bind-result-name #:bind-result-value

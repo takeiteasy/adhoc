@@ -6,7 +6,9 @@ need them). For the formal grammar, see `docs/grammar.md`.
 
 ## Working today
 
-- A REPL: `> ` prompts for input, `< ` prefixes output, Ctrl-D exits.
+- A REPL: `> ` prompts for input, `< ` prefixes output, Ctrl-D exits. Lex/parse errors render
+  a caret pointing at the offending source span; run `bin/adhoc` on a tty with `rlwrap`
+  installed for input history and line editing (`ADHOC_NO_RLWRAP=1` to opt out).
 - Arithmetic: `+ - * / ^`, unary minus, parentheses, implicit multiplication by juxtaposition
   (`2x` = `2 * x`, `ab` = `a * b`).
 - Identifiers are exactly one character (ASCII or unicode).
@@ -39,5 +41,10 @@ seeded now so later phases only need to add bindings, not touch the lexer.
 
 ## Known limitations (not bugs)
 
-- Error messages point at a line, not yet a column/span (phase 0 stretch item).
-- No REPL history or line editing.
+- Lex/parse errors carry a precise source span and render a caret under it; eval errors
+  (unbound name, division by zero, ...) don't have a span yet and underline the whole input
+  line instead — narrowing that to the specific sub-expression needs AST changes tracked as
+  a follow-up.
+- REPL history and line editing come from wrapping `bin/adhoc` in `rlwrap`, not an in-process
+  editor, so they're only available when launched through that script on a tty. No multi-line
+  input.

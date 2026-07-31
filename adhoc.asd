@@ -20,7 +20,8 @@
   :components ((:file "package")
                (:file "lexer")
                (:file "ast")
-               (:file "parser")))
+               (:file "parser")
+               (:file "diagnostic")))
 
 (asdf:defsystem #:adhoc/interpreter
   :description "Tree-walking evaluator for ad. Disposable: phase 4 replaces this with an interaction-net engine"
@@ -70,12 +71,13 @@
   :version "0.1.0"
   :serial t
   :pathname "test"
-  :depends-on (#:adhoc/num #:adhoc/ad #:adhoc/interpreter #:fiveam)
+  :depends-on (#:adhoc/num #:adhoc/ad #:adhoc/interpreter #:adhoc/repl #:fiveam)
   :components ((:file "package")
                (:file "test-num")
                (:file "test-lexer")
                (:file "test-parser")
                (:file "test-interpreter")
-               (:file "test-grammar"))
+               (:file "test-grammar")
+               (:file "test-diagnostics"))
   :perform (asdf:test-op (o s)
              (uiop:symbol-call :fiveam :run! (uiop:find-symbol* :adhoc-suite :adhoc/tests))))

@@ -8,4 +8,14 @@ if [ ! -x "$BIN" ]; then
     echo "adhoc: not built yet -- run 'make build'" >&2
     exit 1
 fi
+
+# History and in-line editing (ticket 29) is handled by wrapping the dumped image in
+# rlwrap rather than an in-process CL library: linedit needs cffi/osicat (FFI, same cost
+# as the alternative it's meant to avoid) and its docs say behaviour is unspecified once
+# *standard-input* is rebound, which cli/cli.lisp does for UTF-8 -- see docs/architecture.md.
+# Only wrap on an interactive tty with rlwrap available, so piped input (tests, scripts)
+# still execs the image directly. Set ADHOC_NO_RLWRAP=1 to opt out.
+if [ -t 0 ] && [ -z "$ADHOC_NO_RLWRAP" ] && command -v rlwrap >/dev/null 2>&1; then
+    exec rlwrap -C adhoc -H "${ADHOC_HISTORY:-$HOME/.adhoc_history}" "$BIN" "$@"
+fi
 exec "$BIN" "$@"

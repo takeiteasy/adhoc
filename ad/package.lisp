@@ -4,9 +4,9 @@
   (:use #:cl)
   (:export
    ;; conditions
-   #:ad-lex-error #:ad-parse-error #:ad-error-message #:ad-error-pos
+   #:ad-lex-error #:ad-parse-error #:ad-error-message #:ad-error-start #:ad-error-end
    ;; lexer
-   #:tokenize #:token-kind #:token-text #:token-pos
+   #:tokenize #:token-kind #:token-text #:token-start #:token-end
    ;; ast constructors and accessors
    #:make-num-lit #:num-lit-text
    #:make-var #:var-name
@@ -17,4 +17,6 @@
    #:make-seq #:seq-statements
    #:node-tag
    ;; parser
-   #:parse-program))
+   #:parse-program
+   ;; diagnostics
+   #:render-diagnostic))

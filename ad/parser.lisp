@@ -21,7 +21,7 @@
     (unless (eq (token-kind tok) kind)
       (error 'ad-parse-error
              :message (format nil "expected ~a, got ~a `~a`" kind (token-kind tok) (token-text tok))
-             :pos (token-pos tok)))
+             :start (token-start tok) :end (token-end tok)))
     (ts-consume! ts)))
 
 ;; Tokens that can start an atom, and so continue a juxtaposition (implicit-multiply) chain.
@@ -41,7 +41,7 @@
       (unless (eq (token-kind tok) :eof)
         (error 'ad-parse-error
                :message (format nil "unexpected token `~a`" (token-text tok))
-               :pos (token-pos tok))))
+               :start (token-start tok) :end (token-end tok))))
     (if (= (length stmts) 1) (first stmts) (make-seq stmts))))
 
 (defun parse-statement! (ts)
@@ -102,4 +102,4 @@
                  inner))
       (t (error 'ad-parse-error
                 :message (format nil "unexpected token `~a`" (token-text tok))
-                :pos (token-pos tok))))))
+                :start (token-start tok) :end (token-end tok))))))

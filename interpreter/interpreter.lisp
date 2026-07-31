@@ -7,7 +7,13 @@
 (in-package #:adhoc/interpreter)
 
 (define-condition ad-eval-error (error)
-  ((message :initarg :message :reader ad-eval-error-message))
+  ((message :initarg :message :reader ad-eval-error-message)
+   ;; Spans are optional here: phase 0 doesn't carry source positions on AST nodes (see
+   ;; docs/architecture.md on why the node shape stays untouched), so eval errors have no
+   ;; span to report yet. adhoc/repl falls back to underlining the whole input when these
+   ;; are nil.
+   (start :initarg :start :initform nil :reader ad-eval-error-start)
+   (end :initarg :end :initform nil :reader ad-eval-error-end))
   (:report (lambda (c stream) (format stream "ERROR! ~a" (ad-eval-error-message c)))))
 
 (defun make-env () (make-hash-table :test 'eql))
