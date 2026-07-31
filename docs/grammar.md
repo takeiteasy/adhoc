@@ -1,7 +1,7 @@
 # Grammar (phase 0)
 
 The phase-0 subset of `ad`: arithmetic, assignment, and nothing else yet. This is the file
-the parser (`src/parser.jl`) is written against — it should stay in lockstep with the code.
+the parser (`src/ad/parser.lisp`) is written against — it should stay in lockstep with the code.
 
 ## Lexical rules
 

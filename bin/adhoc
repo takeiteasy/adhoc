@@ -1,7 +1,11 @@
 #!/bin/sh
-# A shell wrapper, not a Julia script with a shebang, so `--project` is passed as a real
-# command-line flag rather than activated at runtime via Pkg.activate() -- the latter loads
-# the whole Pkg package before startup even begins, which was roughly half of this launcher's
-# total latency. See docs/architecture.md and the "Julia startup latency" ticket.
+# Execs the Roswell-built image, not `ros run`/`sbcl --script` -- a dumped executable
+# starts in ~15ms, versus ~0.5-1s to boot SBCL and quickload the system on every launch.
+# See docs/architecture.md. Run `make build` first if roswell/adhoc doesn't exist yet.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-exec julia --project="$DIR" -e 'using Adhoc; Adhoc.main(ARGS)' -- "$@"
+BIN="$DIR/roswell/adhoc"
+if [ ! -x "$BIN" ]; then
+    echo "adhoc: not built yet -- run 'make build'" >&2
+    exit 1
+fi
+exec "$BIN" "$@"

@@ -6,55 +6,71 @@
 source text
     │
     ▼
-lexer (src/lexer.jl)      -- tokens: numbers, identifiers, \-names, operators
+lexer (src/ad/lexer.lisp)         -- tokens: numbers, identifiers, \-names, operators
     │
     ▼
-parser (src/parser.jl)    -- precedence-climbing over docs/grammar.md, produces an AST
+parser (src/ad/parser.lisp)       -- precedence-climbing over docs/grammar.md, produces an AST
     │
     ▼
-ast (src/ast.jl)          -- NumLit, Var, BinOp, UnOp, Assign, Seq
+ast (src/ad/ast.lisp)             -- s-expression nodes: :num-lit :var :bin-op :un-op :assign :seq
     │
     ▼
-eval (src/eval.jl)        -- tree-walking interpreter, environment = Dict{Char,AdNum}
-    │                        all arithmetic goes through src/num.jl
+interpreter (src/interpreter/)    -- tree-walking evaluator, environment = hash-table char->Num
+    │                                 all arithmetic goes through src/num
     ▼
-repl (src/repl.jl)        -- read/print loop, per-line error recovery
+repl (src/repl/)                  -- read/print loop, per-line error recovery
 ```
 
-`src/num.jl` is a seam, not a pass in the pipeline — every stage that touches a number value
-calls into it rather than using Julia arithmetic directly. See `docs/numerics.md`.
+`src/num` is a seam, not a pass in the pipeline — every stage that touches a number value
+calls into it rather than using CL's arithmetic operators directly. See `docs/numerics.md`.
+
+## ASDF subsystems
+
+The pipeline above is one `.asd` system per stage, so a later phase can swap one subsystem
+without touching the others:
+
+| System | Role | Durability |
+|---|---|---|
+| `adhoc/num` | the numeric seam | durable |
+| `adhoc/ad` | lexer, AST, parser | durable |
+| `adhoc/interpreter` | tree-walking evaluator | disposable (phase 4) |
+| `adhoc/repl` | REPL glue | disposable |
+| `adhoc/cli` | entry point | durable |
+| `adhoc` | umbrella system | — |
+| `adhoc/tests` | FiveAM suites | — |
 
 ## What's durable vs. disposable
 
 The roadmap's phase 4 replaces the evaluator with an interaction-net engine (Lafont
 combinators, graph rewriting to normal form) — a from-scratch design, not a port of an
-existing engine. That phase only replaces `src/eval.jl`'s *reduction strategy*:
+existing engine. That phase only replaces `adhoc/interpreter`'s *reduction strategy*:
 
-- **Durable** — the lexer, AST shape, parser, and the `Num` interface. Phase 1-3 language
-  features add AST nodes and grow `Num`, but don't change this structure.
-- **Disposable** — `src/eval.jl`'s tree-walk and `src/repl.jl`'s glue. These exist to validate
-  language semantics before the interaction-net engine exists to test them against; they're
-  expected to be deleted, not evolved, when phase 4 lands.
+- **Durable** — `adhoc/ad` (lexer, AST shape, parser) and `adhoc/num`. Phase 1-3 language
+  features add AST tags and grow `adhoc/num`, but don't change this structure. The AST is
+  s-expression data (`(:bin-op :+ lhs rhs)`, not typed structs) specifically so phase 5's
+  `\expr`/`\eval`/`\body` can quote and rewrite it with ordinary list operations rather than
+  a hand-built AST-as-data layer.
+- **Disposable** — `adhoc/interpreter`'s tree-walk and `adhoc/repl`'s glue. These exist to
+  validate language semantics before the interaction-net engine exists to test them against;
+  they're expected to be deleted, not evolved, when phase 4 lands.
 
 This is why phase 0 keeps the tree-walker deliberately simple: effort spent hardening it
 beyond "correct enough to validate phase 1-3 semantics" doesn't carry forward.
 
 ## Launcher (`bin/adhoc`)
 
-A `sh` wrapper, not a Julia script with a `#!/usr/bin/env julia` shebang — it `exec`s
-`julia --project=<repo dir>` with `-e 'using Adhoc; Adhoc.main(ARGS)'`. Two things matter here:
+`bin/adhoc` execs a Roswell-built image (`roswell/adhoc`, produced by `make build` /
+`ros build roswell/adhoc.ros`), not `ros run` or `sbcl --script`. The difference is what
+happens at launch: a dumped executable already has the whole system compiled and loaded into
+its image, so starting it is just process startup — no ASDF resolution, no Quicklisp, no
+compilation. Measured cold-start against a piped empty-input invocation, this is roughly an
+order of magnitude faster than booting SBCL and quickloading the system fresh on every call.
 
-- `--project` as a real CLI flag, not `Pkg.activate()` called at runtime. The latter loads the
-  whole `Pkg` package before startup even begins, which measured as roughly half of total
-  launch latency on its own.
-- `using Adhoc`, not `include("src/Adhoc.jl")`. `include` re-parses and re-JIT-compiles the
-  entire module as a script on every launch, bypassing Julia's precompiled package cache
-  entirely; `using` hits that cache.
-
-Together these took warm-run latency from ~0.9s to ~0.45s, measured with `/usr/bin/time`
-against a piped empty-input invocation. Further reduction (sub-100ms, matching bare `julia`
-startup) would need `PackageCompiler.jl` to produce a precompiled sysimage — worth it once the
-language surface is bigger than arithmetic, not before.
+`src/cli/cli.lisp`'s `main` handles three things a dumped image needs that an interactive REPL
+session gets for free: `*read-default-float-format*` bound to `double-float` (CL's default is
+`single-float`), stdin/stdout reopened with an explicit UTF-8 external format, and an
+`*invoke-debugger-hook*` so an unhandled condition prints a message and exits instead of
+dropping into SBCL's low-level debugger with no controlling terminal.
 
 ## Numeric tower (target shape, phase 3+)
 
