@@ -2,4 +2,5 @@
 
 (defpackage #:adhoc/num
   (:use #:cl)
-  (:export #:nadd #:nsub #:nmul #:ndiv #:npow #:nneg #:neq #:nshow))
+  (:export #:nadd #:nsub #:nmul #:ndiv #:npow #:nneg #:neq #:nshow
+            #:ad-num-error #:ad-num-error-message))

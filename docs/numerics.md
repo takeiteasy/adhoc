@@ -28,6 +28,12 @@ Three CL types stand in for the bottom of the tower:
 `npow` keeps a rational base exact for integer exponents (CL's `expt` handles negative integer
 exponents on rationals natively, producing a rational); otherwise it falls to `double-float`.
 
+`ndiv` and `npow` signal the seam's own `ad-num-error` (message slot, `:report`s like any CL
+condition) rather than a bare `error` string, on division by zero and `0^-n`. The interpreter's
+`:bin-op` arm catches exactly this condition around the arithmetic call and re-signals it as
+an `ad-eval-error` carrying that bin-op node's source span — see docs/architecture.md on the
+eval-error span table.
+
 ### Float format
 
 CL's `*read-default-float-format*` defaults to `single-float`. Left alone, this would make a

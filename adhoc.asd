@@ -46,14 +46,18 @@
                (:file "repl")))
 
 (asdf:defsystem #:adhoc/cli
-  :description "adhoc entry point: argv handling, float format, debugger hook"
+  :description "adhoc entry point: argv handling, float format, debugger hook, in-process line editing"
   :author "George Watson <gigolo@hotmail.co.uk>"
   :license "GPLv3"
   :version "0.1.0"
   :serial t
   :pathname "cli"
-  :depends-on (#:adhoc/repl)
+  ;; cl-readline is the only FFI dependency in the whole system, and it's deliberately
+  ;; confined to adhoc/cli: adhoc/tests depends on adhoc/repl, not adhoc/cli, so `make test`
+  ;; never needs libreadline present. See docs/architecture.md.
+  :depends-on (#:adhoc/repl #:cl-readline)
   :components ((:file "package")
+               (:file "lineedit")
                (:file "cli")))
 
 (asdf:defsystem #:adhoc

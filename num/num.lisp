@@ -12,6 +12,13 @@
 
 (in-package #:adhoc/num)
 
+;; The seam's own condition, distinct from a bare CL error, so callers (the interpreter's
+;; :bin-op arm) can catch exactly "arithmetic went wrong" and re-signal it with a source
+;; span, without also catching unrelated errors from evaluating the operands.
+(define-condition ad-num-error (error)
+  ((message :initarg :message :reader ad-num-error-message))
+  (:report (lambda (c stream) (format stream "~a" (ad-num-error-message c)))))
+
 (defun %to-double (x)
   (coerce x 'double-float))
 
@@ -20,7 +27,7 @@
 (defun nmul (a b) (* a b))
 
 (defun ndiv (a b)
-  (when (zerop b) (error "division by zero"))
+  (when (zerop b) (error 'ad-num-error :message "division by zero"))
   (if (or (floatp a) (floatp b))
       (/ (%to-double a) (%to-double b))
       (/ a b)))
@@ -31,7 +38,7 @@ natively, producing a rational rather than needing an invert-then-raise step). A
 exponent falls to double-float."
   (cond
     ((and (zerop a) (integerp b) (minusp b))
-     (error "division by zero"))
+     (error 'ad-num-error :message "division by zero"))
     ((integerp b) (expt a b))
     (t (expt (%to-double a) (%to-double b)))))
 

@@ -9,13 +9,24 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-# History and in-line editing (ticket 29) is handled by wrapping the dumped image in
-# rlwrap rather than an in-process CL library: linedit needs cffi/osicat (FFI, same cost
-# as the alternative it's meant to avoid) and its docs say behaviour is unspecified once
-# *standard-input* is rebound, which cli/cli.lisp does for UTF-8 -- see docs/architecture.md.
-# Only wrap on an interactive tty with rlwrap available, so piped input (tests, scripts)
-# still execs the image directly. Set ADHOC_NO_RLWRAP=1 to opt out.
-if [ -t 0 ] && [ -z "$ADHOC_NO_RLWRAP" ] && command -v rlwrap >/dev/null 2>&1; then
-    exec rlwrap -C adhoc -H "${ADHOC_HISTORY:-$HOME/.adhoc_history}" "$BIN" "$@"
+# History and in-line editing (ticket 32) live in-process via cl-readline (cli/lineedit.lisp)
+# when the image was built with libreadline available -- see docs/architecture.md. Only
+# probe for that on an interactive tty; piped input (tests, scripts) always execs the image
+# directly, so it never pays for the extra process start.
+if [ -t 0 ]; then
+    if [ "$("$BIN" --has-readline)" = "yes" ]; then
+        exec "$BIN" "$@"
+    fi
+    # In-process readline isn't available for this invocation (ADHOC_NO_READLINE is set,
+    # or init-readline failed -- an unreadable history file, a locale that isn't installed)
+    # -- fall back to wrapping in `rlwrap`, same as ticket 29. A build without libreadline
+    # present never gets here: `make build` fails outright, same as any other missing Lisp
+    # dependency. ADHOC_NO_READLINE=1 is exported into the wrapped process so the two editors
+    # can never both try to read fd 0 at once. Set ADHOC_NO_RLWRAP=1 to opt out of this
+    # fallback too -- ADHOC_NO_READLINE=1 alone still lands here.
+    if [ -z "$ADHOC_NO_RLWRAP" ] && command -v rlwrap >/dev/null 2>&1; then
+        exec env ADHOC_NO_READLINE=1 \
+            rlwrap -C adhoc -H "${ADHOC_HISTORY:-$HOME/.adhoc_history}" "$BIN" "$@"
+    fi
 fi
 exec "$BIN" "$@"

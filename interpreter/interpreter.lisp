@@ -8,13 +8,25 @@
 
 (define-condition ad-eval-error (error)
   ((message :initarg :message :reader ad-eval-error-message)
-   ;; Spans are optional here: phase 0 doesn't carry source positions on AST nodes (see
-   ;; docs/architecture.md on why the node shape stays untouched), so eval errors have no
-   ;; span to report yet. adhoc/repl falls back to underlining the whole input when these
-   ;; are nil.
+   ;; Start/end are optional: a node with no entry in the spans table passed to run! (or
+   ;; when eval-expr is called standalone, without one) has nothing to report, and
+   ;; adhoc/repl falls back to underlining the whole input when these are nil.
    (start :initarg :start :initform nil :reader ad-eval-error-start)
    (end :initarg :end :initform nil :reader ad-eval-error-end))
   (:report (lambda (c stream) (format stream "ERROR! ~a" (ad-eval-error-message c)))))
+
+;; The node->span table built by ad/parser.lisp's parse-program (ticket 31), bound around a
+;; call to run! so eval-expr's error sites can look up the offending node's source span
+;; without threading it through every recursive call. NIL (the default) means "no spans
+;; available" -- every lookup site treats that the same as a node with no entry.
+(defvar *spans* nil)
+
+(defun %span (node)
+  (if *spans* (adhoc/ad:node-span node *spans*) (values nil nil)))
+
+(defun %eval-error (node fmt &rest args)
+  (multiple-value-bind (start end) (%span node)
+    (error 'ad-eval-error :message (apply #'format nil fmt args) :start start :end end)))
 
 (defun make-env () (make-hash-table :test 'eql))
 
@@ -37,24 +49,33 @@ arbitrary-precision); anything with a `.` is a double-float, read under a locall
     (:var (let ((name (adhoc/ad:var-name node)))
             (multiple-value-bind (value present) (gethash name env)
               (unless present
-                (error 'ad-eval-error :message (format nil "`~a` does not exist!" name)))
+                (%eval-error node "`~a` does not exist!" name))
               value)))
     (:backslash-ref
-     (error 'ad-eval-error
-            :message (format nil "`\\~a` is not bound (phase 0 defines no builtins yet)"
-                              (adhoc/ad:backslash-ref-name node))))
+     (%eval-error node "`\\~a` is not bound (phase 0 defines no builtins yet)"
+                  (adhoc/ad:backslash-ref-name node)))
     (:un-op (adhoc/num:nneg (eval-expr env (adhoc/ad:un-op-operand node))))
     (:bin-op
+     ;; lhs/rhs are evaluated outside the handler-case below: an unbound-variable error
+     ;; from a sub-expression must keep its own (narrower) span, not get re-signalled with
+     ;; this bin-op's -- only the arithmetic call itself is wrapped.
      (let ((lhs (eval-expr env (adhoc/ad:bin-op-lhs node)))
            (rhs (eval-expr env (adhoc/ad:bin-op-rhs node))))
-       (ecase (adhoc/ad:bin-op-op node)
-         (:+ (adhoc/num:nadd lhs rhs))
-         (:- (adhoc/num:nsub lhs rhs))
-         (:* (adhoc/num:nmul lhs rhs))
-         (:/ (adhoc/num:ndiv lhs rhs))
-         (:^ (adhoc/num:npow lhs rhs)))))))
+       (handler-case
+           (ecase (adhoc/ad:bin-op-op node)
+             (:+ (adhoc/num:nadd lhs rhs))
+             (:- (adhoc/num:nsub lhs rhs))
+             (:* (adhoc/num:nmul lhs rhs))
+             (:/ (adhoc/num:ndiv lhs rhs))
+             (:^ (adhoc/num:npow lhs rhs)))
+         (adhoc/num:ad-num-error (e)
+           (%eval-error node "~a" (adhoc/num:ad-num-error-message e))))))))
 
-(defun run! (env node)
+(defun run! (env node &optional spans)
+  (let ((*spans* spans))
+    (%run! env node)))
+
+(defun %run! (env node)
   (case (adhoc/ad:node-tag node)
     (:assign
      (let ((name (adhoc/ad:assign-name node))
@@ -63,7 +84,7 @@ arbitrary-precision); anything with a `.` is a double-float, read under a locall
          (cond
            ((adhoc/ad:assign-force node)
             (unless present
-              (error 'ad-eval-error :message (format nil "`~a` does not exist!" name)))
+              (%eval-error node "`~a` does not exist!" name))
             (setf (gethash name env) value)
             (make-bind-result name value))
            (present (make-check-result (adhoc/num:neq existing value)))
@@ -72,7 +93,7 @@ arbitrary-precision); anything with a `.` is a double-float, read under a locall
     (:seq
      (let ((result nil))
        (dolist (stmt (adhoc/ad:seq-statements node))
-         (setf result (run! env stmt)))
+         (setf result (%run! env stmt)))
        (unless result
          (error 'ad-eval-error :message "empty statement sequence"))
        result))

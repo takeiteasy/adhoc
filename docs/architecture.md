@@ -18,13 +18,22 @@ ast (ad/ast.lisp)               -- s-expression nodes: :num-lit :var :bin-op :un
 interpreter (interpreter/interpreter.lisp) -- tree-walking evaluator, environment = hash-table char->Num
     │                                          all arithmetic goes through num/num.lisp
     ▼
-repl (repl/repl.lisp)           -- read/print loop, per-line error recovery
+repl (repl/repl.lisp)           -- read/print loop, per-statement error recovery
 ```
 
 Errors at any stage carry a `[start, end)` character span (`ad-error-start`/`-end` on
-lex/parse conditions); `ad/diagnostic.lisp`'s `render-diagnostic` turns a span plus the
-source text into a caret-pointing error block. It's a sibling of the parser, not a pipeline
-stage, so any consumer (the REPL today, script mode in phase 6) can call it directly.
+lex/parse conditions, `ad-eval-error-start`/`-end` on eval conditions); `ad/diagnostic.lisp`'s
+`render-diagnostic` turns a span plus the source text into a caret-pointing error block. It's
+a sibling of the parser, not a pipeline stage, so any consumer (the REPL today, script mode in
+phase 6) can call it directly.
+
+Eval-error spans come from a side table, not a slot on the AST nodes: `ad/parser.lisp` builds
+an `eq` hash-table `node -> (start . end)` alongside the AST as it parses (`*node-spans*`,
+registered at each `make-*` call site) and returns it as `parse-program`'s second value. The
+interpreter binds it around a call to `run!` and looks up the offending node when it signals
+an `ad-eval-error`, so `1 + x` underlines just `x` and `2 + 1/0` just `1/0`, rather than the
+whole line. This is what "spans live alongside the AST" (below) means in practice — the table
+is disposable along with the tree-walker at phase 4, same as the interpreter that consults it.
 
 `num/num.lisp` is a seam, not a pass in the pipeline — every stage that touches a number value
 calls into it rather than using CL's arithmetic operators directly. See `docs/numerics.md`.
@@ -41,7 +50,7 @@ into one system, so a later phase can swap one subsystem without touching the ot
 | `adhoc/ad` | lexer, AST, parser, diagnostic rendering | durable |
 | `adhoc/interpreter` | tree-walking evaluator | disposable (phase 4) |
 | `adhoc/repl` | REPL glue | disposable |
-| `adhoc/cli` | entry point | durable |
+| `adhoc/cli` | entry point, in-process line editing (cl-readline) | durable |
 | `adhoc` | umbrella system | — |
 | `adhoc/tests` | FiveAM suites | — |
 
@@ -80,14 +89,34 @@ session gets for free: `*read-default-float-format*` bound to `double-float` (CL
 `*invoke-debugger-hook*` so an unhandled condition prints a message and exits instead of
 dropping into SBCL's low-level debugger with no controlling terminal.
 
-`bin/adhoc` also wraps the image in `rlwrap` when stdin is a tty and `rlwrap` is on `PATH`
-(`ADHOC_NO_RLWRAP=1` to opt out), giving input history and line editing without touching the
-dumped image or its Lisp dependencies. This is a launcher-level concern rather than an
-in-process library (linedit, cl-readline) for two reasons: both in-process options are FFI
-(linedit pulls in `osicat`/`cffi-grovel`, so it isn't the "no FFI" option it looks like), and
-linedit's own docs say behaviour is unspecified once `*standard-input*` has been rebound,
-which `cli/cli.lisp` does above for UTF-8. Piped input (tests, scripts) never goes through
-`rlwrap`, since it only wraps on an interactive tty.
+Input history and in-line editing come from an in-process `cl-readline` session
+(`cli/lineedit.lisp`), confined to `adhoc/cli` so `adhoc/repl` — and `adhoc/tests`, which
+depends on it — stays free of the libreadline dependency; `make test` never needs libreadline
+installed. `cli/cli.lisp`'s `main` enables it when stdin is an interactive tty and
+`ADHOC_NO_READLINE` isn't set; piped input (tests, scripts) never engages it. Readline reads
+file descriptor 0 directly in C, bypassing the Lisp stream `%reopen-stdio-utf8` builds around
+it, so a session picks exactly one reader for its whole run — `adhoc/repl:run-repl`'s
+`read-line-fn` argument is the hook that lets `cli/lineedit.lisp` supply that reader without
+`adhoc/repl` knowing cl-readline exists. `setlocale(LC_ALL, "")` runs before the first read so
+multi-byte UTF-8 identifiers (`π`, ...) round-trip through in-line editing correctly. History
+persists to `$ADHOC_HISTORY` (`~/.adhoc_history` by default — the same path `bin/adhoc` always
+passed to `rlwrap -H`) across runs.
+
+`adhoc/cli` has a hard `:depends-on` on `cl-readline`, so a machine without libreadline can't
+produce a dumped image at all — `make build` fails there, same as it would for a missing
+`fiveam` or `cffi`. `adhoc/repl` and `make test` have no such requirement (see the ASDF table
+above). Given a build that *did* succeed, `bin/adhoc` still probes the dumped image with
+`adhoc --has-readline` on an interactive tty to ask whether *this invocation* can use the
+in-process path — `readline-available-p` can say no for reasons that only show up at runtime,
+not build time: `ADHOC_NO_READLINE` set, stdin not a tty, or `init-readline` failing (an
+unreadable history file, a locale that isn't installed). Only then does `bin/adhoc` fall back
+to wrapping the image in `rlwrap` instead, the ticket 29 mechanism, exporting
+`ADHOC_NO_READLINE=1` into the wrapped process so the two editors can never both try to read
+fd 0 at once (`rlwrap` presents a pty, so `isatty(0)` would otherwise be true inside it and
+in-process readline would try to engage too). `ADHOC_NO_RLWRAP=1` opts out of that fallback as
+well — note that `ADHOC_NO_READLINE=1` alone still lands on `rlwrap` if it's on `PATH`; both
+variables are needed to get no editing at all. Piped input skips the probe entirely and execs
+the image directly, so it never pays for the extra process start.
 
 ## Numeric tower (target shape, phase 3+)
 

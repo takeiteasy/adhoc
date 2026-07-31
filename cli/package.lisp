@@ -2,4 +2,4 @@
 
 (defpackage #:adhoc/cli
   (:use #:cl)
-  (:export #:main))
+  (:export #:main #:readline-available-p))

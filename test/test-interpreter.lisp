@@ -60,3 +60,11 @@
   (let ((env (adhoc/interpreter:make-env)))
     (signals adhoc/interpreter:ad-eval-error
       (adhoc/interpreter:eval-expr env (adhoc/ad:make-backslash-ref "pi")))))
+
+(test interpreter-division-by-zero-surfaces-as-ad-eval-error
+  ;; adhoc/num signals its own ad-num-error; the :bin-op arm must catch and re-signal it as
+  ;; an ad-eval-error, not let it propagate as a bare CL condition (see the REPL-level
+  ;; regression test in test-diagnostics.lisp for why this matters).
+  (let ((env (adhoc/interpreter:make-env))
+        (node (adhoc/ad:make-bin-op :/ (adhoc/ad:make-num-lit "1") (adhoc/ad:make-num-lit "0"))))
+    (signals adhoc/interpreter:ad-eval-error (adhoc/interpreter:eval-expr env node))))

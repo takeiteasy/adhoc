@@ -19,6 +19,16 @@
   (:report (lambda (c stream)
              (format stream "PARSE ERROR: ~a" (ad-error-message c)))))
 
+;; A subclass of ad-parse-error, not a sibling: signalled instead of ad-parse-error
+;; specifically when the unexpected token is :eof, meaning the input just ran out mid-
+;; expression rather than containing something actually wrong (`(1 + 2`, `1 +`, `2 ^`, `x =`).
+;; A subclass keeps every existing `(adhoc/ad:ad-parse-error (e) ...)` handler working
+;; unchanged -- callers that want to offer a continuation prompt catch this more specific
+;; condition first.
+(define-condition ad-incomplete-input (ad-parse-error) ()
+  (:report (lambda (c stream)
+             (format stream "PARSE ERROR: ~a" (ad-error-message c)))))
+
 (defstruct (token (:constructor make-token (kind text start end)))
   "kind is one of :number :ident :backslash :plus :minus :star :slash :caret :eq :coloneq
 :lparen :rparen :semi :eof.
