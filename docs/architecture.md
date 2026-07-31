@@ -6,28 +6,29 @@
 source text
     │
     ▼
-lexer (src/ad/lexer.lisp)         -- tokens: numbers, identifiers, \-names, operators
+lexer (ad/lexer.lisp)           -- tokens: numbers, identifiers, \-names, operators
     │
     ▼
-parser (src/ad/parser.lisp)       -- precedence-climbing over docs/grammar.md, produces an AST
+parser (ad/parser.lisp)         -- precedence-climbing over docs/grammar.md, produces an AST
     │
     ▼
-ast (src/ad/ast.lisp)             -- s-expression nodes: :num-lit :var :bin-op :un-op :assign :seq
+ast (ad/ast.lisp)               -- s-expression nodes: :num-lit :var :bin-op :un-op :assign :seq
     │
     ▼
-interpreter (src/interpreter/)    -- tree-walking evaluator, environment = hash-table char->Num
-    │                                 all arithmetic goes through src/num
+interpreter (interpreter/interpreter.lisp) -- tree-walking evaluator, environment = hash-table char->Num
+    │                                          all arithmetic goes through num/num.lisp
     ▼
-repl (src/repl/)                  -- read/print loop, per-line error recovery
+repl (repl/repl.lisp)           -- read/print loop, per-line error recovery
 ```
 
-`src/num` is a seam, not a pass in the pipeline — every stage that touches a number value
+`num/num.lisp` is a seam, not a pass in the pipeline — every stage that touches a number value
 calls into it rather than using CL's arithmetic operators directly. See `docs/numerics.md`.
 
 ## ASDF subsystems
 
-The pipeline above is one `.asd` system per stage, so a later phase can swap one subsystem
-without touching the others:
+Each pipeline stage is its own top-level directory (`num/`, `ad/`, `interpreter/`, `repl/`,
+`cli/`), a `package.lisp` plus its implementation file(s); the `.asd` groups each directory
+into one system, so a later phase can swap one subsystem without touching the others:
 
 | System | Role | Durability |
 |---|---|---|
@@ -59,14 +60,14 @@ beyond "correct enough to validate phase 1-3 semantics" doesn't carry forward.
 
 ## Launcher (`bin/adhoc`)
 
-`bin/adhoc` execs a Roswell-built image (`roswell/adhoc`, produced by `make build` /
-`ros build roswell/adhoc.ros`), not `ros run` or `sbcl --script`. The difference is what
-happens at launch: a dumped executable already has the whole system compiled and loaded into
-its image, so starting it is just process startup — no ASDF resolution, no Quicklisp, no
-compilation. Measured cold-start against a piped empty-input invocation, this is roughly an
-order of magnitude faster than booting SBCL and quickloading the system fresh on every call.
+`bin/adhoc` execs a Roswell-built image (`adhoc` at the repo root, produced by `make build` /
+`ros build adhoc.ros`), not `ros run` or `sbcl --script`. The difference is what happens at
+launch: a dumped executable already has the whole system compiled and loaded into its image,
+so starting it is just process startup — no ASDF resolution, no Quicklisp, no compilation.
+Measured cold-start against a piped empty-input invocation, this is roughly an order of
+magnitude faster than booting SBCL and quickloading the system fresh on every call.
 
-`src/cli/cli.lisp`'s `main` handles three things a dumped image needs that an interactive REPL
+`cli/cli.lisp`'s `main` handles three things a dumped image needs that an interactive REPL
 session gets for free: `*read-default-float-format*` bound to `double-float` (CL's default is
 `single-float`), stdin/stdout reopened with an explicit UTF-8 external format, and an
 `*invoke-debugger-hook*` so an unhandled condition prints a message and exits instead of

@@ -1,9 +1,9 @@
 #!/bin/sh
 # Execs the Roswell-built image, not `ros run`/`sbcl --script` -- a dumped executable
-# starts in ~15ms, versus ~0.5-1s to boot SBCL and quickload the system on every launch.
-# See docs/architecture.md. Run `make build` first if roswell/adhoc doesn't exist yet.
+# starts in tens of milliseconds, versus ~0.5-1s to boot SBCL and quickload the system on
+# every launch. See docs/architecture.md. Run `make build` first if ../adhoc doesn't exist yet.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$DIR/roswell/adhoc"
+BIN="$DIR/adhoc"
 if [ ! -x "$BIN" ]; then
     echo "adhoc: not built yet -- run 'make build'" >&2
     exit 1

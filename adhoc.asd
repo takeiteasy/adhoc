@@ -6,7 +6,7 @@
   :license "GPLv3"
   :version "0.1.0"
   :serial t
-  :pathname "src/num"
+  :pathname "num"
   :components ((:file "package")
                (:file "num")))
 
@@ -16,7 +16,7 @@
   :license "GPLv3"
   :version "0.1.0"
   :serial t
-  :pathname "src/ad"
+  :pathname "ad"
   :components ((:file "package")
                (:file "lexer")
                (:file "ast")
@@ -28,7 +28,7 @@
   :license "GPLv3"
   :version "0.1.0"
   :serial t
-  :pathname "src/interpreter"
+  :pathname "interpreter"
   :depends-on (#:adhoc/num #:adhoc/ad)
   :components ((:file "package")
                (:file "interpreter")))
@@ -39,7 +39,7 @@
   :license "GPLv3"
   :version "0.1.0"
   :serial t
-  :pathname "src/repl"
+  :pathname "repl"
   :depends-on (#:adhoc/num #:adhoc/ad #:adhoc/interpreter)
   :components ((:file "package")
                (:file "repl")))
@@ -50,7 +50,7 @@
   :license "GPLv3"
   :version "0.1.0"
   :serial t
-  :pathname "src/cli"
+  :pathname "cli"
   :depends-on (#:adhoc/repl)
   :components ((:file "package")
                (:file "cli")))

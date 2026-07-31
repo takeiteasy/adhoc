@@ -1,8 +1,8 @@
 # Numerics: the `Num` seam
 
-`src/num` defines a fixed set of operations (`nadd`, `nsub`, `nmul`, `ndiv`, `npow`, `nneg`,
-`neq`, `nshow`) over an opaque numeric value. `src/interpreter` never calls CL's `+`/`*`/...
-directly on a value that came from user input — it only calls through this seam.
+`num/num.lisp` defines a fixed set of operations (`nadd`, `nsub`, `nmul`, `ndiv`, `npow`, `nneg`,
+`neq`, `nshow`) over an opaque numeric value. `interpreter/interpreter.lisp` never calls CL's
+`+`/`*`/... directly on a value that came from user input — it only calls through this seam.
 
 ## Why a seam, in phase 0
 
@@ -22,7 +22,7 @@ Three CL types stand in for the bottom of the tower:
 - `ratio` — `int / int` produces a ratio, and CL never represents a ratio with denominator
   `1` — it collapses back to an integer automatically (`1/3 + 1/3 + 1/3 == 1`, exactly, not
   `0.999...`). Unlike a host language without native rationals, this tier-collapse rule is
-  native to CL, not something `src/num` implements.
+  native to CL, not something `num/num.lisp` implements.
 - `double-float` — the fallback once an operation can't stay exact (e.g. non-integer powers).
 
 `npow` keeps a rational base exact for integer exponents (CL's `expt` handles negative integer
@@ -33,9 +33,10 @@ exponents on rationals natively, producing a rational); otherwise it falls to `d
 CL's `*read-default-float-format*` defaults to `single-float`. Left alone, this would make a
 literal like `0.5` read as a single-float (a real precision loss relative to the `double-float`
 the tower is supposed to guarantee) and would print a double as `1.0d0` rather than `1.0`.
-`src/interpreter`'s literal parser binds `*read-default-float-format*` to `double-float`
-locally around every float read, `src/num`'s `nshow` binds it locally around every float
-print, and `src/cli`'s `main` binds it for the whole session as a backstop. All three are
+`interpreter/interpreter.lisp`'s literal parser binds `*read-default-float-format*` to
+`double-float` locally around every float read, `num/num.lisp`'s `nshow` binds it locally
+around every float print, and `cli/cli.lisp`'s `main` binds it for the whole session as a
+backstop. All three are
 covered by tests (`test/test-num.lisp`, `test/test-grammar.lisp`) — this is the one place a
 default CL behavior would otherwise silently diverge from the design.
 
@@ -53,5 +54,5 @@ rule, so it never needed RRA-style display in the first place.
 ## What later phases add here
 
 Symbolic closed forms, algebraic numbers, and the RRA fallback all become new cases inside
-this module's dispatch — `src/interpreter` and everything above it is unaffected by their
+this module's dispatch — `interpreter/interpreter.lisp` and everything above it is unaffected by their
 addition, which is the entire point of the seam.
