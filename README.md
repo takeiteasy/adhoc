@@ -29,11 +29,10 @@ built.
 
 ## Running it
 
-Requires [SBCL](https://www.sbcl.org/) and [Roswell](https://github.com/roswell/roswell), with
-this repo linked into `~/quicklisp/local-projects`.
+Requires Julia 1.12+.
 
 ```
-make build
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ./bin/adhoc
 ```
 
@@ -47,7 +46,7 @@ make build
 ## Tests
 
 ```
-make test
+julia --project=. test/runtests.jl
 ```
 
 ## Docs

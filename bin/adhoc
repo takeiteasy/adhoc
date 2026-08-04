@@ -1,32 +1,7 @@
 #!/bin/sh
-# Execs the Roswell-built image, not `ros run`/`sbcl --script` -- a dumped executable
-# starts in tens of milliseconds, versus ~0.5-1s to boot SBCL and quickload the system on
-# every launch. See docs/architecture.md. Run `make build` first if ../adhoc doesn't exist yet.
+# A shell wrapper, not a Julia script with a shebang, so `--project` is passed as a real
+# command-line flag rather than activated at runtime via Pkg.activate() -- the latter loads
+# the whole Pkg package before startup even begins, which was roughly half of this launcher's
+# total latency. See docs/architecture.md and the "Julia startup latency" ticket.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$DIR/adhoc"
-if [ ! -x "$BIN" ]; then
-    echo "adhoc: not built yet -- run 'make build'" >&2
-    exit 1
-fi
-
-# History and in-line editing (ticket 32) live in-process via cl-readline (cli/lineedit.lisp)
-# when the image was built with libreadline available -- see docs/architecture.md. Only
-# probe for that on an interactive tty; piped input (tests, scripts) always execs the image
-# directly, so it never pays for the extra process start.
-if [ -t 0 ]; then
-    if [ "$("$BIN" --has-readline)" = "yes" ]; then
-        exec "$BIN" "$@"
-    fi
-    # In-process readline isn't available for this invocation (ADHOC_NO_READLINE is set,
-    # or init-readline failed -- an unreadable history file, a locale that isn't installed)
-    # -- fall back to wrapping in `rlwrap`, same as ticket 29. A build without libreadline
-    # present never gets here: `make build` fails outright, same as any other missing Lisp
-    # dependency. ADHOC_NO_READLINE=1 is exported into the wrapped process so the two editors
-    # can never both try to read fd 0 at once. Set ADHOC_NO_RLWRAP=1 to opt out of this
-    # fallback too -- ADHOC_NO_READLINE=1 alone still lands here.
-    if [ -z "$ADHOC_NO_RLWRAP" ] && command -v rlwrap >/dev/null 2>&1; then
-        exec env ADHOC_NO_READLINE=1 \
-            rlwrap -C adhoc -H "${ADHOC_HISTORY:-$HOME/.adhoc_history}" "$BIN" "$@"
-    fi
-fi
-exec "$BIN" "$@"
+exec julia --project="$DIR" -e 'using Adhoc; Adhoc.main(ARGS)' -- "$@"

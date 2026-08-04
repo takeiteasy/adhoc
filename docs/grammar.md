@@ -1,7 +1,7 @@
 # Grammar (phase 0)
 
 The phase-0 subset of `ad`: arithmetic, assignment, and nothing else yet. This is the file
-the parser (`ad/parser.lisp`) is written against — it should stay in lockstep with the code.
+the parser (`src/parser.jl`) is written against — it should stay in lockstep with the code.
 
 ## Lexical rules
 
@@ -82,16 +82,6 @@ convention, not a claim that `ad` parses TeX. See `docs/language.md` for the ful
 - `x := e`, `x` bound → rebind, prints `x = v`
 - `x := e`, `x` unbound → error: `` `x` does not exist! ``
 - bare expression → prints `= v`
-
-## Incomplete input
-
-A statement that runs out of tokens mid-expression — an unclosed `(`, a trailing binary
-operator, `x =` with nothing after it — is a distinct condition (`ad-incomplete-input`, a
-subclass of the ordinary parse error) rather than a plain parse error. The REPL uses this to
-offer a `. ` continuation prompt and read another line instead of reporting a diagnostic; a
-genuine syntax error like `1 + * 2` still reports immediately. This is a REPL-level behavior,
-not a grammar change — `program` is still a single line (or, once continued, a small number of
-joined lines) parsed by the same grammar above.
 
 ## Deferred out of phase 0
 

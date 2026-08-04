@@ -1,7 +1,7 @@
+/Manifest.toml
 CLAUDE.md
 AGENTS.md
 DESIGN.md
 ROADMAP.md
 .DS_Store
-*.fasl
 /adhoc

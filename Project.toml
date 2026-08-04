@@ -1,0 +1,10 @@
+name = "Adhoc"
+uuid = "69e30fd4-eac3-4cc4-837e-934b09a602ba"
+authors = ["George Watson"]
+version = "0.0.1"
+
+[compat]
+julia = "1.12"
+
+[deps]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

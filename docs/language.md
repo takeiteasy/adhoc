@@ -6,18 +6,7 @@ need them). For the formal grammar, see `docs/grammar.md`.
 
 ## Working today
 
-- A REPL: `> ` prompts for input, `< ` prefixes output, Ctrl-D exits. Lex/parse/eval errors
-  render a caret pointing at the offending source span -- eval errors (unbound name, division
-  by zero, ...) point at the specific sub-expression that failed, not just the whole line.
-  A statement that runs out of input mid-expression (`(1 +`, unclosed parens, a trailing
-  operator, ...) gets a `. ` continuation prompt for the next line instead of an error; a
-  blank line cancels a pending continuation.
-- `bin/adhoc` on an interactive tty gets input history and in-line editing from an in-process
-  cl-readline session (arrow keys, `Ctrl-R` search, history persisted to
-  `$ADHOC_HISTORY`/`~/.adhoc_history` across runs). Building requires libreadline present
-  (`make build` fails without it, same as any other missing Lisp dependency); given a
-  successful build, `ADHOC_NO_READLINE=1` falls back to wrapping the image in `rlwrap` instead
-  (`ADHOC_NO_RLWRAP=1` on top of that for no editing at all).
+- A REPL: `> ` prompts for input, `< ` prefixes output, Ctrl-D exits.
 - Arithmetic: `+ - * / ^`, unary minus, parentheses, implicit multiplication by juxtaposition
   (`2x` = `2 * x`, `ab` = `a * b`).
 - Identifiers are exactly one character (ASCII or unicode).
@@ -50,5 +39,5 @@ seeded now so later phases only need to add bindings, not touch the lexer.
 
 ## Known limitations (not bugs)
 
-- `x := e` on an unbound `x` underlines the whole assign statement rather than just `x` — the
-  statement is the smallest span that carries meaning for a name that was never bound.
+- Error messages point at a line, not yet a column/span (phase 0 stretch item).
+- No REPL history or line editing.
