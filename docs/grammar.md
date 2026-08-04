@@ -1,13 +1,15 @@
 # Grammar (phase 0)
 
 The phase-0 subset of `ad`: arithmetic, assignment, and nothing else yet. This is the file
-the parser (`src/parser.jl`) is written against — it should stay in lockstep with the code.
+the parser (`src/parser.rs`) is written against — it should stay in lockstep with the code.
 
 ## Lexical rules
 
 - Whitespace is insignificant, except as a token separator.
 - `--` starts a line comment, running to end of line.
-- A **number literal** is a decimal integer or float: `3`, `0.5`, `12.34`.
+- A **number literal** is a decimal integer or float: `3`, `0.5`, `12.34`. A `.` is only
+  consumed as part of a number when a digit follows it — `1.` lexes as `1`, then fails on the
+  lone `.`.
 - An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
   This is what makes `ab` unambiguous as `a * b` — see below.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, ...). Phase 0
@@ -20,7 +22,7 @@ the parser (`src/parser.jl`) is written against — it should stay in lockstep w
 ## Grammar (EBNF)
 
 ```
-program    ::= statement (";" statement)* ;
+program    ::= statement (";" statement)* ";"? ;
 statement  ::= identifier ("=" | ":=") expr
              | expr ;
 
@@ -31,8 +33,11 @@ multiplicative
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 power      ::= atom ("^" unary)? ;         (* right-associative *)
-atom       ::= number | identifier | "(" expr ")" ;
+atom       ::= number | identifier | "\"-name | "(" expr ")" ;
 ```
+
+A trailing `;` after the last statement is tolerated (`1;` and `2;` both parse as a single
+statement, not as a statement followed by an empty one).
 
 ## Precedence table
 
@@ -47,7 +52,7 @@ Loosest to tightest:
 | 5 | juxtaposition (implicit `*`) | left |
 | 6 | unary `-` | prefix |
 | 7 | `^` | right |
-| 8 | postfix `'`, `[…]`, `(…)` | — *reserved, phases 1-2* |
+| 8 | postfix `'`, `[…]`, `(…)` | — *reserved, later phases* |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -61,6 +66,10 @@ reads on paper:
 1 + 2*3  ->  7
 (1+2)*3  ->  9
 ```
+
+`ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
+`number`, `identifier`, `\`-name, and `(` — deliberately **not** `-`, so `a - b` always parses
+as subtraction, never as `a * (-b)`.
 
 ## The `\` sigil
 
@@ -86,5 +95,5 @@ convention, not a claim that `ad` parses TeX. See `docs/language.md` for the ful
 ## Deferred out of phase 0
 
 `..` ranges, `Σ`/`Π`/`\lim`, comparison/logical operators, functions, piecewise conditionals,
-collections, the exact-arithmetic tower beyond int/rational/float, symbolic algebra, script
-mode, graphing. See the tracker for the phase these land in.
+collections, the exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
+See `ROADMAP.md` and the tracker for the phase each lands in.

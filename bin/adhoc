@@ -1,7 +1,0 @@
-#!/bin/sh
-# A shell wrapper, not a Julia script with a shebang, so `--project` is passed as a real
-# command-line flag rather than activated at runtime via Pkg.activate() -- the latter loads
-# the whole Pkg package before startup even begins, which was roughly half of this launcher's
-# total latency. See docs/architecture.md and the "Julia startup latency" ticket.
-DIR="$(cd "$(dirname "$0")/.." && pwd)"
-exec julia --project="$DIR" -e 'using Adhoc; Adhoc.main(ARGS)' -- "$@"

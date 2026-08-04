@@ -1,12 +1,24 @@
 # Language: what's implemented today (phase 0)
 
 This describes the subset of `ad` that actually runs right now — not the full design. For the
-target language, see the project's design notes (kept outside version control; ask if you
-need them). For the formal grammar, see `docs/grammar.md`.
+target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 
 ## Working today
 
-- A REPL: `> ` prompts for input, `< ` prefixes output, Ctrl-D exits.
+- A REPL: `> ` prompts for input, `. ` prompts for a continuation when a statement is
+  incomplete, `< ` prefixes output, Ctrl-D exits.
+- Multi-line input: an unterminated statement (`(1 + 2`, `1 +`, `2 ^`, `x =`) buffers and
+  continues on the next line rather than erroring immediately. A blank line cancels a
+  pending continuation.
+- Script mode: `adhoc run script.ad` runs a file through the same grammar, printing one
+  `< ...` line per top-level statement.
+- Caret-pointing error diagnostics with source spans, e.g.:
+  ```
+  < ERROR! division by zero
+      1/0
+      ^~~
+  ```
+- REPL history, persisted to `$ADHOC_HISTORY` (default `~/.adhoc_history`).
 - Arithmetic: `+ - * / ^`, unary minus, parentheses, implicit multiplication by juxtaposition
   (`2x` = `2 * x`, `ab` = `a * b`).
 - Identifiers are exactly one character (ASCII or unicode).
@@ -20,8 +32,7 @@ need them). For the formal grammar, see `docs/grammar.md`.
 Everything phase 1 onward: ranges, `Σ`/`Π`/`\lim`, functions, piecewise conditionals,
 comparison/logical operators, tensors/arrays/sets, the rest of the exact-arithmetic tower
 (symbolic closed forms, algebraic numbers, RRA), symbolic algebra (`\expr`/`\solve`/...),
-metaprogramming, script mode, graphing, and the interaction-net evaluator. See the tracker for
-status.
+metaprogramming, and graphing. See `ROADMAP.md` and the tracker for status.
 
 ## The `\` sigil, briefly
 
@@ -39,5 +50,7 @@ seeded now so later phases only need to add bindings, not touch the lexer.
 
 ## Known limitations (not bugs)
 
-- Error messages point at a line, not yet a column/span (phase 0 stretch item).
-- No REPL history or line editing.
+- Caret columns are counted in *characters*, not terminal display width. A genuinely
+  full-width or combining-mark identifier character will make the caret land a column or two
+  off; ordinary unicode letters like `π` are unaffected (1 character, 1 column). Not worth a
+  `unicode-width` dependency for a case that essentially never arises in a calculator.

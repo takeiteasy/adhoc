@@ -22,18 +22,19 @@ compatibility. See [`docs/language.md`](docs/language.md) for what's real today,
 
 ## Status
 
-Phase 0: a REPL that evaluates arithmetic exactly (`1/3 + 1/3 + 1/3` is `1`, not
-`0.999...`), with assignment and force-reassignment. Everything past that — functions,
-ranges, sums/products, collections, symbolic algebra, graphing — is on the roadmap, not yet
-built.
+Phase 0: a REPL and script runner that evaluate arithmetic exactly (`1/3 + 1/3 + 1/3` is `1`,
+not `0.999...`), with assignment, force-reassignment, and caret-pointing error diagnostics.
+Everything past that — functions, ranges, sums/products, the rest of the numeric tower,
+collections, symbolic algebra, graphing — is on the roadmap, not yet built. See
+[`ROADMAP.md`](ROADMAP.md).
 
 ## Running it
 
-Requires Julia 1.12+.
+Requires Rust (edition 2024) and a C toolchain (for `rug`'s GMP/MPFR bindings).
 
 ```
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
-./bin/adhoc
+cargo build --release
+cargo run
 ```
 
 ```
@@ -43,10 +44,12 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 < x = 3
 ```
 
+Or run a script: `cargo run -- run script.ad`.
+
 ## Tests
 
 ```
-julia --project=. test/runtests.jl
+cargo test
 ```
 
 ## Docs
