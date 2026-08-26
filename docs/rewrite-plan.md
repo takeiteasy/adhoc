@@ -61,7 +61,7 @@ tests/                  -- pytest; ports of every cargo test
 | 1 | Frontend port: span/lexer/syntax/parser/diagnostic | All lexer/parser unit tests green incl. incomplete-input sentinels; caret output identical to Rust | done |
 | 2 | Runtime seam: numerics, errors, formatting | All `num.rs` tests ported green | done |
 | 3 | Lowering + driver | `interp.rs` suite passes end-to-end through compile/exec; span-narrowing tests pass; emitted-Python snapshot tests | done |
-| 4 | CLI parity: REPL continuation/history, script mode | `tests/{repl,script}.rs` behaviors green; transcript diff of Rust vs Python binaries clean on an `.ad` corpus | |
+| 4 | CLI parity: REPL continuation/history, script mode | `tests/{repl,script}.rs` behaviors green; transcript diff of Rust vs Python binaries clean on an `.ad` corpus | done |
 | 5 | Interop v1: `\py(...)`, application syntax, value-conversion rules + docs | `\py("math.sqrt")(2)` → `= 1.4142135623730951`; conversion-matrix tests | |
 | 6 | Cutover: tag `rust-final`, remove Rust tree, doc sweep | Repo is Python-only, all tests green | |
 

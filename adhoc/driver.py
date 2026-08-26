@@ -26,7 +26,10 @@ def execute(compiled: Compiled, env: dict) -> list[str]:
     g["_e"] = Engine(env, compiled.spans)
     try:
         exec(compiled.code, g)  # noqa: S102 - generated from our own AST only
-    except EvalError:
+    except EvalError as e:
+        # Script mode echoes every statement that succeeded before the failure, exactly
+        # like main.rs's run_and_echo streaming — carry them out on the error.
+        e.partial = list(g["_e"].outputs)
         raise
     except Exception as e:
         raise _map_unexpected(e, compiled) from e
