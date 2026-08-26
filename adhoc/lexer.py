@@ -2,9 +2,9 @@
 `--` line comments, and the `\\`-name convention: every language-defined name longer than
 one character takes a `\\` sigil.
 
-A `\\`-token always lexes cleanly if the name is in KNOWN_BACKSLASH_NAMES and fails, if at
-all, at eval time as an unbound name — not at the lexer as an unknown token. Unrecognized
-`\\`-names remain a lex error, which is what catches typos.
+A `\\`-name is also the spelling for a user-defined multi-character identifier. Unknown
+names therefore lex cleanly and fail at evaluation if they are not bound, just like a
+single-character identifier.
 
 Token spans are byte offsets (see span.py); token text is carried where meaningful (the
 number literal's source text, a backslash name with its sigil stripped, a string
@@ -280,8 +280,6 @@ def tokenize(src: str) -> list[Token]:
             span = Span(pos, end)
             if not name:
                 raise LexError("bare `\\` with no name following", span)
-            if name not in KNOWN_BACKSLASH_NAMES:
-                raise LexError(f"unknown \\-name `\\{name}`", span)
             tokens.append(Backslash(name=name, span=span))
             i = j
             continue

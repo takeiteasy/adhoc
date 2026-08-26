@@ -149,7 +149,7 @@ class _Parser:
             # A string alone is a statement — ignored like a comment (docs/grammar.md).
             self.advance()
             return StrLit(text=tok.text, span=tok.span)
-        if isinstance(tok, Ident):
+        if isinstance(tok, (Ident, Backslash)):
             if isinstance(self.peek2(), (Eq, ColonEq)):
                 ident_tok = self.advance()
                 force = isinstance(self.advance(), ColonEq)
@@ -201,9 +201,8 @@ class _Parser:
             statements=tuple(body_stmts), span=body_stmts[0].span.to(body_stmts[-1].span)
         )
         span = ident_tok.span.to(body.span)
-        return FuncDef(
-            name=ident_tok.ch, params=tuple(params), force=force, body=body, span=span
-        )
+        name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+        return FuncDef(name=name, params=tuple(params), force=force, body=body, span=span)
 
     def expr(self) -> Node:
         lhs = self.additive()

@@ -216,7 +216,8 @@ def nshow(v: AdValue | str) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, AdFunction):
-        return f"<fn {v.name}({', '.join(v.params)})>"
+        label = f"\\{v.name}" if len(v.name) > 1 else v.name
+        return f"<fn {label}({', '.join(v.params)})>"
     if isinstance(v, str):
         return _show_str(v)
     if callable(v) and not isinstance(v, _NUMERIC_TYPES):
@@ -370,6 +371,10 @@ class Engine:
     def bref(self, name: str, sid: int) -> AdValue:
         if name == "py":
             self._fail('`\\py` must be applied to a path: \\py("dotted.path")', sid)
+        if name in self.env:
+            return self.env[name]
+        if self.parent is not None:
+            return self.parent.bref(name, sid)
         self._fail(f"`\\{name}` is not bound", sid)
 
     def reserved(self, sid: int) -> NoReturn:
@@ -378,7 +383,11 @@ class Engine:
 
     def define(self, name, params, force, sid):
         fn = AdFunction(name, params, self.definitions[sid], self)
-        return self.reassign(name, fn, sid) if force else self.assign(name, fn, sid)
+        result = self.reassign(name, fn, sid) if force else self.assign(name, fn, sid)
+        if len(name) > 1:
+            result = result.replace(f"{name} =", f"\\{name} =", 1)
+            self.outputs[-1] = result
+        return result
 
     def set(self, name, value, sid):
         self._check_assignable(value, sid)

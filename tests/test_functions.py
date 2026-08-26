@@ -51,6 +51,12 @@ def test_recursive_factorial():
     assert run_source("f(5)", env) == ["= 120"]
 
 
+def test_escaped_names_support_multi_character_functions():
+    env = define("\\fact(n) = \\if(n <= 1, 1, n * \\fact(n - 1))")
+    assert run_source("\\fact(5)", env) == ["= 120"]
+    assert run_source("\\fact", env) == ["= <fn \\fact(n)>"]
+
+
 def test_piecewise_function_and_lazy_branch():
     env = define("m(x) = \\if(x >= 0, x, -x)")
     assert run_source("m(-5)", env) == ["= 5"]

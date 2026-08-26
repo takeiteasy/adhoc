@@ -23,7 +23,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - REPL history, persisted to `$ADHOC_HISTORY` (default `~/.adhoc_history`).
 - Arithmetic: `+ - * / ^`, unary minus, parentheses, implicit multiplication by juxtaposition
   (`2x` = `2 * x`, `ab` = `a * b`).
-- Identifiers are exactly one character (ASCII or unicode).
+- Bare identifiers are exactly one character (ASCII or unicode); multi-character names,
+  including user-defined function names, use the backslash sigil (`\fact`).
 - Assignment (`x = 1`), equality-check-if-bound (`x = 1` again), force-reassign (`x := 1`).
 - `--` line comments, plus bare string literals as comment-like statements (`"a note"` is
   parsed and ignored — strings are literals, not values; docs/grammar.md).
@@ -37,9 +38,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   cannot be bound.
 - Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`).
 - Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
-- User-defined functions: `f(x) = x^2`, local parameters and assignments, semicolon-
-  sequenced bodies, first-class function values, and recursion. Identifiers remain one
-  character, so recursive functions use names like `f`, not `fact`.
+- User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
+  semicolon-sequenced bodies, first-class function values, and recursion.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
 - Lazy conditionals: `\if(condition, then)` and `\if(condition, then, otherwise)`. A false
   two-argument conditional is a statement-level no-op; parenthesized sequences such as

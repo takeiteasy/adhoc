@@ -54,10 +54,10 @@ def test_backslash_names():
     assert toks[0].span == Span(0, 3)
 
 
-def test_unknown_backslash_name_errors():
-    with pytest.raises(LexError) as e:
-        tokenize("\\bogus")
-    assert "unknown" in e.value.msg
+def test_user_defined_backslash_names_lex_cleanly():
+    toks = tokenize("\\bogus")
+    assert isinstance(toks[0], Backslash)
+    assert toks[0].name == "bogus"
 
 
 def test_bare_backslash_errors():

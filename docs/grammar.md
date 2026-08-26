@@ -15,11 +15,8 @@ written against — it should stay in lockstep with the code.
   `## String literals` for where they may appear.
 - An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
   This is what makes `ab` unambiguous as `a * b` — see below.
-- A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, ...). The lexer
-  recognizes the full known table (see `docs/language.md`) so that a `\`-token always lexes
-  cleanly, and an unbound one fails at evaluation (unbound name) rather than at the lexer
-  (unknown token) — the two failure modes are intentionally distinct. `\py` is bound today;
-  everything else still errors as unbound until its phase lands.
+- A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
+  Backslash names may be built-ins or user-defined names; an unbound one fails at evaluation.
 - Operators: `+ - * / ^ < > <= >= = := ( ) ,`. Statement separator: `;`.
 
 ## Grammar (EBNF)
@@ -118,21 +115,22 @@ the usual typed "strings are not numbers".
 
 ## Functions and conditionals
 
-Function definitions are callable values. Names and parameters are still one-character
-identifiers, so the recursive example uses `f`, not `fact`:
+Function definitions are callable values. Parameters are still one-character identifiers,
+while a multi-character function name uses
+the backslash sigil:
 
 ```
 f(x) = x^2 + 1
 f(3)                         ->  = 10
 f(a,b) = c = ab; cc          -- c and the parameters are call-local
 f(3,4)                       ->  = 144
-f(n) = \if(n <= 1, 1, n*f(n-1))
+\fact(n) = \if(n <= 1, 1, n*\fact(n-1))
 ```
 
 Function bodies are semicolon-separated statements. A call gets a fresh local frame;
 reads fall through to globals, while assignments never escape the call. The function's
 own name is installed in that frame before the body runs, enabling recursion. Definitions
-are first-class and display as `<fn f(x)>`.
+are first-class and display as `<fn f(x)>` or `<fn \fact(n)>`.
 
 Because `;` also separates top-level statements and the source has no newline token, a
 function definition consumes the semicolon-separated body to the end of its input unit.
