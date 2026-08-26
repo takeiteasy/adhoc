@@ -61,3 +61,25 @@ def test_blank_line_when_fresh_is_silent(tmp_path):
 def test_comment_only_line_is_skipped(tmp_path):
     out = run_repl("-- just a comment\n3\n", tmp_path).stdout
     assert "< = 3" in out
+
+
+def test_unterminated_string_continues_then_completes_silently(tmp_path):
+    # An open quote behaves like an open paren: `. ` continuation, and the completed
+    # bare-string statement echoes nothing (strings are comment-like literals).
+    out = run_repl('"abc\ndef"\n1\n', tmp_path).stdout
+    assert ". " in out
+    assert "ERROR" not in out
+    assert "< = 1" in out
+    assert '"abc' not in out.replace('> "', "").replace('. "', "")
+
+
+def test_unterminated_string_blank_line_cancels(tmp_path):
+    out = run_repl('"abc\n\n1\n', tmp_path).stdout
+    assert "-- input cancelled" in out
+    assert "< = 1" in out
+
+
+def test_bare_string_statement_echoes_nothing(tmp_path):
+    out = run_repl('"just a note"\n2\n', tmp_path).stdout
+    assert "< = 2" in out
+    assert "< = \"just a note\"" not in out

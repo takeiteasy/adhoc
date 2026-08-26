@@ -64,6 +64,30 @@ with two adjustments so output matches `f64` `Display`: scientific notation is e
 positionally (`10000000000000000.0`, `0.0000001`), and a bare integer-looking value gets a
 trailing `.0`. Non-finite values print `NaN`, `Inf`, `-Inf`.
 
+## The Python boundary: conversion matrix
+
+The seam is also where the `\py` escape hatch converts (docs/grammar.md). Values crossing
+*into* Python need no conversion — ad numbers already are native `int`/`Fraction`/`float`,
+and a string argument arrives as the literal's native `str`. Values coming *back* go
+through `_to_ad`:
+
+| Python value | ad result |
+|---|---|
+| `None` | rejected — "the call returned nothing" |
+| `bool` | `int` (`True` → `1`; bool is an int subclass, checked first) |
+| `int`, `float`, `Fraction` | pass through |
+| `decimal.Decimal` | exact `Fraction`/`int` via its string-exact value |
+| any other `numbers.Rational` | normalized `Fraction`/`int` (constructed from numerator/denominator explicitly — py3.12+'s single-Rational-arg constructor copies them unnormalized) |
+| any other `numbers.Real` (incl. numpy floats) | widened to `float` |
+| `str` | **display-only** — prints quoted, rejected by assignment and arithmetic; strings are literals, not values |
+| `complex` | rejected — no complex tier yet |
+| anything else (list, dict, ndarray, ...) | rejected — names the type, never truncates silently |
+
+A callee raising maps to a spanned error at the call (`sqrt: ValueError: math domain
+error`), keeping the REPL alive like every other typed failure. Callables themselves are
+bindable values (`s = \py("math.sqrt")` displays `<py math.sqrt>`); arithmetic on one is a
+typed "operands must be numbers" failure at the operator's span.
+
 ## What later phases add here
 
 Symbolic closed forms, algebraic numbers, and the RRA fallback all become new cases in

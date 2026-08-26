@@ -8,12 +8,18 @@ runtime-error spans narrow — a sub-expression's failure points at the sub-expr
 
 Lowering rules:
 
-- `NumLit` → `Constant` via `parse_literal` (int without `.`, float with).
+- `NumLit` → `Constant` via `parse_literal` (int without `.`, float with). `StrLit` →
+  `Constant` likewise — but only ever as a call argument or a whole statement; a string
+  is never an operand (the parser rejects that before lowering sees it).
+- A bare-string *statement* lowers to `pass`: one generated line per statement keeps the
+  lineno ↔ span table aligned while producing no output.
 - Variables are never bare Python name loads or stores — reads go through `_e.var`,
   writes through `_e.assign`/`_e.reassign` implementing bind-or-compare. The user env is
   a plain dict the engine holds; it never mixes with the exec globals.
-- `\name` lowers to `_e.bref("name", sid)`, which always fails in phase 0 but keeps the
-  sigil-inclusive span for the diagnostic.
+- `\name` lowers to `_e.bref("name", sid)`; application lowers to `_e.app(head, args,
+  sid)`; `\\py(path)` is the one backslash name with semantics of its own and lowers to
+  `_e.py(path, sid)`. `FuncDef` lowers to `_e.reserved(sid)` — the shape parses today,
+  evaluation reports it as phase-1 work.
 - `Seq` flattens; each statement becomes one line, matching script mode's per-statement
   echo and the line-number gutter.
 """
@@ -29,9 +35,12 @@ from .syntax import (
     BackslashRef,
     BinOp,
     BinOperator,
+    Call,
+    FuncDef,
     Node,
     NumLit,
     Seq,
+    StrLit,
     UnOp,
     UnaryOperator,
     Var,
@@ -76,6 +85,13 @@ class _Lowerer:
 
     def statement(self, stmt: Node) -> str:
         match stmt:
+            case FuncDef(span=span):
+                sid = self._push(span)
+                return pyast.unparse(_call("reserved", [pyast.Constant(sid)]))
+            case StrLit():
+                # A lone string is a comment-like no-op; `pass` keeps the one-line-per-
+                # statement invariant that the lineno ↔ span table depends on.
+                return "pass"
             case Assign(name=name, force=force, value=value, span=span):
                 sid = self._push(span)
                 inner = self.expr(value)
@@ -90,6 +106,8 @@ class _Lowerer:
         match node:
             case NumLit(text=text):
                 return pyast.Constant(value=parse_literal(text))
+            case StrLit(text=text):
+                return pyast.Constant(value=text)
             case Var(ch=ch, span=span):
                 sid = self._push(span)
                 return _call("var", [pyast.Constant(ch), pyast.Constant(sid)])
@@ -105,6 +123,21 @@ class _Lowerer:
                 right = self.expr(rhs)
                 sid = self._push(span)
                 return _call(_BIN_METHODS[op], [left, right, pyast.Constant(sid)])
+            case Call(head=BackslashRef(name="py"), args=args, span=span):
+                # `\py` is the one backslash name with its own semantics: resolve the
+                # single string-literal argument to a Python callable. Parser enforces
+                # arity; the engine rejects non-string arguments with the same span.
+                sid = self._push(span)
+                arg_exprs = [self.expr(a) for a in args]
+                return _call("py", [*arg_exprs, pyast.Constant(sid)])
+            case Call(head=head, args=args, span=span):
+                head_expr = self.expr(head)
+                arg_exprs = [self.expr(a) for a in args]
+                sid = self._push(span)
+                return _call(
+                    "app",
+                    [head_expr, pyast.Tuple(elts=arg_exprs, ctx=pyast.Load()), pyast.Constant(sid)],
+                )
             case _:
                 raise TypeError(f"no lowering for {node!r}")
 

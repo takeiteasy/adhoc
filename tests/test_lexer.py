@@ -4,6 +4,7 @@ from adhoc.lexer import (
     Backslash,
     Caret,
     ColonEq,
+    Comma,
     Eq,
     Eof,
     Ident,
@@ -16,6 +17,8 @@ from adhoc.lexer import (
     Semi,
     Slash,
     Star,
+    Str,
+    UnterminatedString,
     tokenize,
 )
 from adhoc.span import Span
@@ -98,3 +101,49 @@ def test_unicode_ident_spans_are_byte_offsets():
     toks = [t for t in tokenize("π+π") if isinstance(t, Ident)]
     assert toks[0].span == Span(0, 2)
     assert toks[1].span == Span(3, 5)
+
+
+# --- string literals (stage 5): escape-free, terminated by the next quote ---
+
+
+def test_string_literal_token_and_span():
+    toks = tokenize('"hello world"')
+    assert kinds('"hello world"') == [Str, Eof]
+    assert toks[0].text == "hello world"
+    assert toks[0].span == Span(0, 13)
+
+
+def test_empty_string():
+    tok = tokenize('""')[0]
+    assert isinstance(tok, Str)
+    assert tok.text == ""
+    assert tok.span == Span(0, 2)
+
+
+def test_string_is_escape_free_ends_at_next_quote():
+    tok = tokenize('"a+b*c"')[0]
+    assert tok.text == "a+b*c"
+
+
+def test_string_may_span_lines():
+    toks = tokenize('"a\nb"')
+    assert kinds('"a\nb"') == [Str, Eof]
+    assert toks[0].text == "a\nb"
+    assert toks[0].span == Span(0, 5)  # bytes, newline included
+
+
+def test_unterminated_string_has_dedicated_error():
+    with pytest.raises(UnterminatedString) as e:
+        tokenize('"abc')
+    assert e.value.span == Span(0, 4)  # open quote to EOF
+    assert isinstance(e.value, LexError)
+
+
+def test_comma_token():
+    assert kinds(",") == [Comma, Eof]
+
+
+def test_py_name_lexes_from_known_table():
+    toks = tokenize("\\py")
+    assert isinstance(toks[0], Backslash)
+    assert toks[0].name == "py"

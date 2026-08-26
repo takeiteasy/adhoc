@@ -131,6 +131,10 @@ def run_repl(emit_py: bool = False) -> int:
                 readline.add_history(line)
             except Exception:
                 pass
+        # A statement can produce no output (a lone string is a comment-like no-op) —
+        # nothing to echo then, not even an empty `< ` line.
+        if not outs:
+            continue
         print(f"< {outs[-1]}")
 
     if interactive and readline is not None:

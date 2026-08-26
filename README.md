@@ -22,12 +22,15 @@ compatibility. See [`docs/language.md`](docs/language.md) for what's real today,
 
 ## Status
 
-Phase 0: a REPL and script runner that evaluate arithmetic exactly (`1/3 + 1/3 + 1/3` is `1`,
-not `0.999...`), with assignment, force-reassignment, and caret-pointing error diagnostics.
-The implementation is pure Python: `ad` lowers to Python's own AST and runs on CPython, which
-is also the road to calling Python libraries from `ad`. Everything past phase 0 — functions,
-ranges, sums/products, the rest of the numeric tower, collections, symbolic algebra, graphing —
-is on the roadmap, not yet built. See [`ROADMAP.md`](ROADMAP.md).
+Core phase 0 plus interop v1: a REPL and script runner that evaluate arithmetic exactly
+(`1/3 + 1/3 + 1/3` is `1`, not `0.999...`), with assignment, force-reassignment, caret-pointing
+error diagnostics, postfix application (`f(x)`), and the `\py("math.sqrt")(2)` escape hatch into
+Python — full trust, native conversion both ways (docs/numerics.md). Strings are literals,
+not values: they name Python paths and act as comment-like statements, nothing more
+(docs/grammar.md). The implementation is pure Python: `ad` lowers to Python's own AST and runs
+on CPython. Everything else — function definitions (syntax reserved), ranges, sums/products,
+the rest of the numeric tower, collections, symbolic algebra, graphing — is on the roadmap, not
+yet built. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it
 

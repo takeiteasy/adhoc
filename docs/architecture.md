@@ -8,10 +8,11 @@ are thin drivers over it, depending on it the way any other consumer would.
 ```
 adhoc/
 ├── span        — byte-offset spans (start, end)
-├── lexer       — tokens: numbers, identifiers, \-names, operators
+├── lexer       — tokens: numbers, strings, identifiers, \-names, operators
 ├── syntax      — frozen AST dataclasses, each node carries its own Span
 ├── parser      — precedence climbing over docs/grammar.md
-├── runtime     — the numeric seam + Engine (everything lowered code calls into)
+├── runtime     — the numeric seam + Engine (everything lowered code calls into),
+│                 plus the \py boundary and its conversion matrix
 ├── compiler    — lowering: adhoc AST → Python source, one line per statement
 ├── driver      — compile/exec pairing, error mapping back through spans
 ├── diagnostic  — caret-pointing renderer
@@ -62,10 +63,17 @@ difference between them is *when* each calls it, not how the output looks.
 ## Engine notes
 
 - One generated Python line per top-level statement, with a `lineno → span` table riding on
-  the compiled unit; anything unexpected escaping the engine maps back through it.
+  the compiled unit; anything unexpected escaping the engine maps back through it. A bare
+  string statement lowers to `pass` — it produces no output but keeps the one-line-per-
+  statement invariant the table depends on.
 - Variables never become Python name loads or stores — reads go through `_e.var`, writes
   through `_e.assign`/`_e.reassign` (bind-or-compare semantics). The user environment is a
-  plain dict kept separate from exec globals.
+  plain dict kept separate from exec globals. Callables bind like any value; strings never
+  enter it.
+- Application lowers to `_e.app(head, args, sid)`; `\py(path)` has its own seam method
+  resolving the dotted path and converting results back through the matrix
+  (docs/numerics.md). The reserved `f(x) = body` definition shape parses and lowers to
+  `_e.reserved(sid)`, which reports phase-1 work.
 - Statement outputs accumulate in order; the REPL prints only the last, script mode echoes
   every statement and stops at the first failure.
 

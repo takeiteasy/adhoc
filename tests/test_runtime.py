@@ -1,4 +1,5 @@
 import math
+import numbers
 
 import pytest
 from fractions import Fraction
@@ -6,7 +7,10 @@ from fractions import Fraction
 from adhoc.runtime import (
     AdValue,
     DIVISION_BY_ZERO,
+    NOT_A_NUMBER,
+    STRINGS_NOT_NUMBERS,
     NumError,
+    _to_ad,
     ndiv,
     neq,
     nneg,
@@ -176,3 +180,53 @@ def test_values_are_plain_python_types():
     v: AdValue = ndiv(1, 4)
     assert isinstance(v, Fraction)
     assert float(v) * 8 == 2.0
+
+
+# --- strings and callables at the seam (stage 5) ---
+
+
+def test_string_display_round_trips():
+    assert nshow('a"b\\c') == '"a\\"b\\\\c"'
+
+
+def test_seam_rejects_strings_as_typed_errors():
+    for op in (nadd, nsub, nmul, ndiv, npow):
+        with pytest.raises(NumError) as e:
+            op("s", 1)
+        assert e.value.args[0] == STRINGS_NOT_NUMBERS
+        with pytest.raises(NumError):
+            op(1, "s")
+    with pytest.raises(NumError):
+        nneg("s")
+
+
+def test_seam_rejects_callables_with_number_message():
+    for op in (nadd, nsub, nmul, ndiv, npow):
+        with pytest.raises(NumError) as e:
+            op(len, 1)
+        assert e.value.args[0] == NOT_A_NUMBER
+
+
+def test_neq_identity_fallback_for_non_values():
+    f = lambda: 0
+    assert neq(f, f) is True
+    assert neq(f, lambda: 0) is False
+    assert neq(f, 1) is False
+
+
+def test_callable_display_uses_module_qualname():
+    assert nshow(math.sqrt) == "<py math.sqrt>"
+    assert nshow(int) == "<py builtins.int>"
+
+
+def test_matrix_rational_subclass_normalizes():
+    class Half:
+        numerator = 2
+        denominator = 4
+
+    numbers.Rational.register(Half)
+    assert _to_ad(Half()) == rat(1, 2)
+
+
+def test_matrix_bool_precedes_int():
+    assert _to_ad(True) == 1 and isinstance(_to_ad(True), int)

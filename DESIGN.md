@@ -201,7 +201,7 @@ $ adhoc run script.ad
 - Bracket + row/column-separator syntax (`,` for columns, `;` for rows) follows the same convention as MATLAB/Octave — well-worn, math-notation-adjacent, and reuses `;` without conflict since it's scoped inside `[...]`.
 - Indexing is 1-based, matching standard math notation (`m[1,2]` not `m[0,1]`).
 - `'` for transpose (common shorthand); TODO: distinguish elementwise vs. matrix multiply/divide (e.g. MATLAB's `.*`/`./`) once operator design happens.
-- No string type — the language stays deliberately math-only (numbers, vectors, matrices, functions, ranges). Not a placeholder-for-later; an intentional scope boundary. The one real I/O need (`\graph`'s `out=`, below) is met with a narrow path/filename literal scoped to that argument position, not a general string type — see `## graphing`.
+- No string *type* — strings are literals, not values (decided, and implemented since the Python interop landed). `"…"` appears only as a whole call argument (`\py("math.sqrt")`) or as a standalone statement (ignored like a comment); a returned `str` prints display-only and cannot be bound. The one real I/O need (`\graph` file export) is met by calling out through `\py` rather than special argument syntax — see `## graphing`.
 - Vector/matrix are special cases (1D/2D) of a general **tensor** type — see below. `[...]` syntax and its rules (1-indexed, `,`/`;` separators, transpose) apply uniformly to tensors of any rank.
 
 ## collection types: tensor / array / set
@@ -325,11 +325,12 @@ Arithmetic operations try to stay at the lowest tier that remains exact (e.g. `r
 
 - Reuses the existing range syntax (`x=-5..5`) as the plotting domain — no new range concept needed.
 - Renders **inline in the terminal** by default: detects sixel or kitty graphics protocol support and renders a real bitmap plot if available, falling back to a Unicode braille-pattern ASCII plot (denser and smoother than plain ASCII block characters) when the terminal doesn't support either.
-- Can also export to a file instead of/as well as rendering inline:
+- Can also export to a file instead of/as well as rendering inline — through the Python
+  boundary, no special argument syntax needed:
 ```
-> \graph(f, x=-5..5, out="plot.svg")
+> \py("matplotlib.pyplot.savefig")("plot.svg")
 ```
-- `out=` takes a **path/filename literal**, not a general string value — this is a narrow, scoped construct, not the string type the language deliberately doesn't have (see `## vectors / matrices`). A path literal is illegal everywhere else in the grammar: it can't be bound to a variable, concatenated, passed to a function, or appear in a general expression — it's argument syntax specific to I/O-boundary positions like `out=`, the same way `1..10` only means something as a range operand. Whether it's written quoted (`out="plot.svg"`) or bareword (`out=plot.svg`) is a follow-up detail, not yet settled.
+- There is deliberately **no `out=` argument syntax and no path-literal construct**. The pre-Python design scoped a narrow filename literal to I/O-boundary positions; that is obsolete now that `\py` exists — file paths are ordinary string literals passed to Python calls, and strings remain literals rather than values everywhere else (see `## vectors / matrices`).
 - TODO: sampling strategy (fixed resolution vs. adaptive sampling near discontinuities/high-curvature regions) not yet decided. TODO: multi-function overlay syntax (plotting more than one `f` on the same axes) not yet decided.
 
 ## interpreter/compiler engine: interaction combinators (future direction)
@@ -369,7 +370,9 @@ Found on a final pass through the doc — real contradictions/gaps, not just unf
 
 2. **RESOLVED — `=` overloaded across contexts.** Kept as a single token, disambiguated by position rather than adding a separate `==`: statement-level bare-identifier `=` is assign-or-check (phase 0); anywhere else in an expression `=` is plain boolean equality (subsuming what would otherwise be a separate comparison operator and `\solve`'s equation argument, which needs no special-casing); a small closed list of builtins (`\sum`, `\prod`, `\lim`, `\graph`) treat one specific argument as a binding rather than an equality. See `## equality and =`.
 
-3. **RESOLVED — string-literal contradiction.** `out=` takes a narrow path/filename literal scoped to I/O-boundary argument positions — illegal everywhere else in the grammar (no binding, no concatenation, no general expressions) — rather than a general string type. See `## graphing`.
+3. **RESOLVED — string-literal contradiction.** Originally resolved as a narrow `out=` path/filename literal scoped to I/O-boundary argument positions. Superseded once the Python interop landed: there is no `out=` syntax and no path-literal construct — strings are escape-free literals that appear as call arguments (`\py("...")`) or standalone comment-like statements, are display-only when returned from Python, and are never values. File export goes through `\py`. See `## graphing` and docs/grammar.md.
+
+3b. **RESOLVED — application vs juxtaposition.** Postfix `name(...)` is *statically* application: a paren trailer attaches only to name-ish heads (identifier, `\`-name, another call), so `x(y+1)` applies rather than multiplying — a deliberate breaking change accepted to keep meaning independent of what a variable holds. Number-headed parens (`2(x+1)`) stay juxtaposition. The definition shape `f(x) = body` is reserved for phase 1 (parsed; evaluation reports it as unimplemented). See docs/grammar.md.
 
 4. **RESOLVED — multi-char keyword vs. implicit-multiplication ambiguity.** The very first example (`c = ab`) establishes that multiplication is implicit juxtaposition of single-char variables. Every multi-char name — not just the ones with a unicode counterpart — now takes a `\` sigil (`\pi`, `\sum`, `\sin`, `\solve`, ...), so it can never collide with a product of single-char variables. See `## keywords and the \ sigil`.
 

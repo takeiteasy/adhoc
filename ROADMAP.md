@@ -29,6 +29,9 @@ later phases add language surface on top of it, they don't replace it.
 ### phase 1 — core language semantics
 
 - Functions: `f(a, b) = ...` definition, application, local scoping, `;`-sequenced bodies.
+  The definition shape is already reserved and parsed (evaluating reports "reserved for
+  phase 1"), and postfix application plus callable values exist since interop v1 —
+  definitions lower into that same callable world.
 - Recursion: function's own name bound within its own body scope.
 - Conditionals: piecewise `x \if x >= 0; -x \otherwise`.
 - Comparison/logical operators, added as needed (not enumerated in `DESIGN.md` — open, expect
@@ -98,8 +101,9 @@ but doesn't depend on it.
   - Open: fixed-resolution vs. adaptive sampling near discontinuities/high-curvature regions.
 - Terminal-native rendering: sixel/kitty graphics protocol detection, Unicode braille-pattern
   ASCII fallback.
-- File export (`out="plot.svg"` etc.), via a path/filename literal scoped to this argument
-  position, not a general string type (decided).
+- File export (`out="plot.svg"` etc.) — the old scoped-path-literal idea is dead: export goes
+  through `\py` (e.g. matplotlib's `savefig`) with an ordinary string-literal argument, since
+  interop v1. No special argument syntax.
 - Open: multi-function overlay syntax (plotting more than one function on shared axes).
 
 ### future directions (unscheduled)

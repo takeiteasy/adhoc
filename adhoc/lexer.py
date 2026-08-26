@@ -7,7 +7,14 @@ all, at eval time as an unbound name — not at the lexer as an unknown token. U
 `\\`-names remain a lex error, which is what catches typos.
 
 Token spans are byte offsets (see span.py); token text is carried where meaningful (the
-number literal's source text, a backslash name with its sigil stripped).
+number literal's source text, a backslash name with its sigil stripped, a string
+literal's raw contents).
+
+Strings are literals, not values (docs/grammar.md): they appear as `\\py` arguments or as
+standalone statements (ignored, comment-like). The scanner keeps them escape-free — the
+literal ends at the next `"`, whatever it contains — and an unterminated one raises
+`UnterminatedString`, which the parser maps to `IncompleteInput` so the REPL offers a
+continuation prompt exactly like an unclosed parenthesis.
 """
 
 from dataclasses import dataclass
@@ -18,7 +25,7 @@ KNOWN_BACKSLASH_NAMES = (
     "pi", "sum", "prod", "sqrt", "cup", "cap", "in", "subseteq", "setminus", "circ", "lim",
     "const", "arr", "expr", "if", "otherwise", "sin", "cos", "tan", "ln", "solve", "simplify",
     "expand", "factor", "eval", "body", "map", "fold", "filter", "graph", "infix", "and", "or",
-    "not",
+    "not", "py",
 )
 
 
@@ -27,6 +34,11 @@ class LexError(Exception):
         super().__init__(msg)
         self.msg = msg
         self.span = span
+
+
+class UnterminatedString(LexError):
+    """A string literal still open at end of input. A distinct type so the parser can
+    raise `IncompleteInput` (REPL continuation) rather than a hard error."""
 
 
 @dataclass(frozen=True)
@@ -45,6 +57,15 @@ class Number(Token):
     @property
     def describe(self) -> str:
         return "a number"
+
+
+@dataclass(frozen=True)
+class Str(Token):
+    text: str
+
+    @property
+    def describe(self) -> str:
+        return '`"…"`'
 
 
 @dataclass(frozen=True)
@@ -136,6 +157,13 @@ class Semi(Token):
 
 
 @dataclass(frozen=True)
+class Comma(Token):
+    @property
+    def describe(self) -> str:
+        return "`,`"
+
+
+@dataclass(frozen=True)
 class Eof(Token):
     @property
     def describe(self) -> str:
@@ -152,6 +180,7 @@ _SINGLE_CHAR_TOKENS = {
     "(": LParen,
     ")": RParen,
     ";": Semi,
+    ",": Comma,
 }
 
 
@@ -179,6 +208,19 @@ def tokenize(src: str) -> list[Token]:
             i += 2
             while i < n and entries[i][1] != "\n":
                 i += 1
+            continue
+
+        if c == '"':
+            # Escape-free: the literal ends at the next `"`, whatever it contains.
+            j = i + 1
+            while j < n and entries[j][1] != '"':
+                j += 1
+            end = entries[j][0] + 1 if j < n else eof_off
+            span = Span(pos, end)
+            if j >= n:
+                raise UnterminatedString("unterminated string literal", span)
+            tokens.append(Str(text=src[i + 1 : j], span=span))
+            i = j + 1
             continue
 
         if c.isascii() and c.isdigit():

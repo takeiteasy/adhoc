@@ -35,6 +35,16 @@ class NumLit(Node):
 
 
 @dataclass(frozen=True)
+class StrLit(Node):
+    """A string literal. Strings are not values (docs/grammar.md): a StrLit only ever
+    appears as a whole statement (ignored, comment-like) or as an argument of a call,
+    where it converts to a native Python str at the boundary and never becomes an ad
+    value."""
+
+    text: str
+
+
+@dataclass(frozen=True)
 class Var(Node):
     ch: str
 
@@ -49,6 +59,28 @@ class BinOp(Node):
     op: BinOperator
     lhs: Node
     rhs: Node
+
+
+@dataclass(frozen=True)
+class Call(Node):
+    """Postfix application `head(arg, ...)`. The static grammar rule: a trailer
+    `(…)` attaches only to name-ish heads (Var/BackslashRef) or to another Call —
+    number-headed parens stay juxtaposition (`2(x+1)` is still `2*(x+1)`)."""
+
+    head: Node
+    args: tuple[Node, ...]
+
+
+@dataclass(frozen=True)
+class FuncDef(Node):
+    """The reserved definition shape `f(x, y) = body` / `f(x, y) := body`. Parsed now so
+    the syntax is locked in, but evaluation reports it as not implemented until phase 1's
+    functions (closures, local scope, recursion)."""
+
+    name: str
+    params: tuple[str, ...]
+    force: bool
+    body: Node
 
 
 @dataclass(frozen=True)

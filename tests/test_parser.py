@@ -2,7 +2,20 @@ import pytest
 
 from adhoc.parser import IncompleteInput, ParseError, parse_program
 from adhoc.span import Span
-from adhoc.syntax import Assign, BinOp, BinOperator as B, NumLit, Seq, UnOp, UnaryOperator, Var
+from adhoc.syntax import (
+    Assign,
+    BackslashRef,
+    BinOp,
+    BinOperator as B,
+    Call,
+    FuncDef,
+    NumLit,
+    Seq,
+    StrLit,
+    UnOp,
+    UnaryOperator,
+    Var,
+)
 
 
 def test_incomplete_input_variants():
@@ -113,3 +126,124 @@ def test_lex_errors_surface_as_parse_errors():
         parse_program("$")
     assert not isinstance(e.value, IncompleteInput)
     assert e.value.msg == "unexpected character `$`"
+
+
+# --- stage 5: strings, application, reserved definitions ---
+
+
+def test_bare_string_statement_is_a_node():
+    node = parse_program('"note"')
+    assert isinstance(node, StrLit)
+    assert node.text == "note"
+    assert node.span == Span(0, 6)
+
+
+def test_string_in_expression_is_parse_error_at_opening_quote():
+    with pytest.raises(ParseError) as e:
+        parse_program('1 + "a"')
+    assert e.value.span == Span(4, 7)  # the whole literal, quote to quote
+
+
+def test_string_inside_arithmetic_arg_still_errors():
+    # A string may be a whole call argument, never an operand within one.
+    with pytest.raises(ParseError):
+        parse_program('\\py("f" + "g")')
+
+
+def test_application_with_var_head():
+    node = parse_program("f(x)")
+    match node:
+        case Call(head=Var(ch="f"), args=(Var(ch="x"),)):
+            assert node.span == Span(0, 4)
+        case _:
+            pytest.fail(f"expected application, got {node!r}")
+
+
+def test_application_chains_on_backslash_head():
+    node = parse_program('\\py("math.sqrt")(2)')
+    match node:
+        case Call(
+            head=Call(head=BackslashRef(name="py"), args=(StrLit(text="math.sqrt"),)),
+            args=(NumLit(text="2"),),
+        ):
+            pass
+        case _:
+            pytest.fail(f"expected chained \\py application, got {node!r}")
+
+
+def test_number_headed_parens_still_juxtapose():
+    node = parse_program("2(x+1)")
+    match node:
+        case BinOp(op=B.MUL, lhs=NumLit(text="2"), rhs=BinOp(op=B.ADD)):
+            pass
+        case _:
+            pytest.fail(f"expected juxtaposed multiplication, got {node!r}")
+
+
+def test_name_headed_parens_are_always_application():
+    # The static rule: `name(` applies, even where multiplication used to read.
+    node = parse_program("x(y+1)")
+    assert isinstance(node, Call)
+    assert isinstance(node.head, Var)
+
+
+def test_call_binds_tighter_than_pow():
+    node = parse_program("f(x)^2")
+    match node:
+        case BinOp(op=B.POW, lhs=Call(), rhs=NumLit(text="2")):
+            pass
+        case _:
+            pytest.fail(f"expected (f(x))^2, got {node!r}")
+
+
+def test_unary_minus_over_call():
+    node = parse_program("-f(x)")
+    match node:
+        case UnOp(op=UnaryOperator.NEG, operand=Call()):
+            pass
+        case _:
+            pytest.fail(f"expected -(f(x)), got {node!r}")
+
+
+def test_zero_arg_call():
+    node = parse_program("f()")
+    assert isinstance(node, Call)
+    assert node.args == ()
+    assert node.span == Span(0, 3)
+
+
+def test_def_shape_parses_into_funcdef():
+    node = parse_program("f(x, y) = x y")
+    assert isinstance(node, FuncDef)
+    assert node.name == "f"
+    assert node.params == ("x", "y")
+    assert node.force is False
+    assert isinstance(node.body, BinOp)
+    assert node.span == Span(0, 13)
+
+
+def test_def_force_spelling():
+    node = parse_program("f(x) := x")
+    assert isinstance(node, FuncDef)
+    assert node.force is True
+
+
+def test_def_attempt_with_non_ident_param_reparses_as_application():
+    # `f(2)` is not a definition shape — it falls back to an application expression.
+    node = parse_program("f(2)")
+    assert isinstance(node, Call)
+    assert not isinstance(node, FuncDef)
+
+
+def test_incomplete_def_offers_continuation():
+    for src in ["f(x) =", "f(x", "f("]:
+        with pytest.raises(IncompleteInput):
+            parse_program(src)
+
+
+def test_py_arity_enforced_at_parse_time():
+    with pytest.raises(ParseError) as e:
+        parse_program('\\py("a", "b")(1)')
+    assert "\\py" in e.value.msg and "one argument" in e.value.msg
+    with pytest.raises(ParseError):
+        parse_program("\\py()")
