@@ -180,8 +180,10 @@ def test_number_headed_parens_still_juxtapose():
             pytest.fail(f"expected juxtaposed multiplication, got {node!r}")
 
 
-def test_name_headed_parens_are_always_application():
-    # The static rule: `name(` applies, even where multiplication used to read.
+def test_name_headed_parens_always_parse_as_calls():
+    # Structure is static: `name(` builds a Call node, never a product. Whether that
+    # call applies or falls back to multiplication is decided at evaluation
+    # (dynamic juxtaposition — docs/grammar.md).
     node = parse_program("x(y+1)")
     assert isinstance(node, Call)
     assert isinstance(node.head, Var)

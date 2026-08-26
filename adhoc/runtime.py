@@ -359,28 +359,29 @@ class Engine:
         return obj
 
     def app(self, fn: Any, args: tuple[Any, ...], sid: int) -> AdValue | str:
-        """Postfix application `f(args)` lowered to one seam call. Arguments are already
-        native ad values (or literal strs headed for Python); the result converts back
-        through the matrix. Failures point at the whole call node's span."""
-        if isinstance(fn, str):
-            # A display-only string applied as a function — same rejection rule as
-            # everywhere else a transient string tries to act like a value.
-            self._fail(f"{nshow(fn)} is not a function", sid)
-        if not callable(fn):
-            self._fail(f"{nshow(fn)} is not a function", sid)
-        try:
-            result = fn(*args)
-        except NumError:
-            raise
-        except EvalError:
-            raise
-        except Exception as e:
-            name = getattr(fn, "__name__", None) or "<callable>"
-            self._fail(f"{name}: {type(e).__name__}: {e}", sid)
-        try:
-            return _to_ad(result)
-        except NumError as e:
-            self._fail(e.args[0], sid)
+        """Postfix application `f(args)` lowered to one seam call, with dynamic
+        juxtaposition: a callable head applies; a non-callable head with exactly one
+        argument falls back to the paper product (`x(y+1)` is `x*(y+1)`); any other
+        non-callable shape fails at the call's span. The fallback means identical source
+        can read as product or application depending on what the head is bound to —
+        accepted deliberately (docs/grammar.md)."""
+        if callable(fn):
+            try:
+                result = fn(*args)
+            except NumError:
+                raise
+            except EvalError:
+                raise
+            except Exception as e:
+                name = getattr(fn, "__name__", None) or "<callable>"
+                self._fail(f"{name}: {type(e).__name__}: {e}", sid)
+            try:
+                return _to_ad(result)
+            except NumError as e:
+                self._fail(e.args[0], sid)
+        if len(args) == 1:
+            return self.mul(fn, args[0], sid)
+        self._fail(f"{nshow(fn)} is not a function", sid)
 
     def _binop(self, f, a: AdValue, b: AdValue, sid: int) -> AdValue:
         try:

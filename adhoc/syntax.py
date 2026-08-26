@@ -63,9 +63,10 @@ class BinOp(Node):
 
 @dataclass(frozen=True)
 class Call(Node):
-    """Postfix application `head(arg, ...)`. The static grammar rule: a trailer
-    `(…)` attaches only to name-ish heads (Var/BackslashRef) or to another Call —
-    number-headed parens stay juxtaposition (`2(x+1)` is still `2*(x+1)`)."""
+    """Postfix application `head(arg, ...)`. The syntactic rule: a trailer `(…)`
+    attaches only to name-ish heads (Var/BackslashRef) or to another Call —
+    number-headed parens stay juxtaposition (`2(x+1)` is still `2*(x+1)`). Whether the
+    call applies or falls back to multiplication is decided at evaluation."""
 
     head: Node
     args: tuple[Node, ...]

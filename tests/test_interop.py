@@ -46,17 +46,6 @@ def test_number_literal_parens_stay_multiplication_end_to_end():
     assert last("2(x)", env) == "= 6"  # 2 * x, never an application of a literal
 
 
-def test_name_headed_parens_always_apply_end_to_end():
-    # The deliberate breaking change: `x(...)` applies even where multiplication
-    # used to read; a bound non-callable fails with a narrow span.
-    env: dict = {}
-    run_source("x = 3", env)
-    with pytest.raises(EvalError) as e:
-        run_source("x(2)", env)
-    assert e.value.msg == "3 is not a function"
-    assert e.value.span == Span(0, 4)  # the whole call node, head to close paren
-
-
 # --- conversion matrix: Python -> ad ---
 
 
@@ -163,10 +152,11 @@ def test_transient_string_in_arithmetic_is_typed_error():
     assert e.value.msg == "strings are not numbers"
 
 
-def test_applying_a_string_result_errors_quoted():
+def test_applying_a_string_result_falls_into_typed_product_error():
+    # `"q"` is not callable, one argument -> fallback multiplication -> typed seam error.
     with pytest.raises(EvalError) as e:
         run_source('\\py("str")("q")(1)')
-    assert e.value.msg == '"q" is not a function'
+    assert e.value.msg == "strings are not numbers"
 
 
 def test_unterminated_string_is_incomplete_not_fatal():
@@ -179,12 +169,29 @@ def test_unterminated_string_is_incomplete_not_fatal():
 # --- applying non-callables ---
 
 
-def test_applying_a_number_errors_narrowly():
+def test_dynamic_fallback_multiplies_for_non_callable_heads():
+    # The paper reading survives: a non-callable head with exactly one argument is
+    # juxtaposed multiplication, decided at evaluation by what the head holds.
     env: dict = {}
-    run_source("x = 5", env)
+    run_source("x = 3", env)
+    assert last("x(2)", env) == "= 6"
+    assert last("x(1 + 2)", env) == "= 9"
+    assert last("2(x)", env) == "= 6"  # number-headed: never even parsed as a call
+
+
+def test_unbound_call_head_still_reports_binding_error():
     with pytest.raises(EvalError) as e:
-        run_source("x(2)", env)
-    assert e.value.msg == "5 is not a function"
+        run_source("z(2)")
+    assert e.value.msg == "`z` is not bound"
+
+
+def test_noncallable_head_with_wrong_arity_still_errors():
+    env: dict = {}
+    run_source("x = 3", env)
+    for src in ["x()", "x(2, 3)"]:
+        with pytest.raises(EvalError) as e:
+            run_source(src, env)
+        assert e.value.msg == "3 is not a function"
 
 
 # --- reserved definitions ---

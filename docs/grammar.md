@@ -85,25 +85,33 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 as subtraction, never as `a * (-b)` — and **not** `"`, so a stray string in an expression is
 an error at the quote rather than an invisible factor.
 
-## Application: static name-headed parens
+## Application: dynamic name-headed parens
 
 A `(…)` trailer attaches **only** to name-ish heads — a single-character identifier, a
-`\`-name, or another call. This rule is static (purely syntactic), not dynamic:
+`\`-name, or another call. Number-headed parens never even parse as a call (`2(x+1)` is
+juxtaposition, always). What a call *does* is decided at evaluation by what the head holds:
 
 ```
-\py("math.sqrt")(2)   ->  resolve math.sqrt, apply to 2
+\py("math.sqrt")(2)   ->  head is callable — apply it
 s = \py("math.sqrt")  ->  s is bound to the callable
 s(4)                  ->  = 2.0
 f()                   ->  zero-argument call (legal)
-2(x+1)                ->  2 * (x+1)      -- number-headed parens stay juxtaposition
-x(y+1)                ->  apply x        -- NOT x*(y+1); deliberate breaking change
+x = 3; x(1+2)         ->  = 9    -- not callable, one argument: paper product x*(1+2)
+x(2, 3), x()          ->  ERROR  -- non-callable with ≠1 arguments can't be a product
 ```
 
-The last line is the cost of the rule, accepted on purpose: `name(` always means
-application, so arithmetic can never silently switch meaning depending on what a variable
-happens to hold. Applying a non-callable fails at evaluation with a narrow span pointing at
-the call (`3 is not a function`). In handwritten math `f(x)` means application anyway;
-products-with-parens are written number-first.
+The fallback rule: **callable → apply; non-callable with exactly one argument → multiply;
+anything else → `` `…` is not a function `` at the call's span.** This keeps the paper
+reading `x(y+1) = x·(y+1)` alive while letting bound functions apply — at the price that
+identical source text reads differently depending on what its head is bound to. Accepted
+deliberately: the alternative (static application) made every arithmetic `x(...)` an error,
+and multiplication-by-juxtaposition is the reading a calculator's users expect first.
+Rebinding a name from number to function flips old lines' meaning — visible in source, and
+the failure mode when it surprises you is a typed error, not a silent wrong value.
+
+Errors inside either reading point at the whole call node's span (wider than a bare binop's,
+the cost of deciding late). Applying a string result falls into the product path and dies as
+the usual typed "strings are not numbers".
 
 ## The reserved definition shape
 

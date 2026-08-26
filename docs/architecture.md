@@ -70,7 +70,9 @@ difference between them is *when* each calls it, not how the output looks.
   through `_e.assign`/`_e.reassign` (bind-or-compare semantics). The user environment is a
   plain dict kept separate from exec globals. Callables bind like any value; strings never
   enter it.
-- Application lowers to `_e.app(head, args, sid)`; `\py(path)` has its own seam method
+- Application lowers to `_e.app(head, args, sid)` with dynamic juxtaposition: callable
+  heads apply; a non-callable head with one argument falls back to multiplication;
+  anything else fails at the call's span. `\py(path)` has its own seam method
   resolving the dotted path and converting results back through the matrix
   (docs/numerics.md). The reserved `f(x) = body` definition shape parses and lowers to
   `_e.reserved(sid)`, which reports phase-1 work.

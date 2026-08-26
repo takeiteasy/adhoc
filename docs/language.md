@@ -25,8 +25,10 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Assignment (`x = 1`), equality-check-if-bound (`x = 1` again), force-reassign (`x := 1`).
 - `--` line comments, plus bare string literals as comment-like statements (`"a note"` is
   parsed and ignored — strings are literals, not values; docs/grammar.md).
-- Postfix application `f(x)`: static rule, name-headed parens always apply; number-headed
-  parens stay juxtaposition (`2(x+1)` is `2*(x+1)`). Zero-argument calls are legal.
+- Postfix application `f(x)`: name-headed parens parse as calls; at evaluation a callable
+  head applies, and a non-callable head with exactly one argument falls back to the paper
+  product (`x(y+1)` = `x*(y+1)`). Number-headed parens (`2(x+1)`) are always
+  juxtaposition. Zero-argument calls are legal.
 - The `\py` escape hatch: `\py("math.sqrt")(2)` → `= 1.4142135623730951`. Resolves any dotted
   Python path to a callable (full trust — same power as running Python itself); arguments and
   results convert at the boundary (docs/numerics.md). Returned strings print display-only and

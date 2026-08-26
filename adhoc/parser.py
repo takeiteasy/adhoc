@@ -16,9 +16,11 @@ precedence table in docs/grammar.md:
 (unary minus binds inside the exponent) and `2^3^2` right-associate. The base of `^` is a
 postfix node, so `-2^2` is `-(2^2)` and `f(x)^2` squares the result.
 
-Postfix application is *static*: a `(…)` trailer attaches only when the head so far is a
-name-ish node (`Var`, `BackslashRef`, or another `Call`). Number-headed parens never apply
-— `2(x+1)` still parses as juxtaposed multiplication. Strings are literals, not values:
+Postfix application is *syntactically* name-headed: a `(…)` trailer attaches only when the
+head so far is a name-ish node (`Var`, `BackslashRef`, or another `Call`). Number-headed
+parens never apply — `2(x+1)` still parses as juxtaposed multiplication. Whether a parsed
+call applies or falls back to multiplication is decided at evaluation (dynamic
+juxtaposition, docs/grammar.md). Strings are literals, not values:
 one alone may be a statement (ignored, comment-like) and one may be a whole call argument,
 but anywhere else in an expression it is a parse error at the opening quote. The function
 definition shape `f(x) = body` is recognized at statement level and parsed into `FuncDef`,
