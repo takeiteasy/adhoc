@@ -1,0 +1,23 @@
+-- basics.ad — arithmetic, precedence, assignment
+-- run with: adhoc run demos/basics.ad
+-- statements in a script file are separated by `;` (whitespace is insignificant)
+
+"a statement that is just a string is ignored -- literate notes like this";
+
+-- precedence works the way the notation reads
+1 + 2 * 3;
+(1 + 2) * 3;
+2^3^2;
+-2^2;
+
+-- identifiers are ONE character; juxtaposition is implicit multiplication
+α = 7;
+β = 3;
+αβ;
+2α;
+
+-- `=` binds an unbound name, then compares when bound
+x = 10;
+x = 10;
+x = 11;
+x := 12;

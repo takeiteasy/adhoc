@@ -1,0 +1,19 @@
+-- quadratic.ad — a worked example mixing exact arithmetic and one float crossing
+-- run with: adhoc run demos/quadratic.ad
+
+"x² − 5x + 6 = 0";
+
+a = 1;
+b = -5;
+c = 6;
+
+"the discriminant stays exact";
+d = b^2 - 4ac;
+
+"sqrt crosses into Python and back as a float";
+w = \py("math.sqrt");
+r = w(d);
+
+"the two roots";
+(-b + r)/2a;
+(-b - r)/2a;

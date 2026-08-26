@@ -1,0 +1,19 @@
+-- application.ad — calls, products, and how they share parentheses
+-- run with: adhoc run demos/application.ad
+
+x = 3;
+
+-- a name before parens parses as a call; if the name holds a plain number,
+-- the paper product reading wins (dynamic juxtaposition)
+x(1 + 2);
+
+-- number-headed parens are always multiplication
+2(x + 1);
+
+-- a bound callable applies
+s = \py("math.sqrt");
+s(s(16));
+
+-- multi-argument Python calls work as-is
+h = \py("math.hypot");
+h(3, 4);

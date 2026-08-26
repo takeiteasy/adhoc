@@ -11,7 +11,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   and continues on the next line rather than erroring immediately. A blank line cancels a
   pending continuation.
 - Script mode: `adhoc run script.ad` runs a file through the same grammar, printing one
-  `< ...` line per top-level statement.
+  `< ...` line per top-level statement. A file is one source and whitespace is
+  insignificant, so statements are separated by `;` (the REPL parses line-by-line, which
+  is why interactive input doesn't need them). See `demos/` for working examples.
 - Caret-pointing error diagnostics with source spans, e.g.:
   ```
   < ERROR! division by zero

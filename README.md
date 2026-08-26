@@ -49,7 +49,9 @@ python3 -m venv .venv
 < x = 3
 ```
 
-Or run a script: `.venv/bin/adhoc run script.ad`.
+Or run a script: `.venv/bin/adhoc run script.ad` (statements in a file are separated by
+`;`). Working examples live in [`demos/`](demos/) — start with
+`.venv/bin/adhoc run demos/basics.ad`.
 
 Pass `--emit-py` anywhere on the command line to print the generated Python source for each
 statement to stderr — a window into the lowering.
