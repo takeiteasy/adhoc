@@ -56,7 +56,7 @@ tests/                  -- pytest; ports of every cargo test
 | # | Stage | Exit criteria | Status |
 |---|-------|---------------|--------|
 | 0 | Scaffold: pyproject, package skeleton, pytest, `.venv` | `pytest` green; `python -m adhoc --version` works | done |
-| 1 | Frontend port: span/lexer/syntax/parser/diagnostic | All lexer/parser unit tests green incl. incomplete-input sentinels; caret output identical to Rust | |
+| 1 | Frontend port: span/lexer/syntax/parser/diagnostic | All lexer/parser unit tests green incl. incomplete-input sentinels; caret output identical to Rust | done |
 | 2 | Runtime seam: numerics, errors, formatting | All `num.rs` tests ported green | |
 | 3 | Lowering + driver | `interp.rs` suite passes end-to-end through compile/exec; span-narrowing tests pass; emitted-Python snapshot tests | |
 | 4 | CLI parity: REPL continuation/history, script mode | `tests/{repl,script}.rs` behaviors green; transcript diff of Rust vs Python binaries clean on an `.ad` corpus | |
