@@ -1,4 +1,4 @@
-"""The numeric seam: the only place arithmetic touches an adhoc value.
+"""The numeric seam plus the statement machinery the lowered code calls into.
 
 Mirrors `num.rs` one-to-one (`nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg`/`neq`/`nshow`).
 Values map onto Python natives — Int→`int`, Rat→`fractions.Fraction`, Float→`float` —
@@ -9,8 +9,11 @@ and arithmetic stays at the lowest tier that remains exact:
    `int` whenever its denominator is 1, or display would print `"1/1"`-style values.
 3. `float` — once an operation can't stay exact (float literal, non-integer exponent).
 
-Statement-level assignment/checking lives above this module (driver/compiler); this file
-is value-only.
+The `Engine` object is the seam's other half: every operation in generated code routes
+through it carrying a span id, which is what keeps runtime-error spans narrow (a
+sub-expression's failure points at the sub-expression, matching interp.rs's narrowing).
+Statement-level bind-or-compare lives here too, since `=` never lowers to Python
+assignment.
 
 ## Pinned divergences from the rug/MPFR backing (docs/numerics.md)
 
@@ -24,9 +27,13 @@ is value-only.
   positionally, matching `f64`'s `Display` (`10000000000000000.0`, `0.0000001`).
 """
 
+from collections.abc import Sequence
 from decimal import Decimal
 from fractions import Fraction
 import math
+from typing import Any, NoReturn
+
+from .span import Span
 
 AdValue = int | Fraction | float
 
@@ -182,3 +189,84 @@ def parse_literal(text: str) -> AdValue:
     if "." in text:
         return float(text)
     return int(text)
+
+
+class EvalError(Exception):
+    """A runtime failure with its message and, when known, the offending span."""
+
+    def __init__(self, msg: str, span: Span | None = None):
+        super().__init__(msg)
+        self.msg = msg
+        self.span = span
+
+
+class Engine:
+    """Everything lowered code calls into. Holds the user environment (a plain dict) and
+    the compiled unit's span table; every method takes the span id of the node that
+    emitted it so failures carry narrow spans. Formatted statement results accumulate in
+    `outputs` in evaluation order — the REPL prints only the last, script mode echoes all
+    (matching main.rs's run_and_echo vs repl.rs)."""
+
+    def __init__(self, env: dict[str, Any], spans: Sequence[Span]):
+        self.env = env
+        self.spans = spans
+        self.outputs: list[str] = []
+
+    def _fail(self, msg: str, sid: int) -> NoReturn:
+        raise EvalError(msg, self.spans[sid])
+
+    def var(self, name: str, sid: int) -> AdValue:
+        try:
+            return self.env[name]
+        except KeyError:
+            self._fail(f"`{name}` is not bound", sid)
+
+    def bref(self, name: str, sid: int) -> AdValue:
+        self._fail(f"`\\{name}` is not bound (phase 0 defines no builtins yet)", sid)
+
+    def _binop(self, f, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        try:
+            return f(a, b)
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def add(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(nadd, a, b, sid)
+
+    def sub(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(nsub, a, b, sid)
+
+    def mul(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(nmul, a, b, sid)
+
+    def div(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(ndiv, a, b, sid)
+
+    def pow(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(npow, a, b, sid)
+
+    def neg(self, a: AdValue, sid: int) -> AdValue:
+        return nneg(a)
+
+    def out(self, v: AdValue, sid: int) -> str:
+        result = f"= {nshow(v)}"
+        self.outputs.append(result)
+        return result
+
+    def assign(self, name: str, value: AdValue, sid: int) -> str:
+        if name in self.env:
+            matches = neq(self.env[name], value)
+            result = "true" if matches else "false"
+        else:
+            self.env[name] = value
+            result = f"{name} = {nshow(value)}"
+        self.outputs.append(result)
+        return result
+
+    def reassign(self, name: str, value: AdValue, sid: int) -> str:
+        if name not in self.env:
+            self._fail(f"`{name}` does not exist!", sid)
+        self.env[name] = value
+        result = f"{name} = {nshow(value)}"
+        self.outputs.append(result)
+        return result

@@ -40,16 +40,18 @@ tests/                  -- pytest; ports of every cargo test
 
 - One generated Python source *line* per `ad` statement, with a `lineno → span` table so any
   escaped exception maps back to a caret position.
-- `NumLit` → `Constant` (int without `.`, float with); single-char variables → `Name`
-  directly (unicode letters like `π` are legal Python identifiers); `\name` → mangled
-  `ad_name`.
-- Every operator routes through a runtime helper carrying a span id: `add/sub/mul/neg` are
-  thin wrappers (uniformity keeps error spans narrow everywhere); `div/pow` carry real logic
-  (exact Fraction paths, `0^-n` → division by zero).
-- Statement-level `x = e` never lowers to Python assignment — it lowers to a runtime call
-  implementing bind-or-compare; bare expressions wrap for `= v` printing. The environment is
-  the exec globals dict; reads stay plain name loads.
-- `--emit-py` dumps generated source for debugging.
+- `NumLit` lowers to a Python `Constant` (int without `.`, float with). Variables never
+  become Python name loads or stores — every read goes through `_e.var(name, sid)` and
+  every write through `_e.assign`/`_e.reassign`, all carrying the node's span id. That is
+  what keeps runtime-error spans narrow (`1 + x` points at `x`, not at the statement),
+  matching interp.rs's span-narrowing tests exactly.
+- Every operator routes through an `Engine` method: `add/sub/mul/neg` are thin wrappers;
+  `div/pow` carry real logic (exact Fraction paths, `0^-n` → division by zero).
+- Statement-level `x = e` never lowers to Python assignment — `_e.assign` implements
+  bind-or-compare; bare expressions wrap in `_e.out` for `= v` printing. The user
+  environment is a plain dict held by the engine, kept separate from exec globals.
+- Generated source rides on the `Compiled` unit for debugging (`--emit-py` surfaces it on
+  the CLI when the driver lands in stage 4).
 
 ## Stages
 
@@ -58,7 +60,7 @@ tests/                  -- pytest; ports of every cargo test
 | 0 | Scaffold: pyproject, package skeleton, pytest, `.venv` | `pytest` green; `python -m adhoc --version` works | done |
 | 1 | Frontend port: span/lexer/syntax/parser/diagnostic | All lexer/parser unit tests green incl. incomplete-input sentinels; caret output identical to Rust | done |
 | 2 | Runtime seam: numerics, errors, formatting | All `num.rs` tests ported green | done |
-| 3 | Lowering + driver | `interp.rs` suite passes end-to-end through compile/exec; span-narrowing tests pass; emitted-Python snapshot tests | |
+| 3 | Lowering + driver | `interp.rs` suite passes end-to-end through compile/exec; span-narrowing tests pass; emitted-Python snapshot tests | done |
 | 4 | CLI parity: REPL continuation/history, script mode | `tests/{repl,script}.rs` behaviors green; transcript diff of Rust vs Python binaries clean on an `.ad` corpus | |
 | 5 | Interop v1: `\py(...)`, application syntax, value-conversion rules + docs | `\py("math.sqrt")(2)` → `= 1.4142135623730951`; conversion-matrix tests | |
 | 6 | Cutover: tag `rust-final`, remove Rust tree, doc sweep | Repo is Python-only, all tests green | |
