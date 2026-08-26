@@ -243,6 +243,10 @@ def _show_callable(fn: Any) -> str:
     return f"<py {type(fn).__name__}>"
 
 
+def _name_text(name: str) -> str:
+    return name if len(name) == 1 else f"\\{name}"
+
+
 def _show_float(f: float) -> str:
     if math.isnan(f):
         return "NaN"
@@ -504,7 +508,7 @@ class Engine:
             result = "true" if matches else "false"
         else:
             self.env[name] = value
-            result = f"{name} = {nshow(value)}"
+            result = f"{_name_text(name)} = {nshow(value)}"
         self.outputs.append(result)
         return result
 
@@ -513,6 +517,6 @@ class Engine:
         if name not in self.env:
             self._fail(f"`{name}` does not exist!", sid)
         self.env[name] = value
-        result = f"{name} = {nshow(value)}"
+        result = f"{_name_text(name)} = {nshow(value)}"
         self.outputs.append(result)
         return result

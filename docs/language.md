@@ -26,6 +26,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Bare identifiers are exactly one character (ASCII or unicode); multi-character names,
   including user-defined function names, use the backslash sigil (`\fact`).
 - Assignment (`x = 1`), equality-check-if-bound (`x = 1` again), force-reassign (`x := 1`).
+- Multi-character variables use the same backslash sigil as multi-character functions:
+  `\bar = 100; \foo = 200; \foobar = \foo\bar`.
 - `--` line comments, plus bare string literals as comment-like statements (`"a note"` is
   parsed and ignored — strings are literals, not values; docs/grammar.md).
 - Postfix application `f(x)`: name-headed parens parse as calls; at evaluation a callable

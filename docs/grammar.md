@@ -16,7 +16,8 @@ written against — it should stay in lockstep with the code.
 - An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
   This is what makes `ab` unambiguous as `a * b` — see below.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
-  Backslash names may be built-ins or user-defined names; an unbound one fails at evaluation.
+  Backslash names may be built-ins or user-defined names, including variables; an unbound
+  one fails at evaluation.
 - Operators: `+ - * / ^ < > <= >= = := ( ) ,`. Statement separator: `;`.
 
 ## Grammar (EBNF)

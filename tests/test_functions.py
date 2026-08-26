@@ -57,6 +57,14 @@ def test_escaped_names_support_multi_character_functions():
     assert run_source("\\fact", env) == ["= <fn \\fact(n)>"]
 
 
+def test_escaped_names_support_multi_character_variables():
+    env = {}
+    assert run_source("\\bar = 100", env) == ["\\bar = 100"]
+    assert run_source("\\foo = 200", env) == ["\\foo = 200"]
+    assert run_source("\\foobar = \\foo\\bar", env) == ["\\foobar = 20000"]
+    assert run_source("\\foobar", env) == ["= 20000"]
+
+
 def test_piecewise_function_and_lazy_branch():
     env = define("m(x) = \\if(x >= 0, x, -x)")
     assert run_source("m(-5)", env) == ["= 5"]

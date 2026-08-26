@@ -155,7 +155,8 @@ class _Parser:
                 force = isinstance(self.advance(), ColonEq)
                 value = self.expr()
                 span = ident_tok.span.to(value.span)
-                return Assign(name=ident_tok.ch, force=force, value=value, span=span)
+                name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+                return Assign(name=name, force=force, value=value, span=span)
             if isinstance(self.peek2(), LParen):
                 saved = self.pos
                 defn = self._func_def_or_none()
