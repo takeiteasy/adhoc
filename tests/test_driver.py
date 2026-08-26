@@ -175,3 +175,22 @@ def test_env_persists_across_executions():
 
 def test_float_literal_display_parity_through_driver():
     assert last("0.5 + 0.5") == "= 1.0"
+
+
+def test_ranges_evaluate_display_and_can_be_bound():
+    env: dict = {}
+    assert last("r = 1,3..10", env) == "r = <range 1,3..10>"
+    assert list(env["r"]) == [1, 3, 5, 7, 9]
+    assert last("1..", env) == "= <range 1.. (lazy, infinite)>"
+
+
+def test_range_runtime_errors_point_at_range():
+    with pytest.raises(EvalError) as e:
+        run_source("3,3..10")
+    assert e.value.span == Span(0, 7)
+
+
+def test_range_lowering_routes_through_engine():
+    compiled = compile_source("1..3")
+    assert "_e.range(" in compiled.source
+    assert "range(" not in compiled.source.replace("_e.range(", "")

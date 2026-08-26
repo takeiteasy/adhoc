@@ -5,6 +5,7 @@ from adhoc.lexer import (
     Caret,
     ColonEq,
     Comma,
+    DotDot,
     Eq,
     Eof,
     Ident,
@@ -141,6 +142,13 @@ def test_unterminated_string_has_dedicated_error():
 
 def test_comma_token():
     assert kinds(",") == [Comma, Eof]
+
+
+def test_range_token_and_decimal_disambiguation():
+    toks = tokenize("1..2 1.25")
+    assert [type(t) for t in toks] == [Number, DotDot, Number, Number, Eof]
+    assert toks[1].span == Span(1, 3)
+    assert toks[3].text == "1.25"
 
 
 def test_py_name_lexes_from_known_table():

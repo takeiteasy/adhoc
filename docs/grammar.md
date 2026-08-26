@@ -18,7 +18,7 @@ written against — it should stay in lockstep with the code.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
   Backslash names may be built-ins or user-defined names, including variables; an unbound
   one fails at evaluation.
-- Operators: `+ - * / ^ < > <= >= = := ( ) ,`. Statement separator: `;`.
+- Operators: `+ - * / ^ < > <= >= = := .. ( ) ,`. Statement separator: `;`.
 
 ## Grammar (EBNF)
 
@@ -29,7 +29,8 @@ statement  ::= func-def
               | identifier ("=" | ":=") expr
               | expr ;
 
-expr       ::= comparison ;
+expr       ::= range ;
+range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
 comparison ::= additive (("<" | ">" | "<=" | ">=") additive)? ;
 additive   ::= multiplicative (("+" | "-") multiplicative)* ;
 multiplicative
@@ -57,7 +58,7 @@ Loosest to tightest:
 | Level | Operators | Associativity |
 |---|---|---|
 | 1 | `=` `:=` | statement level only, non-associative |
-| 2 | `..` (range) | non-associative — *reserved, phase 1* |
+| 2 | `..` (range) | non-associative |
 | 3 | `<` `>` `<=` `>=` | non-associative |
 | 4 | `+` `-` (binary) | left |
 | 5 | `*` `/` | left |
@@ -191,12 +192,28 @@ convention, not a claim that `ad` parses TeX. See `docs/language.md` for the ful
 - `x := e`, `x` unbound → error: `` `x` does not exist! ``
 - bare expression → prints `= v`
 
+## Ranges
+
+Ranges are lazy arithmetic progressions. Finite ranges include their endpoint when the
+step reaches it and stop before crossing it; infinite ranges never materialize their
+contents. The two-element form infers the step as `c - a`, and a zero step is an error.
+
+```
+1..4       -> <range 1..4>
+1..         -> <range 1.. (lazy, infinite)>
+1,3..10    -> <range 1,3..10>       -- 1, 3, 5, 7, 9
+10,8..1    -> <range 10,8..1>       -- 10, 8, 6, 4, 2
+```
+
+Ranges can be assigned and passed through the runtime, but `\sum`, `\prod`, and `\lim`
+do not consume them yet.
+
 A callable binds like any other value (`s = \py("math.sqrt")` prints `s = <py math.sqrt>`);
 a call returning a string is rejected instead of bound (strings are literals, see
 `## String literals`). Two non-numeric values never compare equal unless identical.
 
 ## Deferred
 
-`..` ranges, `Σ`/`Π`/`\lim`, logical operators, collections, the
+`Σ`/`Π`/`\lim`, logical operators, collections, the
 exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
 See `ROADMAP.md` and the tracker for the phase each lands in.

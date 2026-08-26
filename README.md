@@ -28,7 +28,8 @@ error diagnostics, postfix application (`f(x)`), and the `\py("math.sqrt")(2)` e
 Python — full trust, native conversion both ways (docs/numerics.md). Strings are literals,
 not values: they name Python paths and act as comment-like statements, nothing more
 (docs/grammar.md). The implementation is pure Python: `ad` lowers to Python's own AST and runs
-on CPython. Everything else — ranges, sums/products, the rest of the numeric tower, collections,
+on CPython. Ranges are lazy and support finite/infinite and inferred-step forms. Everything
+else — sums/products, the rest of the numeric tower, collections,
 symbolic algebra, graphing — is on the roadmap, not yet built. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it

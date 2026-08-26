@@ -10,6 +10,7 @@ from adhoc.syntax import (
     Call,
     FuncDef,
     NumLit,
+    Range,
     Seq,
     StrLit,
     UnOp,
@@ -36,6 +37,29 @@ def test_power_is_right_associative():
             pass
         case _:
             pytest.fail(f"expected right-associated pow chain, got {node!r}")
+
+
+def test_range_forms_and_spans():
+    finite = parse_program("1..10")
+    assert finite == Range(start=NumLit(text="1", span=Span(0, 1)), second=None,
+                           end=NumLit(text="10", span=Span(3, 5)), span=Span(0, 5))
+    infinite = parse_program("1,3..")
+    assert isinstance(infinite, Range)
+    assert infinite.second == NumLit(text="3", span=Span(2, 3))
+    assert infinite.end is None
+    assert infinite.span == Span(0, 5)
+
+
+def test_range_has_lower_precedence_than_addition():
+    left = parse_program("1 + 2..10")
+    right = parse_program("1..10 + 2")
+    assert isinstance(left, Range) and isinstance(left.start, BinOp)
+    assert isinstance(right, Range) and isinstance(right.end, BinOp)
+
+
+def test_range_is_non_associative():
+    with pytest.raises(ParseError):
+        parse_program("1..2..3")
 
 
 def test_unary_minus_binds_looser_than_pow():

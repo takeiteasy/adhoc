@@ -6,6 +6,7 @@ from fractions import Fraction
 
 from adhoc.runtime import (
     AdValue,
+    EvalError,
     DIVISION_BY_ZERO,
     NOT_A_NUMBER,
     STRINGS_NOT_NUMBERS,
@@ -20,6 +21,7 @@ from adhoc.runtime import (
     nmul,
     nsub,
     parse_literal,
+    RangeValue,
 )
 
 
@@ -172,6 +174,25 @@ def test_parse_literal_tiers_by_dot():
     assert isinstance(parse_literal("42"), int)
     assert parse_literal("0.5") == 0.5
     assert isinstance(parse_literal("0.5"), float)
+
+
+def test_range_value_is_lazy_and_inclusive():
+    values = iter(RangeValue(1, 1, 3))
+    assert [next(values) for _ in range(3)] == [1, 2, 3]
+    assert nshow(RangeValue(1, 1, 3)) == "<range 1..3>"
+
+
+def test_range_value_supports_descending_and_inferred_steps():
+    assert list(RangeValue(10, -2, 1, 8)) == [10, 8, 6, 4, 2]
+    assert list(RangeValue(1, Fraction(1, 2), 2)) == [1, Fraction(3, 2), 2]
+    assert list(RangeValue(1, 2, 6)) == [1, 3, 5]
+
+
+def test_range_zero_step_is_rejected_by_engine():
+    from adhoc.driver import run_source
+
+    with pytest.raises(EvalError, match="range step cannot be zero"):
+        run_source("3,3..10")
 
 
 def test_values_are_plain_python_types():

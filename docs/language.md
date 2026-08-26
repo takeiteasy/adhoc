@@ -46,10 +46,13 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Lazy conditionals: `\if(condition, then)` and `\if(condition, then, otherwise)`. A false
   two-argument conditional is a statement-level no-op; parenthesized sequences such as
   `(a = 1; a + 1)` support multi-statement branches.
+- Lazy arithmetic ranges: `a..b` is an inclusive step-1 range, `a..` is infinite, and
+  `a,c..b` / `a,c..` infer the step as `c-a`. Finite ranges stop before crossing an
+  unreachable endpoint; ranges display as `<range ...>` and can be assigned.
 
 ## Not yet implemented
 
-Everything phase 1 onward: ranges, `Σ`/`Π`/`\lim`, logical operators, tensors/arrays/sets, the rest of the
+Everything phase 1 onward: `Σ`/`Π`/`\lim`, logical operators, tensors/arrays/sets, the rest of the
 exact-arithmetic tower (symbolic closed forms, algebraic numbers, RRA), symbolic algebra
 (`\expr`/`\solve`/...), metaprogramming, and graphing. See `ROADMAP.md` and the tracker for
 status.

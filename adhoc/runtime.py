@@ -45,6 +45,7 @@ hatch by design: a script that can call `\\py` can do anything Python can.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 import importlib
@@ -63,6 +64,31 @@ NOT_A_NUMBER = "operands must be numbers"
 DEFAULT_FLOAT_PRECISION_BITS = 53
 
 _NUMERIC_TYPES = (int, float, Fraction)
+
+
+@dataclass(frozen=True)
+class RangeValue:
+    """A lazy arithmetic progression; `end=None` denotes an infinite range."""
+
+    start: AdValue
+    step: AdValue
+    end: AdValue | None
+    second: AdValue | None = None
+
+    def __iter__(self):
+        current = self.start
+        if self.end is None:
+            while True:
+                yield current
+                current = nadd(current, self.step)
+        elif self.step > 0:
+            while current <= self.end:
+                yield current
+                current = nadd(current, self.step)
+        else:
+            while current >= self.end:
+                yield current
+                current = nadd(current, self.step)
 
 
 class NumError(Exception):
@@ -220,6 +246,12 @@ def nshow(v: AdValue | str) -> str:
         return f"<fn {label}({', '.join(v.params)})>"
     if isinstance(v, str):
         return _show_str(v)
+    if isinstance(v, RangeValue):
+        start = nshow(v.start)
+        middle = f",{nshow(v.second)}" if v.second is not None else ""
+        end = "" if v.end is None else nshow(v.end)
+        suffix = " (lazy, infinite)" if v.end is None else ""
+        return f"<range {start}{middle}..{end}{suffix}>"
     if callable(v) and not isinstance(v, _NUMERIC_TYPES):
         return _show_callable(v)
     if isinstance(v, float):
@@ -326,6 +358,8 @@ def _to_ad(value: Any) -> Any:
         raise NumError("the call returned nothing")
     if isinstance(value, AdFunction):
         return value
+    if isinstance(value, RangeValue):
+        return value
     if isinstance(value, bool):  # before int — bool is an int subclass
         return int(value)
     if isinstance(value, int | float | Fraction):
@@ -413,6 +447,22 @@ class Engine:
     def le(self, a, b, sid): return self._compare("le", a, b, sid)
     def gt(self, a, b, sid): return self._compare("gt", a, b, sid)
     def ge(self, a, b, sid): return self._compare("ge", a, b, sid)
+
+    def range(self, start, second, end, sid):
+        try:
+            _reject_non_numeric(start)
+            if second is None:
+                step = 1
+            else:
+                _reject_non_numeric(second)
+                step = nsub(second, start)
+            if end is not None:
+                _reject_non_numeric(end)
+            if step == 0:
+                raise NumError("range step cannot be zero")
+            return RangeValue(start, step, end, second)
+        except NumError as e:
+            self._fail(e.args[0], sid)
 
     def if_expr(self, condition, then, otherwise, sid):
         if not isinstance(condition, bool):

@@ -76,6 +76,15 @@ class Compare(Node):
 
 
 @dataclass(frozen=True)
+class Range(Node):
+    """An inclusive finite or lazy infinite arithmetic progression."""
+
+    start: Node
+    second: Node | None
+    end: Node | None
+
+
+@dataclass(frozen=True)
 class IfExpr(Node):
     condition: Node
     then_branch: Node

@@ -54,6 +54,7 @@ from .lexer import (
     Token,
     Greater,
     GreaterEq,
+    DotDot,
     UnterminatedString,
     tokenize,
 )
@@ -70,6 +71,7 @@ from .syntax import (
     IfExpr,
     Node,
     NumLit,
+    Range,
     Seq,
     StrLit,
     UnOp,
@@ -206,6 +208,29 @@ class _Parser:
         return FuncDef(name=name, params=tuple(params), force=force, body=body, span=span)
 
     def expr(self) -> Node:
+        return self.range_expr()
+
+    # Range commas are only consumed when they introduce a following `..`, preserving
+    # ordinary call argument commas such as `f(1, 2)`.
+    def range_expr(self) -> Node:
+        start = self.comparison()
+        second = None
+        if isinstance(self.peek(), Comma):
+            saved = self.pos
+            self.advance()
+            candidate = self.comparison()
+            if not isinstance(self.peek(), DotDot):
+                self.pos = saved
+            else:
+                second = candidate
+        if not isinstance(self.peek(), DotDot):
+            return start
+        dotdot = self.advance()
+        end = None if isinstance(self.peek(), (Comma, RParen, Semi, Eof)) else self.comparison()
+        return Range(start=start, second=second, end=end,
+                     span=start.span.to((end or dotdot).span))
+
+    def comparison(self) -> Node:
         lhs = self.additive()
         ops = {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
                Greater: CompareOperator.GT, GreaterEq: CompareOperator.GE}

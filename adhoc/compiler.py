@@ -42,6 +42,7 @@ from .syntax import (
     IfExpr,
     Node,
     NumLit,
+    Range,
     Seq,
     StrLit,
     UnOp,
@@ -151,6 +152,12 @@ class _Lowerer:
             case Compare(op=op, lhs=lhs, rhs=rhs, span=span):
                 sid = self._push(span)
                 return _call(_CMP_METHODS[op], [self.expr(lhs), self.expr(rhs), pyast.Constant(sid)])
+            case Range(start=start, second=second, end=end, span=span):
+                sid = self._push(span)
+                return _call("range", [self.expr(start),
+                    self.expr(second) if second is not None else pyast.Constant(None),
+                    self.expr(end) if end is not None else pyast.Constant(None),
+                    pyast.Constant(sid)])
             case IfExpr(condition=condition, then_branch=then_branch, otherwise=otherwise, span=span):
                 sid = self._push(span)
                 thunk = lambda n: pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],

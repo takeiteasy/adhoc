@@ -11,7 +11,7 @@ adhoc/
 ├── lexer       — tokens: numbers, strings, identifiers, \-names, operators
 ├── syntax      — frozen AST dataclasses, each node carries its own Span
 ├── parser      — precedence climbing over docs/grammar.md
-├── runtime     — the numeric seam + Engine (everything lowered code calls into),
+├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
 ├── compiler    — lowering: adhoc AST → Python source, one line per statement
 ├── driver      — compile/exec pairing, error mapping back through spans
@@ -79,6 +79,9 @@ difference between them is *when* each calls it, not how the output looks.
   `\py(path)` has its own seam method
   resolving the dotted path and converting results back through the matrix
   (docs/numerics.md).
+- Range construction lowers to `_e.range(start, second, end, sid)`. `RangeValue` stores
+  numeric endpoints and step without materializing values; iteration computes each next
+  value through the numeric seam.
 - Statement outputs accumulate in order; the REPL prints only the last, script mode echoes
   every statement and stops at the first failure.
 
