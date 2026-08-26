@@ -5,3 +5,5 @@
   written against.
 - [`architecture.md`](architecture.md) — the crate layout and pipeline.
 - [`numerics.md`](numerics.md) — the `num` seam: what backs it today, what it's for.
+- [`rewrite-plan.md`](rewrite-plan.md) — the staged Rust → Python rewrite: decisions, target
+  shape, stages.

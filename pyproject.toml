@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "adhoc"
+version = "0.0.1"
+description = "ad — a math-notation calculator language"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[project.scripts]
+adhoc = "adhoc.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
