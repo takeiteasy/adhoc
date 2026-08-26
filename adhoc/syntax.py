@@ -20,6 +20,13 @@ class BinOperator(Enum):
     POW = auto()
 
 
+class CompareOperator(Enum):
+    LT = auto()
+    LE = auto()
+    GT = auto()
+    GE = auto()
+
+
 class UnaryOperator(Enum):
     NEG = auto()
 
@@ -62,6 +69,20 @@ class BinOp(Node):
 
 
 @dataclass(frozen=True)
+class Compare(Node):
+    op: CompareOperator
+    lhs: Node
+    rhs: Node
+
+
+@dataclass(frozen=True)
+class IfExpr(Node):
+    condition: Node
+    then_branch: Node
+    otherwise: Node | None
+
+
+@dataclass(frozen=True)
 class Call(Node):
     """Postfix application `head(arg, ...)`. The syntactic rule: a trailer `(…)`
     attaches only to name-ish heads (Var/BackslashRef) or to another Call —
@@ -74,9 +95,7 @@ class Call(Node):
 
 @dataclass(frozen=True)
 class FuncDef(Node):
-    """The reserved definition shape `f(x, y) = body` / `f(x, y) := body`. Parsed now so
-    the syntax is locked in, but evaluation reports it as not implemented until phase 1's
-    functions (closures, local scope, recursion)."""
+    """A function definition with a semicolon-sequenced body."""
 
     name: str
     params: tuple[str, ...]

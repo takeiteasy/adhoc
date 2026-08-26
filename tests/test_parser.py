@@ -128,7 +128,7 @@ def test_lex_errors_surface_as_parse_errors():
     assert e.value.msg == "unexpected character `$`"
 
 
-# --- stage 5: strings, application, reserved definitions ---
+# --- stage 5: strings, application, function definitions ---
 
 
 def test_bare_string_statement_is_a_node():

@@ -37,12 +37,17 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   cannot be bound.
 - Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`).
 - Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
+- User-defined functions: `f(x) = x^2`, local parameters and assignments, semicolon-
+  sequenced bodies, first-class function values, and recursion. Identifiers remain one
+  character, so recursive functions use names like `f`, not `fact`.
+- Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
+- Lazy conditionals: `\if(condition, then)` and `\if(condition, then, otherwise)`. A false
+  two-argument conditional is a statement-level no-op; parenthesized sequences such as
+  `(a = 1; a + 1)` support multi-statement branches.
 
 ## Not yet implemented
 
-Everything phase 1 onward: function *definitions* (the `f(x) = body` shape is reserved and
-parses today, but evaluating it reports "reserved for phase 1"), ranges, `Σ`/`Π`/`\lim`,
-piecewise conditionals, comparison/logical operators, tensors/arrays/sets, the rest of the
+Everything phase 1 onward: ranges, `Σ`/`Π`/`\lim`, logical operators, tensors/arrays/sets, the rest of the
 exact-arithmetic tower (symbolic closed forms, algebraic numbers, RRA), symbolic algebra
 (`\expr`/`\solve`/...), metaprogramming, and graphing. See `ROADMAP.md` and the tracker for
 status.

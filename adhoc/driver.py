@@ -23,7 +23,7 @@ def compile_source(src: str) -> Compiled:
 def execute(compiled: Compiled, env: dict) -> list[str]:
     """Run a compiled unit against `env`, returning one formatted string per statement."""
     g: dict = {}
-    g["_e"] = Engine(env, compiled.spans)
+    g["_e"] = Engine(env, compiled.spans, compiled.definitions)
     try:
         exec(compiled.code, g)  # noqa: S102 - generated from our own AST only
     except EvalError as e:

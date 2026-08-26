@@ -54,7 +54,7 @@ from typing import Any, NoReturn
 
 from .span import Span
 
-AdValue = int | Fraction | float
+AdValue = int | Fraction | float | bool
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -90,6 +90,8 @@ def _reject_non_numeric(*vals: AdValue) -> None:
     transient string (literals, not values) or a bound callable reaching an operator.
     The failure must stay a spanned NumError, never a TypeError escaping the engine."""
     for v in vals:
+        if isinstance(v, bool):
+            raise NumError("booleans are not numbers")
         if isinstance(v, str):
             raise NumError(STRINGS_NOT_NUMBERS)
         if not isinstance(v, _NUMERIC_TYPES):
@@ -211,6 +213,10 @@ def neq(a: AdValue, b: AdValue) -> bool:
 
 
 def nshow(v: AdValue | str) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, AdFunction):
+        return f"<fn {v.name}({', '.join(v.params)})>"
     if isinstance(v, str):
         return _show_str(v)
     if callable(v) and not isinstance(v, _NUMERIC_TYPES):
@@ -269,6 +275,24 @@ class EvalError(Exception):
 _MISSING = object()
 
 
+class AdFunction:
+    def __init__(self, name, params, body, closure):
+        self.name, self.params, self.body, self.closure = name, params, body, closure
+
+    def __call__(self, *args):
+        if len(args) != len(self.params):
+            raise EvalError(f"{self.name} takes {len(self.params)} arguments, got {len(args)}")
+        frame = dict(zip(self.params, args))
+        frame[self.name] = self
+        child = Engine(frame, self.body.spans, self.body.definitions, self.closure)
+        try:
+            scope = {"_e": child}
+            exec(self.body.code, scope)
+        except EvalError:
+            raise
+        return scope["_result"]
+
+
 def _resolve_dotted(path: str) -> Any:
     """Resolve `math.sqrt`-style paths: import the longest importable module prefix,
     then walk attributes over the rest. Bare names (`int`, `len`) resolve against
@@ -295,6 +319,8 @@ def _to_ad(value: Any) -> Any:
     representation; the caller attaches the call's span."""
     if value is None:
         raise NumError("the call returned nothing")
+    if isinstance(value, AdFunction):
+        return value
     if isinstance(value, bool):  # before int — bool is an int subclass
         return int(value)
     if isinstance(value, int | float | Fraction):
@@ -322,10 +348,13 @@ class Engine:
     `outputs` in evaluation order — the REPL prints only the last, script mode echoes all
     (matching main.rs's run_and_echo vs repl.rs)."""
 
-    def __init__(self, env: dict[str, Any], spans: Sequence[Span]):
+    def __init__(self, env: dict[str, Any], spans: Sequence[Span], definitions=None, parent=None):
         self.env = env
         self.spans = spans
+        self.definitions = definitions or {}
+        self.parent = parent
         self.outputs: list[str] = []
+        self.result: Any = None
 
     def _fail(self, msg: str, sid: int) -> NoReturn:
         raise EvalError(msg, self.spans[sid])
@@ -334,6 +363,8 @@ class Engine:
         try:
             return self.env[name]
         except KeyError:
+            if self.parent is not None:
+                return self.parent.var(name, sid)
             self._fail(f"`{name}` is not bound", sid)
 
     def bref(self, name: str, sid: int) -> AdValue:
@@ -344,6 +375,46 @@ class Engine:
     def reserved(self, sid: int) -> NoReturn:
         """The parsed-but-unimplemented definition shape `f(x) = body` lowers here."""
         self._fail("function definitions are not implemented yet (reserved for phase 1)", sid)
+
+    def define(self, name, params, force, sid):
+        fn = AdFunction(name, params, self.definitions[sid], self)
+        return self.reassign(name, fn, sid) if force else self.assign(name, fn, sid)
+
+    def set(self, name, value, sid):
+        self._check_assignable(value, sid)
+        self.env[name] = value
+        return value
+
+    def _compare(self, op, a, b, sid):
+        try:
+            _reject_non_numeric(a, b)
+            if isinstance(a, float) or isinstance(b, float):
+                a, b = float(a), float(b)
+            else:
+                a, b = Fraction(a), Fraction(b)
+            return {"lt": a < b, "le": a <= b, "gt": a > b, "ge": a >= b}[op]
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def lt(self, a, b, sid): return self._compare("lt", a, b, sid)
+    def le(self, a, b, sid): return self._compare("le", a, b, sid)
+    def gt(self, a, b, sid): return self._compare("gt", a, b, sid)
+    def ge(self, a, b, sid): return self._compare("ge", a, b, sid)
+
+    def if_expr(self, condition, then, otherwise, sid):
+        if not isinstance(condition, bool):
+            self._fail("\\if condition must be boolean", sid)
+        if condition:
+            return _to_ad(then())
+        if otherwise is None:
+            self._fail("\\if condition was false and has no otherwise branch", sid)
+        return _to_ad(otherwise())
+
+    def if_stmt(self, condition, then, sid):
+        if not isinstance(condition, bool):
+            self._fail("\\if condition must be boolean", sid)
+        if condition:
+            then()
 
     def py(self, path: Any, sid: int) -> Any:
         """`\\py("dotted.path")` — resolve a Python dotted path to a callable. The

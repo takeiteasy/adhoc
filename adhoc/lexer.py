@@ -136,6 +136,34 @@ class ColonEq(Token):
 
 
 @dataclass(frozen=True)
+class Less(Token):
+    @property
+    def describe(self) -> str:
+        return "`<`"
+
+
+@dataclass(frozen=True)
+class LessEq(Token):
+    @property
+    def describe(self) -> str:
+        return "`<=`"
+
+
+@dataclass(frozen=True)
+class Greater(Token):
+    @property
+    def describe(self) -> str:
+        return "`>`"
+
+
+@dataclass(frozen=True)
+class GreaterEq(Token):
+    @property
+    def describe(self) -> str:
+        return "`>=`"
+
+
+@dataclass(frozen=True)
 class LParen(Token):
     @property
     def describe(self) -> str:
@@ -271,6 +299,17 @@ def tokenize(src: str) -> list[Token]:
                 i += 2
                 continue
             raise LexError("unexpected character `:`", Span(pos, pos + len(c.encode("utf-8"))))
+
+        if c in "<>":
+            if i + 1 < n and entries[i + 1][1] == "=":
+                cls = LessEq if c == "<" else GreaterEq
+                tokens.append(cls(span=Span(pos, entries[i + 1][0] + 1)))
+                i += 2
+                continue
+            cls = Less if c == "<" else Greater
+            tokens.append(cls(span=Span(pos, pos + 1)))
+            i += 1
+            continue
 
         cls = _SINGLE_CHAR_TOKENS.get(c)
         if cls is not None:

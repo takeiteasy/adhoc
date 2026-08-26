@@ -194,13 +194,13 @@ def test_noncallable_head_with_wrong_arity_still_errors():
         assert e.value.msg == "3 is not a function"
 
 
-# --- reserved definitions ---
+# --- function definitions ---
 
 
-def test_func_def_evaluates_to_reserved_error():
-    with pytest.raises(EvalError) as e:
-        run_source("f(x) = x + 1")
-    assert e.value.msg == "function definitions are not implemented yet (reserved for phase 1)"
+def test_func_def_is_implemented():
+    env = {}
+    assert run_source("f(x) = x + 1", env) == ["f = <fn f(x)>"]
+    assert run_source("f(2)", env) == ["= 3"]
 
 
 # --- compiled-unit invariants survive the new statements ---

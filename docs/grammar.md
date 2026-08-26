@@ -20,7 +20,7 @@ written against — it should stay in lockstep with the code.
   cleanly, and an unbound one fails at evaluation (unbound name) rather than at the lexer
   (unknown token) — the two failure modes are intentionally distinct. `\py` is bound today;
   everything else still errors as unbound until its phase lands.
-- Operators: `+ - * / ^ = := ( ) ,`. Statement separator: `;`.
+- Operators: `+ - * / ^ < > <= >= = := ( ) ,`. Statement separator: `;`.
 
 ## Grammar (EBNF)
 
@@ -31,7 +31,8 @@ statement  ::= func-def
               | identifier ("=" | ":=") expr
               | expr ;
 
-expr       ::= additive ;
+expr       ::= comparison ;
+comparison ::= additive (("<" | ">" | "<=" | ">=") additive)? ;
 additive   ::= multiplicative (("+" | "-") multiplicative)* ;
 multiplicative
            ::= juxtaposed (("*" | "/") juxtaposed)* ;
@@ -42,9 +43,10 @@ postfix    ::= atom trailer* ;             (* application — see below *)
 trailer    ::= "(" args? ")" ;
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string ;
-func-def   ::= identifier "(" params? ")" ("=" | ":=") expr ;
+func-def   ::= identifier "(" params? ")" ("=" | ":=") statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
-atom       ::= number | identifier | "\"-name | "(" expr ")" ;
+atom       ::= number | identifier | "\"-name | "(" sequence ")" ;
+sequence   ::= statement (";" statement)* ;
 ```
 
 A trailing `;` after the last statement is tolerated (`1;` and `2;` both parse as a single
@@ -58,12 +60,13 @@ Loosest to tightest:
 |---|---|---|
 | 1 | `=` `:=` | statement level only, non-associative |
 | 2 | `..` (range) | non-associative — *reserved, phase 1* |
-| 3 | `+` `-` (binary) | left |
-| 4 | `*` `/` | left |
-| 5 | juxtaposition (implicit `*`) | left |
-| 6 | unary `-` | prefix |
-| 7 | `^` | right |
-| 8 | postfix `(…)` application | left |
+| 3 | `<` `>` `<=` `>=` | non-associative |
+| 4 | `+` `-` (binary) | left |
+| 5 | `*` `/` | left |
+| 6 | juxtaposition (implicit `*`) | left |
+| 7 | unary `-` | prefix |
+| 8 | `^` | right |
+| 9 | postfix `(…)` application | left |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -113,17 +116,40 @@ Errors inside either reading point at the whole call node's span (wider than a b
 the cost of deciding late). Applying a string result falls into the product path and dies as
 the usual typed "strings are not numbers".
 
-## The reserved definition shape
+## Functions and conditionals
 
-The statement shape `f(x, y) = …` / `f(x, y) := …` — an application-shaped left side — is
-**reserved for phase 1's function definitions**: it parses today (parameters must be
-identifiers) but evaluating it reports ``function definitions are not implemented yet
-(reserved for phase 1)``. Reserving the syntax now locks the grammar in before functions
-exist, the same way the precedence table reserves `..`.
+Function definitions are callable values. Names and parameters are still one-character
+identifiers, so the recursive example uses `f`, not `fact`:
 
-Until definitions land, callables come from Python: `s = \py("math.sqrt")` binds the
-resolved callable to `s`, and phase-1 definitions will lower into the same callable-value
-world.
+```
+f(x) = x^2 + 1
+f(3)                         ->  = 10
+f(a,b) = c = ab; cc          -- c and the parameters are call-local
+f(3,4)                       ->  = 144
+f(n) = \if(n <= 1, 1, n*f(n-1))
+```
+
+Function bodies are semicolon-separated statements. A call gets a fresh local frame;
+reads fall through to globals, while assignments never escape the call. The function's
+own name is installed in that frame before the body runs, enabling recursion. Definitions
+are first-class and display as `<fn f(x)>`.
+
+Because `;` also separates top-level statements and the source has no newline token, a
+function definition consumes the semicolon-separated body to the end of its input unit.
+In a script, put definitions after the top-level setup they need; call them from a later
+REPL input or source unit.
+
+`\if(condition, then)` and `\if(condition, then, otherwise)` are lazy, call-shaped
+conditionals. The selected branch alone is evaluated. The two-argument form is a
+statement-level no-op when its condition is false; in an expression requiring a value,
+that case reports an error. Parenthesized sequences provide multi-statement branches:
+
+```
+\if(x > 0, (y = x^2; y + 1), (y = -x; y * 2))
+```
+
+Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
+Booleans are valid values and conditions but are not numeric operands.
 
 ## String literals
 
@@ -162,7 +188,6 @@ convention, not a claim that `ad` parses TeX. See `docs/language.md` for the ful
 
 - `x = e`, `x` unbound → bind `x`, prints `x = v`
 - `x = e`, `x` bound → **compare** current value to `v`, prints `true` / `false`
-  (a printed form only — there is no boolean type until phase 1's comparison operators land)
 - `x := e`, `x` bound → rebind, prints `x = v`
 - `x := e`, `x` unbound → error: `` `x` does not exist! ``
 - bare expression → prints `= v`
@@ -173,7 +198,6 @@ a call returning a string is rejected instead of bound (strings are literals, se
 
 ## Deferred
 
-`..` ranges, `Σ`/`Π`/`\lim`, comparison/logical operators, function *definitions* (the shape
-is reserved and parsed — see above), piecewise conditionals, collections, the
+`..` ranges, `Σ`/`Π`/`\lim`, logical operators, collections, the
 exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
 See `ROADMAP.md` and the tracker for the phase each lands in.

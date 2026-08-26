@@ -28,14 +28,12 @@ later phases add language surface on top of it, they don't replace it.
 
 ### phase 1 — core language semantics
 
-- Functions: `f(a, b) = ...` definition, application, local scoping, `;`-sequenced bodies.
-  The definition shape is already reserved and parsed (evaluating reports "reserved for
-  phase 1"), and postfix application plus callable values exist since interop v1 —
-  definitions lower into that same callable world.
-- Recursion: function's own name bound within its own body scope.
-- Conditionals: piecewise `x \if x >= 0; -x \otherwise`.
-- Comparison/logical operators, added as needed (not enumerated in `DESIGN.md` — open, expect
-  `<`, `>`, `<=`, `>=`, `\and`, `\or`, `\not` at minimum).
+- Functions: `f(a, b) = ...` definition, application, local scoping, and `;`-sequenced bodies.
+  Definitions lower into the same callable world as interop values.
+- Recursion: function's own name is bound within its own body scope.
+- Conditionals: lazy `\if(condition, then[, otherwise])`; parenthesized sequence groups
+  support multi-statement branches. A false no-otherwise conditional is a statement no-op.
+- Comparisons: `<`, `>`, `<=`, `>=`; logical operators remain future work.
 - Ranges: `a..b`, `a..` (lazy infinite), `a,c..b` / `a,c..` (step-inferred).
 - `Σ`/`\sum`, `Π`/`\prod`, `\lim` — fold over a range; infinite-range `Σ`/`Π` as limit of partial
   sums.

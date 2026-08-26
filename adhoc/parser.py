@@ -23,8 +23,8 @@ call applies or falls back to multiplication is decided at evaluation (dynamic
 juxtaposition, docs/grammar.md). Strings are literals, not values:
 one alone may be a statement (ignored, comment-like) and one may be a whole call argument,
 but anywhere else in an expression it is a parse error at the opening quote. The function
-definition shape `f(x) = body` is recognized at statement level and parsed into `FuncDef`,
-which evaluation reports as reserved for phase 1.
+definition shape `f(x) = body` is recognized at statement level and parsed into `FuncDef`;
+function bodies may contain semicolon-separated statements.
 
 Spans are tagged at each node's *construction* site, not on the way out of each parse
 call: the `(expr)` branch of atoms returns the inner node unchanged, and tagging on unwind
@@ -41,6 +41,8 @@ from .lexer import (
     Ident,
     LexError,
     LParen,
+    Less,
+    LessEq,
     Minus,
     Number,
     Plus,
@@ -50,6 +52,8 @@ from .lexer import (
     Star,
     Str,
     Token,
+    Greater,
+    GreaterEq,
     UnterminatedString,
     tokenize,
 )
@@ -60,7 +64,10 @@ from .syntax import (
     BinOp,
     BinOperator,
     Call,
+    Compare,
+    CompareOperator,
     FuncDef,
+    IfExpr,
     Node,
     NumLit,
     Seq,
@@ -184,14 +191,29 @@ class _Parser:
         if not isinstance(self.peek(), (Eq, ColonEq)):
             return None
         force = isinstance(self.advance(), ColonEq)
-        body = self.expr()
+        body_stmts = [self.statement()]
+        while isinstance(self.peek(), Semi):
+            self.advance()
+            if isinstance(self.peek(), Eof):
+                break
+            body_stmts.append(self.statement())
+        body = body_stmts[0] if len(body_stmts) == 1 else Seq(
+            statements=tuple(body_stmts), span=body_stmts[0].span.to(body_stmts[-1].span)
+        )
         span = ident_tok.span.to(body.span)
         return FuncDef(
             name=ident_tok.ch, params=tuple(params), force=force, body=body, span=span
         )
 
     def expr(self) -> Node:
-        return self.additive()
+        lhs = self.additive()
+        ops = {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
+               Greater: CompareOperator.GT, GreaterEq: CompareOperator.GE}
+        if type(self.peek()) in ops:
+            tok = self.advance()
+            rhs = self.additive()
+            return Compare(op=ops[type(tok)], lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+        return lhs
 
     # additive ::= multiplicative (("+" | "-") multiplicative)* ;
     def additive(self) -> Node:
@@ -272,6 +294,11 @@ class _Parser:
                 and len(node.args) != 1
             ):
                 raise ParseError("`\\py` takes exactly one argument", node.span)
+            if isinstance(node.head, BackslashRef) and node.head.name == "if":
+                if len(node.args) not in (2, 3):
+                    raise ParseError("`\\if` takes two or three arguments", node.span)
+                node = IfExpr(node.span, node.args[0], node.args[1],
+                              node.args[2] if len(node.args) == 3 else None)
         return node
 
     # args ::= expr | string — a string may be a whole argument (the `\py` case) but
@@ -297,7 +324,15 @@ class _Parser:
                 return BackslashRef(name=tok.name, span=tok.span)
             case LParen():
                 self.advance()
-                inner = self.expr()
+                items = [self.statement()]
+                while isinstance(self.peek(), Semi):
+                    semi = self.advance()
+                    if isinstance(self.peek(), RParen):
+                        raise ParseError("expected `)`, found `;`", semi.span)
+                    items.append(self.statement())
+                inner = items[0] if len(items) == 1 else Seq(
+                    statements=tuple(items), span=items[0].span.to(items[-1].span)
+                )
                 self.expect(RParen, "`)`")
                 # Deliberately not retagged with the paren-inclusive span — see module docstring.
                 return inner

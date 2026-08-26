@@ -67,15 +67,18 @@ difference between them is *when* each calls it, not how the output looks.
   string statement lowers to `pass` — it produces no output but keeps the one-line-per-
   statement invariant the table depends on.
 - Variables never become Python name loads or stores — reads go through `_e.var`, writes
-  through `_e.assign`/`_e.reassign` (bind-or-compare semantics). The user environment is a
-  plain dict kept separate from exec globals. Callables bind like any value; strings never
-  enter it.
+  through `_e.assign`/`_e.reassign` (bind-or-compare semantics). Function calls create a
+  local frame with global read-through; body writes use `_e.set` and never escape. The user
+  environment is a plain dict kept separate from exec globals. Callables bind like any
+  value; strings never enter it.
 - Application lowers to `_e.app(head, args, sid)` with dynamic juxtaposition: callable
   heads apply; a non-callable head with one argument falls back to multiplication;
-  anything else fails at the call's span. `\py(path)` has its own seam method
+  anything else fails at the call's span. Definitions lower to callable `AdFunction` values;
+  each body has its own compiled code and span table, and recursion pre-binds the function
+  name in the call frame. `\if` is a lazy compiler special form (not an eager ordinary call).
+  `\py(path)` has its own seam method
   resolving the dotted path and converting results back through the matrix
-  (docs/numerics.md). The reserved `f(x) = body` definition shape parses and lowers to
-  `_e.reserved(sid)`, which reports phase-1 work.
+  (docs/numerics.md).
 - Statement outputs accumulate in order; the REPL prints only the last, script mode echoes
   every statement and stops at the first failure.
 
