@@ -92,6 +92,29 @@ class IfExpr(Node):
 
 
 @dataclass(frozen=True)
+class Fold(Node):
+    """`\\sum`/`\\prod` (≡ `Σ`/`Π`): bind a loop variable over a range and fold
+    ADD/MUL over the body. The bound variable scopes like a function parameter:
+    reads of other names fall through to globals, writes stay local."""
+
+    op: BinOperator
+    var: str
+    rng: Range
+    body: Node
+
+
+@dataclass(frozen=True)
+class Limit(Node):
+    """`\\lim(x=a) f(x)` — numeric only: approximate the limiting value of the body
+    as `var` approaches the point, sharing the tolerance/convergence mechanism with
+    infinite-range folds."""
+
+    var: str
+    point: Node
+    body: Node
+
+
+@dataclass(frozen=True)
 class Call(Node):
     """Postfix application `head(arg, ...)`. The syntactic rule: a trailer `(…)`
     attaches only to name-ish heads (Var/BackslashRef) or to another Call —

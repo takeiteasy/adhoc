@@ -8,7 +8,9 @@ from adhoc.syntax import (
     BinOp,
     BinOperator as B,
     Call,
+    Fold,
     FuncDef,
+    Limit,
     NumLit,
     Range,
     Seq,
@@ -17,6 +19,17 @@ from adhoc.syntax import (
     UnaryOperator,
     Var,
 )
+
+
+def shape(node):
+    """A span-free structural snapshot, for comparing trees built from source spellings
+    of different byte widths (`Σ` vs `\sum`)."""
+    if not hasattr(node, "__dataclass_fields__"):
+        return repr(node)
+    return (
+        type(node).__name__,
+        {k: shape(v) for k, v in vars(node).items() if k != "span"},
+    )
 
 
 def test_incomplete_input_variants():
@@ -273,3 +286,120 @@ def test_py_arity_enforced_at_parse_time():
     assert "\\py" in e.value.msg and "one argument" in e.value.msg
     with pytest.raises(ParseError):
         parse_program("\\py()")
+
+
+# --- special forms: \sum / \prod / \lim folds and limits ---
+
+
+def test_sum_finite_fold_ast_and_spans():
+    node = parse_program("\\sum(i=1..10) i^2")
+    assert node == Fold(
+        op=B.ADD,
+        var="i",
+        rng=Range(start=NumLit(text="1", span=Span(7, 8)), second=None,
+                  end=NumLit(text="10", span=Span(10, 12)), span=Span(7, 12)),
+        body=BinOp(op=B.POW, lhs=Var(ch="i", span=Span(14, 15)),
+                   rhs=NumLit(text="2", span=Span(16, 17)), span=Span(14, 17)),
+        span=Span(0, 17),
+    )
+
+
+def test_prod_folds_with_mul():
+    node = parse_program("\\prod(j=1..5) j")
+    match node:
+        case Fold(op=B.MUL, var="j", rng=Range(), body=Var(ch="j")):
+            pass
+        case _:
+            pytest.fail(f"expected product fold, got {node!r}")
+
+
+def test_unicode_and_ascii_folds_have_identical_structure():
+    ascii_sum = parse_program("\\sum(i=1..3) i")
+    unicode_sum = parse_program("Σ(i=1..3) i")
+    ascii_prod = parse_program("\\prod(k=1..3) k")
+    unicode_prod = parse_program("Π(k=1..3) k")
+    assert shape(ascii_sum) == shape(unicode_sum)
+    assert shape(ascii_prod) == shape(unicode_prod)
+
+
+def test_infinite_binder_range_has_no_end():
+    node = parse_program("\\sum(n=1..) n^2")
+    match node:
+        case Fold(rng=Range(second=None, end=None)):
+            pass
+        case _:
+            pytest.fail(f"expected infinite binder range, got {node!r}")
+
+
+def test_binder_accepts_step_form_ranges():
+    node = parse_program("\\sum(k=1,3..9) k")
+    match node:
+        case Fold(rng=Range(start=NumLit(text="1"), second=NumLit(text="3"),
+                            end=NumLit(text="9"))):
+            pass
+        case _:
+            pytest.fail(f"expected stepped binder range, got {node!r}")
+
+
+def test_fold_body_is_greedy_up_to_the_delimiter():
+    node = parse_program("\\sum(i=1..2) i + 100")
+    match node:
+        case Fold(body=BinOp(op=B.ADD, lhs=Var(ch="i"), rhs=NumLit(text="100"))):
+            pass
+        case _:
+            pytest.fail(f"expected greedy fold body over the addition, got {node!r}")
+
+
+def test_enclosing_parentheses_end_the_fold_body_early():
+    # Greedy body runs to the nearest delimiter: wrapping the fold lets the
+    # `* 2` apply to the completed total rather than join the folded body.
+    node = parse_program("(\\sum(i=1..2) i + 1) * 2")
+    match node:
+        case BinOp(op=B.MUL, lhs=Fold(op=B.ADD,
+                                      body=BinOp(op=B.ADD, lhs=Var(ch="i"),
+                                                 rhs=NumLit(text="1"))),
+                   rhs=NumLit(text="2")):
+            pass
+        case _:
+            pytest.fail(f"expected (fold + 1) * 2, got {node!r}")
+
+
+def test_limit_ast_shape():
+    node = parse_program("\\lim(x=0) f(x)")
+    assert node == Limit(
+        var="x",
+        point=NumLit(text="0", span=Span(7, 8)),
+        body=Call(head=Var(ch="f", span=Span(10, 11)), args=(Var(ch="x", span=Span(12, 13)),),
+                  span=Span(10, 14)),
+        span=Span(0, 14),
+    )
+
+
+def test_fold_requires_a_range_to_bind():
+    with pytest.raises(ParseError) as e:
+        parse_program("\\sum(i=1) i")
+    assert "needs a range" in e.value.msg
+
+
+def test_incomplete_special_forms_offer_continuation():
+    for src in ["\\sum(i=", "\\sum(i=1", "\\sum(i=1..", "\\lim(x="]:
+        with pytest.raises(IncompleteInput):
+            parse_program(src)
+
+
+def test_missing_body_after_closed_binder_is_incomplete():
+    with pytest.raises(IncompleteInput):
+        parse_program("\\sum(i=1..10)")
+
+
+def test_non_binder_use_of_special_heads_stays_an_application():
+    # The (ident = shape is what commits a special form; anything else keeps the
+    # ordinary call path (and fails at evaluation like any other unbound name).
+    node = parse_program("\\sum(2)")
+    match node:
+        case Call(head=BackslashRef(name="sum"), args=(NumLit(text="2"),)):
+            pass
+        case _:
+            pytest.fail(f"expected ordinary application fallback, got {node!r}")
+    node = parse_program("Σ(x)")
+    assert isinstance(node, Call)

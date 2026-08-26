@@ -49,10 +49,20 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Lazy arithmetic ranges: `a..b` is an inclusive step-1 range, `a..` is infinite, and
   `a,c..b` / `a,c..` infer the step as `c-a`. Finite ranges stop before crossing an
   unreachable endpoint; ranges display as `<range ...>` and can be assigned.
+- Folds: `\sum(i=1..10) i^2` → `= 385` and `\prod(j=1..5) j` → `= 120`, with the unicode
+  spellings `Σ` and `Π`. The loop variable scopes like a function parameter (reads fall
+  through, writes stay local, nothing leaks). Finite ranges accumulate exactly.
+- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
+  — approximate iteration in the float tier until values stabilize within tolerance,
+  erroring at the iteration cap rather than returning a misleading partial (`\sum(i=1..) i`
+  errors; docs/numerics.md).
+- Numeric limits: `\lim(x=0) x/x` → `= 1.0` approximates by two-sided shrinking-step
+  probing without ever evaluating at the anchor. Disagreeing one-sided limits (jump
+  discontinuities) report `` limit does not exist ``.
 
 ## Not yet implemented
 
-Everything phase 1 onward: `Σ`/`Π`/`\lim`, logical operators, tensors/arrays/sets, the rest of the
+Everything phase 2 onward: logical operators, tensors/arrays/sets, the rest of the
 exact-arithmetic tower (symbolic closed forms, algebraic numbers, RRA), symbolic algebra
 (`\expr`/`\solve`/...), metaprogramming, and graphing. See `ROADMAP.md` and the tracker for
 status.
@@ -67,10 +77,12 @@ so `ad` source reads like the ASCII you'd already type to write the same express
 see `README.md`. This is a naming convention, not a claim that `ad` parses TeX: there are no
 layout or document commands, and the `\`-name table is a small fixed set.
 
-One `\`-name is bound today: `\py("dotted.path")` resolves into Python and returns the callable
-(docs/grammar.md). The rest still recognize and lex cleanly, but evaluating one is currently
-an "unbound name" error, not a lex error — they're seeded so later phases only need to add
-bindings, not touch the lexer.
+Two `\`-names have semantics today: `\py("dotted.path")` resolves into Python and returns
+the callable (docs/grammar.md), and `\sum`/`\prod`/`\lim` are the fold and limit special
+forms (docs/grammar.md, `## Special forms`) — with `Σ` ≡ `\sum` and `Π` ≡ `\prod`. The rest
+still recognize and lex cleanly, but evaluating one is currently an "unbound name" error,
+not a lex error — they're seeded so later phases only need to add bindings, not touch the
+lexer.
 
 ## Known limitations (not bugs)
 

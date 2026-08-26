@@ -25,9 +25,9 @@ written against — it should stay in lockstep with the code.
 ```
 program    ::= statement (";" statement)* ";"? ;
 statement  ::= func-def
-              | string
-              | identifier ("=" | ":=") expr
-              | expr ;
+               | string
+               | identifier ("=" | ":=") expr
+               | expr ;
 
 expr       ::= range ;
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
@@ -50,6 +50,14 @@ sequence   ::= statement (";" statement)* ;
 
 A trailing `;` after the last statement is tolerated (`1;` and `2;` both parse as a single
 statement, not as a statement followed by an empty one).
+
+Special forms sit in postfix position but are not applications — their first parenthesized
+argument is a binding, not a general expression (see `## Special forms`):
+
+```
+fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident "=" expr ")" expr ;
+limit      ::= "\lim" "(" ident "=" expr ")" expr ;
+```
 
 ## Precedence table
 
@@ -151,6 +159,47 @@ that case reports an error. Parenthesized sequences provide multi-statement bran
 Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
 Booleans are valid values and conditions but are not numeric operands.
 
+## Special forms: folds and limits
+
+`\sum`, `\prod`, `\lim`, and the unicode spellings `Σ` ≡ `\sum`, `Π` ≡ `\prod` are
+**special forms**, not functions: their first parenthesized argument is a binding — an
+identifier, `=`, then the bound expression — which general expressions cannot contain.
+The parser recognizes the `(ident =` shape after one of these heads; any other use keeps
+the ordinary call path (and fails at evaluation like any other unbound name).
+
+```
+\sum(i=1..10) i^2            ->  = 385          -- fold + over the range
+\prod(j=1..5) j              ->  = 120          -- fold *
+Σ(k=1,3..7) k                ->  = 16           -- stepped ranges bind too
+\lim(x=0) x/x                ->  = 1.0          -- numeric limit; anchor never evaluated
+```
+
+**Body extent**: the body extends greedily over the rest of the current expression, up to
+the enclosing delimiter (`,` `)` `;` or end of input). Parenthesize to end it earlier:
+`\sum(i=1..2) (i + 1) * 2` folds `i + 1`, then doubles the total, while wrapping the whole
+fold — `(\sum(i=1..2) i + 1) * 2` — adds 1 to the total and then doubles it.
+
+**Scoping** mirrors function parameters exactly: each term or probe evaluates in a fresh
+frame holding only the loop variable. Reads of other names fall through to the enclosing
+scope, assignments stay local to the iteration, and the loop variable never leaks into the
+outer environment.
+
+**Finite vs infinite**: folding over a finite range accumulates exactly at the lowest
+tier that stays exact (`\sum(i=1..10) i^2` is an exact integer all the way through). A
+lazy infinite range switches to approximate iteration: partial sums/products advance in
+the float tier until consecutive values stabilize within `CONVERGENCE_TOLERANCE`
+(`docs/numerics.md`), hard-capped at `MAX_TERMS`. The cap produces a typed error rather
+than returning a possibly-misleading partial result; so does any non-finite partial.
+
+**Limits are numeric only** — this is a calculator, not a CAS. `\lim(x=a) body` probes
+both sides with geometrically shrinking steps and never binds `x` to `a` itself. Each
+side must stabilize within `MAX_PROBES`; sides stabilizing further than twice the
+tolerance apart report `` limit does not exist: left and right estimates disagree ``
+(jump discontinuities like `\lim(x=0) \if(x < 0, -1, 1)`). A pole (`\lim(x=0) 1/x`)
+never stabilizes and reports probe exhaustion instead. Cancellation-prone spellings of
+removable singularities (e.g. `(x^2 - 1)/(x - 1)` near 1) lose float precision as steps
+shrink and may fail to stabilize — write them simplified.
+
 ## String literals
 
 Strings are **literals, not values**. There is no string type in the value model; a string
@@ -205,8 +254,8 @@ contents. The two-element form infers the step as `c - a`, and a zero step is an
 10,8..1    -> <range 10,8..1>       -- 10, 8, 6, 4, 2
 ```
 
-Ranges can be assigned and passed through the runtime, but `\sum`, `\prod`, and `\lim`
-do not consume them yet.
+Ranges can be assigned and passed through the runtime; folds bind them directly
+(`\sum(i=1..10) …`, `Σ(i=1..) …` — see `## Special forms`).
 
 A callable binds like any other value (`s = \py("math.sqrt")` prints `s = <py math.sqrt>`);
 a call returning a string is rejected instead of bound (strings are literals, see
@@ -214,6 +263,6 @@ a call returning a string is rejected instead of bound (strings are literals, se
 
 ## Deferred
 
-`Σ`/`Π`/`\lim`, logical operators, collections, the
+Logical operators, collections, the
 exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
 See `ROADMAP.md` and the tracker for the phase each lands in.

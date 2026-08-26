@@ -1,0 +1,37 @@
+-- folds.ad — sigma/pi folds and numeric limits
+-- run with: adhoc run demos/folds.ad
+
+-- the loop variable binds over a range; finite folds stay exact
+\sum(i=1..10) i^2;
+\prod(j=1..5) j;
+
+-- unicode spellings are the same names
+Σ(k=1,3..7) k;
+
+-- the body is greedy: it runs to the nearest delimiter, so this folds
+-- over `i + 1` (terms 2 and 3), then doubles the total
+(\sum(i=1..2) i + 1) * 2;
+
+-- an infinite range becomes a limit of partial sums (float tier)
+-- zeta(2) ~ 1.6449340
+\sum(i=1..) 1/i^2;
+
+-- sinh(pi)/pi ~ 3.6760779
+\prod(i=1..) (1 + 1/i^2);
+
+-- non-convergence errors rather than guessing:
+-- \sum(i=1..) i;
+--    < ERROR! \sum did not converge within 2000000 terms
+
+-- limits probe both sides with shrinking steps and never evaluate
+-- at the anchor itself; results are float-tier approximations
+\lim(t=2) t^2 + 3t;
+\lim(x=0) x/x;
+
+-- jump discontinuities report a missing limit instead of picking a side:
+-- \lim(x=0) \if(x < 0, -1, 1);
+--    < ERROR! limit does not exist: left and right estimates disagree
+
+-- note: like every function definition, `f(x) = ...` would swallow the
+-- semicolon-separated statements after it into its body, so standalone
+-- expressions can't follow one in the same source unit (docs/grammar.md)

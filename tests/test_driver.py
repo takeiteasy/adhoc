@@ -194,3 +194,107 @@ def test_range_lowering_routes_through_engine():
     compiled = compile_source("1..3")
     assert "_e.range(" in compiled.source
     assert "range(" not in compiled.source.replace("_e.range(", "")
+
+
+# --- folds and limits (tickets: sigma/pi finite and infinite folds, \lim) ---
+
+
+def test_finite_folds_accumulate_exactly():
+    env: dict = {}
+    checks = [
+        ("\\sum(i=1..10) i^2", "= 385"),
+        ("\\prod(j=1..5) j", "= 120"),
+        ("\\sum(i=1,3..7) i", "= 16"),
+        ("\\sum(i=1..4) i*0.5", "= 5.0"),  # float literal promotes the term tier
+    ]
+    for src, expected in checks:
+        assert last(src, env) == expected, f"for {src}"
+
+
+def test_empty_ranges_fold_to_identity():
+    assert last("\\sum(i=5..4) i") == "= 0"
+    assert last("\\prod(i=5..4) i") == "= 1"
+
+
+def test_unicode_fold_spellings_evaluate_identically():
+    env: dict = {}
+    ascii_out = last("\\sum(i=1..10) i^2", env)
+    unicode_out = last("Σ(i=1..10) i^2", env)
+    assert ascii_out == unicode_out == "= 385"
+
+
+def test_fold_loop_variable_scopes_like_a_parameter():
+    env: dict = {"k": 99}
+    assert last("\\sum(i=1..3) i*k", env) == "= 594"
+    # The loop variable never leaks; the outer binding is untouched.
+    assert set(env) == {"k"}
+    with pytest.raises(EvalError, match="`i` is not bound"):
+        run_source("i", {})
+
+
+def test_infinite_geometric_sum_converges_to_one():
+    out = last("\\sum(i=1..) 1/2^i")
+    assert out.startswith("= ")
+    assert abs(float(out[2:]) - 1.0) <= 1e-9
+
+
+def test_infinite_zeta_demo_converges_within_display_precision():
+    out = last("\\sum(i=1..) 1/i^2")
+    assert abs(float(out[2:]) - 1.6449340668482264) <= 1e-5
+
+
+def test_infinite_product_demo():
+    # prod_{i>=1} (1 + 1/i^2) = sinh(pi)/pi ~ 3.67607791
+    out = last("\\prod(i=1..) (1 + 1/i^2)")
+    assert abs(float(out[2:]) - 3.676077910377989) <= 1e-4
+
+
+def test_non_converging_infinite_fold_errors_at_the_cap(monkeypatch):
+    import adhoc.runtime as runtime
+    monkeypatch.setattr(runtime, "MAX_TERMS", 50)
+    with pytest.raises(EvalError) as e:
+        run_source("\\sum(i=1..) i")
+    assert e.value.msg == "\\sum did not converge within 50 terms"
+    assert e.value.span == Span(0, 13)
+
+
+def test_infinite_fold_hitting_nan_errors_immediately():
+    with pytest.raises(EvalError) as e:
+        run_source("\\sum(i=1..) 0.0/0.0")
+    assert e.value.msg == "\\sum diverged: partial value is not finite"
+
+
+def test_limit_of_polynomial():
+    out = last("\\lim(x=2) x^2 + 3x")
+    assert abs(float(out[2:]) - 10.0) <= 1e-9
+
+
+def test_limit_approximates_from_both_sides_symmetrically():
+    out = last("\\lim(t=0.5) t*t - 2t")
+    assert abs(float(out[2:]) + 0.75) <= 1e-9
+
+
+def test_limit_never_evaluates_the_body_at_the_anchor():
+    # Probes never bind the loop variable to the anchor itself: if one did,
+    # `x/x` would raise division-by-zero at x=0 instead of returning 1.
+    assert last("\\lim(x=0) x/x") == "= 1.0"
+
+
+def test_jump_discontinuity_reports_a_missing_limit():
+    with pytest.raises(EvalError) as e:
+        run_source("\\lim(x=0) \\if(x < 0, -1, 1)")
+    assert e.value.msg == "limit does not exist: left and right estimates disagree"
+    assert e.value.span == Span(0, 27)
+
+
+def test_pole_never_stabilizes_and_reports_non_convergence():
+    with pytest.raises(EvalError) as e:
+        run_source("\\lim(x=0) 1/x")
+    assert "\\lim did not converge within" in e.value.msg
+
+
+def test_fold_and_limit_lower_through_engine_calls():
+    compiled = compile_source("\\sum(i=1..2) i; \\lim(x=1) x")
+    assert "_e.fold(" in compiled.source
+    assert "_e.limit(" in compiled.source
+    assert compiled.definitions  # both bodies compiled alongside

@@ -26,6 +26,14 @@ but anywhere else in an expression it is a parse error at the opening quote. The
 definition shape `f(x) = body` is recognized at statement level and parsed into `FuncDef`;
 function bodies may contain semicolon-separated statements.
 
+Two builtin heads are *special forms* (DESIGN.md, "equality and =" case 3): their first
+argument is a binding, not an application argument. `\\sum`/`\\prod`/`Σ`/`Π` parse
+`(i=a..b)` into a range and rewrite to `Fold`; `\\lim(x=a)` rewrites to `Limit`. In both,
+the body extends greedily over the rest of the current expression, up to the enclosing
+delimiter — parenthesize to end it earlier. Recognition commits on the `(ident =` shape
+alone (bare `=` cannot occur inside a general expression); any other use of those heads
+goes through ordinary application parsing.
+
 Spans are tagged at each node's *construction* site, not on the way out of each parse
 call: the `(expr)` branch of atoms returns the inner node unchanged, and tagging on unwind
 would clobber that inner node's own (narrower) span with the paren-inclusive one.
@@ -67,8 +75,10 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    Fold,
     FuncDef,
     IfExpr,
+    Limit,
     Node,
     NumLit,
     Range,
@@ -106,6 +116,10 @@ class _Parser:
 
     def peek2(self) -> Token:
         return self.tokens[min(self.pos + 1, len(self.tokens) - 1)]
+
+    def look(self, k: int) -> Token:
+        """The token `k` positions past the cursor; always defined (clamped to Eof)."""
+        return self.tokens[min(self.pos + k, len(self.tokens) - 1)]
 
     def advance(self) -> Token:
         tok = self.tokens[self.pos]
@@ -301,8 +315,24 @@ class _Parser:
     # Call), so `f(x)` applies while `2(x+1)` falls through to juxtaposition.
     _NAMEISH = (Var, BackslashRef, Call)
 
+    # Special forms recognized in postfix position (DESIGN.md "equality and =", case 3):
+    # a closed list of builtins whose first argument is a binding, not a general
+    # equality expression. `\sum`≡`Σ`, `\prod`≡`Π`; `\lim` has no unicode spelling.
+    _FOLD_HEADS = {("sum", None): BinOperator.ADD, ("prod", None): BinOperator.MUL,
+                   (None, "Σ"): BinOperator.ADD, (None, "Π"): BinOperator.MUL}
+    _LIMIT_LABEL = "\\lim"
+
     def postfix(self) -> Node:
         node = self.atom()
+        fold_op = self._fold_head(node)
+        if (
+            (fold_op is not None or self._limit_head(node))
+            and isinstance(self.peek(), LParen)
+            and self._binder_shape_ahead()
+        ):
+            # Binder shape committed: bare `=` cannot occur in a general expression,
+            # so from here on malformed binders are genuine parse errors.
+            return self._special_form(node, fold_op)
         while isinstance(node, _Parser._NAMEISH) and isinstance(self.peek(), LParen):
             self.advance()
             args: list[Node] = []
@@ -325,6 +355,58 @@ class _Parser:
                 node = IfExpr(node.span, node.args[0], node.args[1],
                               node.args[2] if len(node.args) == 3 else None)
         return node
+
+    def _fold_head(self, node: Node) -> BinOperator | None:
+        """The fold operator when `node` is a fold head, else None."""
+        if isinstance(node, BackslashRef) and (node.name, None) in _Parser._FOLD_HEADS:
+            return _Parser._FOLD_HEADS[(node.name, None)]
+        if isinstance(node, Var) and (None, node.ch) in _Parser._FOLD_HEADS:
+            return _Parser._FOLD_HEADS[(None, node.ch)]
+        return None
+
+    def _limit_head(self, node: Node) -> bool:
+        return isinstance(node, BackslashRef) and node.name == "lim"
+
+    # special-form ::= fold | limit ;
+    # fold  ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident "=" expr ")" expr ;
+    # limit ::= "\lim" "(" ident "=" expr ")" expr ;
+    # The body extends greedily over the rest of the current expression, up to
+    # the enclosing delimiter (`,` `)` `;` or end of input); parenthesize to end it
+    # earlier: `\sum(i=1..2) (i + 1) * 2` folds `i + 1`, then doubles the total.
+    def _binder_shape_ahead(self) -> bool:
+        """The `(ident =` shape that commits the special form."""
+        return (
+            isinstance(self.look(1), Ident)
+            and isinstance(self.look(2), Eq)
+        )
+
+    def _special_form(self, head: Node, fold_op: BinOperator | None) -> Node:
+        label = self._LIMIT_LABEL if fold_op is None else self._form_label(head)
+        self.advance()  # LParen — caller verified
+        var = self.advance().ch
+        self.expect(Eq, "`=`")
+        bound = self.expr()
+        self.expect(RParen, "`)`")
+        body = self.expr()
+        span = head.span.to(body.span)
+        if fold_op is not None:
+            if not isinstance(bound, Range):
+                raise ParseError(
+                    f"{self._form_label(head)} needs a range to fold over: "
+                    f"{self._form_label(head)}(i=1..10)",
+                    bound.span,
+                )
+            return Fold(op=fold_op, var=var, rng=bound, body=body, span=span)
+        return Limit(var=var, point=bound, body=body, span=span)
+
+    def _form_label(self, head: Node) -> str:
+        match head:
+            case BackslashRef(name=name):
+                return f"\\{name}"
+            case Var(ch=ch):
+                return ch
+            case _:
+                return "?"
 
     # args ::= expr | string — a string may be a whole argument (the `\py` case) but
     # never an operand inside one: `"a" + 1` stays a parse error at the quote.

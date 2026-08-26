@@ -19,7 +19,9 @@ Lowering rules:
 - `\name` lowers to `_e.bref("name", sid)`; application lowers to `_e.app(head, args,
   sid)`; `\\py(path)` is the one backslash name with semantics of its own and lowers to
   `_e.py(path, sid)`. `FuncDef` registers a separately compiled body and lowers to
-  `_e.define(...)`; `\\if` lowers to lazy thunk calls.
+  `_e.define(...)`; `\\if` lowers to lazy thunk calls. `Fold`/`Limit` likewise register
+  their bodies via `_compile_body` and lower to `_e.fold(...)`/`_e.limit(...)`, which
+  evaluate the body once per term/probe in a child engine frame.
 - `Seq` flattens; each statement becomes one line, matching script mode's per-statement
   echo and the line-number gutter.
 """
@@ -38,8 +40,10 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    Fold,
     FuncDef,
     IfExpr,
+    Limit,
     Node,
     NumLit,
     Range,
@@ -58,6 +62,13 @@ _BIN_METHODS = {
     BinOperator.MUL: "mul",
     BinOperator.DIV: "div",
     BinOperator.POW: "pow",
+}
+
+# The fold operator each Fold node accumulates with; the runtime maps these back to
+# nadd/nmul (the only arithmetic a fold is allowed to perform).
+_FOLD_METHODS = {
+    BinOperator.ADD: "add",
+    BinOperator.MUL: "mul",
 }
 
 _CMP_METHODS = {
@@ -164,6 +175,18 @@ class _Lowerer:
                     kwonlyargs=[], kw_defaults=[], defaults=[]), body=self.expr(n))
                 return _call("if_expr", [self.expr(condition), thunk(then_branch),
                     thunk(otherwise) if otherwise is not None else pyast.Constant(None),
+                    pyast.Constant(sid)])
+            case Fold(op=op, var=var, rng=rng, body=body, span=span):
+                # Same shape as FuncDef: the folded body is compiled once into
+                # `definitions[sid]`; the engine evaluates it per term in a child frame.
+                sid = self._push(span)
+                self.definitions[sid] = _compile_body(body)
+                return _call("fold", [pyast.Constant(_FOLD_METHODS[op]),
+                    pyast.Constant(var), self.expr(rng), pyast.Constant(sid)])
+            case Limit(var=var, point=point, body=body, span=span):
+                sid = self._push(span)
+                self.definitions[sid] = _compile_body(body)
+                return _call("limit", [pyast.Constant(var), self.expr(point),
                     pyast.Constant(sid)])
             case Assign(name=name, value=value, span=span):
                 sid = self._push(span)

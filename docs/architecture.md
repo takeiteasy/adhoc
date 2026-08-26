@@ -82,6 +82,13 @@ difference between them is *when* each calls it, not how the output looks.
 - Range construction lowers to `_e.range(start, second, end, sid)`. `RangeValue` stores
   numeric endpoints and step without materializing values; iteration computes each next
   value through the numeric seam.
+- Folds and limits lower like definitions: `Fold`/`Limit` compile their bodies via
+  `_compile_body` into the unit's `definitions` table and emit one engine call —
+  `_e.fold(op, "i", <range>, sid)` / `_e.limit("x", <point>, sid)`. The engine evaluates
+  the body once per term or probe in a fresh child frame (the `AdFunction.__call__`
+  scoping pattern: parent read-through, local writes); all accumulation arithmetic runs
+  through the numeric seam inside `runtime.py`, never in generated code. The convergence
+  knobs and their shared plateau test also live there (docs/numerics.md).
 - Statement outputs accumulate in order; the REPL prints only the last, script mode echoes
   every statement and stops at the first failure.
 

@@ -40,6 +40,41 @@ Every failure mode in this module is a typed `NumError`, not a generic exception
 what lets the REPL and script driver catch "arithmetic failed" specifically and attach the
 offending expression's span to it, rather than the whole run aborting.
 
+## Convergence: one mechanism, two riders
+
+Approximate iteration has a single shape (DESIGN.md "convergence over a lazy range"):
+advance until successive observations differ by at most `CONVERGENCE_TOLERANCE`
+(`1e-12`), otherwise error at the cap rather than return a possibly-misleading partial
+result. Three knobs live at the top of `runtime.py`:
+
+| Knob | Value | Role |
+|---|---|---|
+| `CONVERGENCE_TOLERANCE` | `1e-12` | plateau test shared by both features (`EXACT_CONVERGENCE_TOLERANCE = 1/10^12` mirrors it for exact-tier comparisons) |
+| `MAX_TERMS` | `2_000_000` | fold-term budget before `` `\sum did not converge within … terms `` |
+| `MAX_PROBES` | `200` | per-side `\lim` probe budget |
+
+The two riders:
+
+- **Infinite-range folds** (`\sum(i=1..) 1/i^2`) accumulate partial sums/products in the
+  **float tier**. Exact tiers are wrong for this job twice over: rationals with
+  exponentially growing denominators stall plateau detection long before the tolerance is
+  meaningful, and the tail remaining when a plateau triggers (~tolerance-sized) only makes
+  sense compared in floating point. Consequences, pinned: results print as floats;
+  slow-tail series like ζ(2) stop around one million terms and land within ~1e-6 of the
+  limit; monotone divergence and NaN partials error immediately or at the cap.
+- **`\lim(x=a)`** coerces its anchor to float, probes at `a ± h` with `h` halving from
+  ~0.8% of `max(|a|, 1)`, and never evaluates at `a` itself — a step that would round back
+  onto the anchor ends the side first. Each side stops on the same plateau test; sides
+  further apart than *twice* the tolerance report `` limit does not exist `` (each side
+  legitimately plateaus up to one tolerance-radius away, so two matching estimates may sit
+  2× apart).
+
+Known sharp edges (not bugs): a body whose value approaches 0 can plateau prematurely
+(the consecutive-partial test cannot distinguish "stable" from "the increments vanished");
+cancellation-prone spellings of removable singularities lose float precision as steps
+shrink and usually fail to stabilize. A relative-stopping rule or Richardson extrapolation
+would tighten both if it ever matters.
+
 ## Float semantics
 
 CPython floats deviate from MPFR in three places; the seam pins each deliberately rather

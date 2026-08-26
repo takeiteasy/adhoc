@@ -15,6 +15,17 @@ sub-expression's failure points at the sub-expression, matching interp.rs's narr
 Statement-level bind-or-compare lives here too, since `=` never lowers to Python
 assignment.
 
+## Convergence
+
+Approximate iteration has exactly one mechanism (docs/numerics.md): drive observations
+until successive ones differ by at most `CONVERGENCE_TOLERANCE`, otherwise error at the
+cap (`MAX_TERMS` for fold terms, `MAX_PROBES` for `\\lim` probes) rather than return a
+possibly-misleading partial result. Two features ride it: `\\sum`/`\\prod` over a lazy
+infinite range (limit of partial sums/products) and `\\lim(x=a)` (two-sided shrinking-step
+probing that never evaluates at `a`). Both operate in the float tier — exact tiers would
+either stall plateau detection behind exponentially-growing rationals or make the
+tolerance meaningless — while finite folds accumulate exactly like any other expression.
+
 ## Strings and the `\\py` boundary
 
 Strings are literals, not ad values (docs/grammar.md). They never enter the environment;
@@ -62,6 +73,15 @@ STRINGS_NOT_NUMBERS = "strings are not numbers"
 NOT_A_NUMBER = "operands must be numbers"
 
 DEFAULT_FLOAT_PRECISION_BITS = 53
+
+# Convergence knobs — the one approximate-iteration mechanism shared by infinite-range
+# Σ/Π folds and `\lim` (see module docstring and docs/numerics.md).
+CONVERGENCE_TOLERANCE = 1e-12
+EXACT_CONVERGENCE_TOLERANCE = Fraction(1, 10**12)
+MAX_TERMS = 2_000_000
+MAX_PROBES = 200
+
+FOLD_LABELS = {"add": "\\sum", "mul": "\\prod"}
 
 _NUMERIC_TYPES = (int, float, Fraction)
 
@@ -300,6 +320,36 @@ def parse_literal(text: str) -> AdValue:
     return int(text)
 
 
+def _as_float(value: AdValue) -> float:
+    """Widen an ad number to the float tier for approximate iteration (infinite-range
+    folds and `\\lim` probes). Non-numerics are rejected with the seam's typed error so
+    the caller can attach a span."""
+    _reject_non_numeric(value)
+    try:
+        return float(value)
+    except OverflowError:
+        raise NumError("value too large to widen to float")
+
+
+def _settled(previous: AdValue, current: AdValue) -> bool:
+    """The shared plateau test for every approximate iteration (infinite Σ/Π partials,
+    `\\lim` probes): the magnitude of change since the last observation is within the
+    convergence tolerance. A non-finite float delta never settles."""
+    if isinstance(previous, float) or isinstance(current, float):
+        delta = float(previous) - float(current)
+        return math.isfinite(delta) and abs(delta) <= CONVERGENCE_TOLERANCE
+    delta = nsub(previous, current)
+    return -EXACT_CONVERGENCE_TOLERANCE <= Fraction(delta) <= EXACT_CONVERGENCE_TOLERANCE
+
+
+def _agree(left: float, right: float) -> bool:
+    """The `\\lim` two-sided agreement test, sized off the same tolerance: each side
+    stops within CONVERGENCE_TOLERANCE of its own plateau — up to that far from the
+    true limit even for a perfectly smooth body — so legitimate estimates may sit as
+    much as 2× the tolerance apart. Anything wider is a genuine disagreement."""
+    return abs(left - right) <= 2 * CONVERGENCE_TOLERANCE
+
+
 class EvalError(Exception):
     """A runtime failure with its message and, when known, the offending span."""
 
@@ -463,6 +513,100 @@ class Engine:
             return RangeValue(start, step, end, second)
         except NumError as e:
             self._fail(e.args[0], sid)
+
+    def _eval_bound(self, body: Any, bindings: dict[str, AdValue], label: str,
+                    sid: int) -> AdValue:
+        """Evaluate a compiled body once with the loop variable layered over a child
+        frame. Scoping mirrors AdFunction.__call__: reads of other names fall through
+        to the parent chain, writes stay local to this iteration."""
+        child = Engine(bindings, body.spans, body.definitions, self)
+        scope = {"_e": child}
+        try:
+            exec(body.code, scope)
+        except EvalError:
+            raise
+        except NumError as e:
+            self._fail(e.args[0], sid)
+        except Exception as e:
+            self._fail(f"{label} failed unexpectedly: {type(e).__name__}: {e}", sid)
+        return scope["_result"]
+
+    def fold(self, op_name: str, name: str, value: AdValue, sid: int) -> AdValue:
+        """`\\sum(i=a..b) body` / `\\prod(...)`: iterate the bound RangeValue, evaluating
+        the compiled body once per term in a fresh frame `{i: term}`. Finite ranges
+        accumulate exactly at the lowest exact tier; lazy infinite ranges switch to the
+        float tier and stop when successive partials stabilize within
+        CONVERGENCE_TOLERANCE — erroring at MAX_TERMS rather than returning a misleading
+        partial (docs/numerics.md).
+        
+        Improvement note: a plateau in consecutive partials can stop marginally early
+        for bodies whose value approaches 0 (the remaining tail then exceeds the
+        tolerance); a tail-aware or relative stopping rule would tighten that."""
+        label = FOLD_LABELS.get(op_name, "\\sum")
+        if not isinstance(value, RangeValue):
+            self._fail(f"{label} folds over a range, got {nshow(value)}", sid)
+        fn = nmul if op_name == "mul" else nadd
+        unit = 1 if op_name == "mul" else 0
+        body = self.definitions[sid]
+        acc: AdValue = unit
+        infinite = value.end is None
+        previous: AdValue | None = None
+        count = 0
+        for item in value:
+            binding = _as_float(item) if infinite else item
+            term = self._eval_bound(body, {name: binding}, label, sid)
+            acc = self._binop(fn, acc, term, sid)
+            count += 1
+            if infinite:
+                if not math.isfinite(acc):
+                    self._fail(f"{label} diverged: partial value is not finite", sid)
+                if previous is not None and _settled(previous, acc):
+                    return acc
+                previous = acc
+                if count >= MAX_TERMS:
+                    self._fail(f"{label} did not converge within {MAX_TERMS} terms", sid)
+        return acc
+
+    def limit(self, name: str, point_value: AdValue, sid: int) -> float:
+        """`\\lim(x=a) body`, numeric only: probe both sides with geometrically shrinking
+        steps — never evaluating at `a` itself; the ulp guard halts each side when a
+        step would round back onto the anchor. Each side must stabilize within
+        CONVERGENCE_TOLERANCE (same plateau test as infinite folds) inside MAX_PROBES;
+        sides stabilizing apart means the limit does not exist. Probes evaluate in the
+        float tier like infinite-range folds (docs/numerics.md)."""
+        try:
+            _reject_non_numeric(point_value)
+        except NumError as e:
+            self._fail(e.args[0], sid)
+        anchor = _as_float(point_value)
+        if not math.isfinite(anchor):
+            self._fail("\\lim approaches a finite point", sid)
+        body = self.definitions[sid]
+        h = max(abs(anchor), 1.0) * 0.5**7  # start close enough that ~60 halvings pass any ulp floor
+        estimates: list[float] = []
+        for sign in (1.0, -1.0):  # right side first, then left
+            previous: float | None = None
+            estimate: float | None = None
+            converged = False
+            for _ in range(MAX_PROBES):
+                probe = anchor + sign * h
+                if probe == anchor:
+                    break  # step underflowed onto the anchor itself — never evaluate there
+                raw = self._eval_bound(body, {name: probe}, "\\lim", sid)
+                estimate = _as_float(raw)
+                if previous is not None and _settled(previous, estimate):
+                    converged = True
+                    break
+                previous = estimate
+                h *= 0.5
+            if not converged:
+                self._fail(f"\\lim did not converge within {MAX_PROBES} probes", sid)
+            estimates.append(estimate)
+        left, right = estimates[1], estimates[0]
+        if not _agree(left, right):
+            self._fail("limit does not exist: left and right estimates disagree", sid)
+        mid = self._binop(nadd, left, right, sid)
+        return self._binop(ndiv, mid, 2, sid)
 
     def if_expr(self, condition, then, otherwise, sid):
         if not isinstance(condition, bool):

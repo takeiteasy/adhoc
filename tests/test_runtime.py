@@ -22,6 +22,9 @@ from adhoc.runtime import (
     nsub,
     parse_literal,
     RangeValue,
+    _agree,
+    _as_float,
+    _settled,
 )
 
 
@@ -251,3 +254,42 @@ def test_matrix_rational_subclass_normalizes():
 
 def test_matrix_bool_precedes_int():
     assert _to_ad(True) == 1 and isinstance(_to_ad(True), int)
+
+
+# --- shared convergence mechanism (infinite folds + \lim) ---
+
+
+def test_settled_exact_tiers_use_the_exact_tolerance():
+    assert _settled(1, 1)
+    assert not _settled(1, 2)
+    near = Fraction(1, 3) + Fraction(1, 10**13)
+    assert _settled(Fraction(1, 3), near)
+    far = Fraction(1, 3) + Fraction(1, 10**11)
+    assert not _settled(Fraction(1, 3), far)
+
+
+def test_settled_float_tier_rejects_non_finite_deltas():
+    assert _settled(0.5, 0.5)
+    assert not _settled(float("nan"), 0.5)
+    assert not _settled(float("inf"), float("inf"))
+
+
+def test_agree_allows_two_plateau_radii_but_not_more():
+    assert _agree(1.0, 1.5e-12 + 1.0)
+    assert not _agree(1.0, 3e-12 + 1.0)
+
+
+def test_as_float_widens_and_rejects():
+    assert _as_float(Fraction(1, 4)) == 0.25
+    with pytest.raises(NumError) as e:
+        _as_float(RangeValue(1, 1, None))
+    assert e.value.args[0] == NOT_A_NUMBER
+    with pytest.raises(NumError) as big:
+        _as_float(10**400)
+    assert "too large" in big.value.args[0]
+
+
+def test_fold_labels_map_ops_to_spellings():
+    from adhoc.runtime import FOLD_LABELS
+
+    assert FOLD_LABELS == {"add": "\\sum", "mul": "\\prod"}
