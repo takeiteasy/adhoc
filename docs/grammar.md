@@ -1,7 +1,7 @@
 # Grammar (phase 0)
 
 The phase-0 subset of `ad`: arithmetic, assignment, and nothing else yet. This is the file
-the parser (`src/parser.rs`) is written against — it should stay in lockstep with the code.
+the parser (`adhoc/parser.py`) is written against — it should stay in lockstep with the code.
 
 ## Lexical rules
 

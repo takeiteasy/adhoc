@@ -1,22 +1,22 @@
 # Architecture
 
-## Layout: library and binary
+## Layout
 
-`adhoc` is two crates in one package: a library (`src/lib.rs`) that *is* the language, and a
-thin binary (`src/main.rs`) that runs it. Nothing in the library touches stdin/stdout beyond
-what `diagnostic::render` returns as a string — the REPL loop, history, and script-file
-handling live entirely in the binary and depend on the library the way any other consumer
-would.
+`adhoc` is one Python package. The library modules *are* the language; `__main__` and `repl`
+are thin drivers over it, depending on it the way any other consumer would.
 
 ```
-adhoc (library)                        adhoc (binary)
-├── span        — byte-offset spans    ├── main      — argv, script-mode driver
-├── lexer       — tokens               ├── repl      — prompt loop, rustyline glue
-├── ast         — typed node enum      └── output    — shared diagnostic printing
-├── parser      — precedence climbing
-├── num         — the numeric seam
-├── interp      — tree-walking evaluator
-└── diagnostic  — caret-pointing renderer
+adhoc/
+├── span        — byte-offset spans (start, end)
+├── lexer       — tokens: numbers, identifiers, \-names, operators
+├── syntax      — frozen AST dataclasses, each node carries its own Span
+├── parser      — precedence climbing over docs/grammar.md
+├── runtime     — the numeric seam + Engine (everything lowered code calls into)
+├── compiler    — lowering: adhoc AST → Python source, one line per statement
+├── driver      — compile/exec pairing, error mapping back through spans
+├── diagnostic  — caret-pointing renderer
+├── output      — shared error printing for both drivers
+└── repl        — prompt loop, continuation, history (__main__ dispatches argv)
 ```
 
 ## Pipeline
@@ -25,54 +25,53 @@ adhoc (library)                        adhoc (binary)
 source text
     │
     ▼
-lexer (src/lexer.rs)      -- tokens: numbers, identifiers, \-names, operators; byte spans
+lexer (lexer.py)       -- tokens with byte-offset spans
     │
     ▼
-parser (src/parser.rs)    -- precedence-climbing over docs/grammar.md, produces an AST
+parser (parser.py)     -- precedence climbing → syntax.py dataclasses, spans tagged at construction
     │
     ▼
-ast (src/ast.rs)          -- typed Node/NodeKind enum, each node carries its own Span
-    │
+compiler (compiler.py) -- lowering to Python source: one line per statement,
+    │                    every operation an Engine call carrying a span id
     ▼
-interp (src/interp.rs)    -- tree-walking interpreter, environment = HashMap<char, AdNum>
-    │                        all arithmetic goes through src/num.rs
+driver (driver.py)     -- compile() + exec() against an Engine; user env is a plain dict
+    │                    the engine holds; EvalError carries narrow spans
     ▼
-repl / main (binary)      -- read/print loop or script-file driver, shared error rendering
+repl / __main__        -- read/print loop or script-file driver via output.py rendering
 ```
 
-`src/num.rs` is a seam, not a pipeline stage — every point that touches a number value calls
-into it rather than using a Rust arithmetic operator directly. See `docs/numerics.md`.
+The evaluation engine is CPython itself: generated code runs through `compile()`/`exec`, so
+the language's arithmetic semantics live entirely in `runtime.py`'s helpers (`nadd`/.../
+`nshow` plus the `Engine` methods), never in operators applied directly to user values. See
+`docs/numerics.md` for the seam and its pinned float semantics.
 
 ## Spans and diagnostics
 
-Every token and every AST node carries a `Span { start: u32, end: u32 }` — byte offsets,
-0-based, half-open — tagged at construction time. The parser tags a node's span when it
-*builds* the node, not on the way back out of the `parse_*` call that produced it: the
-`(expr)` case in `parse_atom` returns the inner expression's node unchanged, and tagging on
-unwind there would overwrite that inner node's own, narrower span with the paren-inclusive
-one.
+Every token and every AST node carries a `Span` — byte offsets, 0-based, half-open — tagged
+at construction time by the parser (at construction, not on unwind, so `(expr)` returns the
+inner node's own narrower span rather than a paren-inclusive one). The compiler allocates a
+span id per lowered operation and emits it as an argument; `runtime.Engine` raises
+`EvalError(msg, span)` from that id when an operation fails. This preserves per-node span
+narrowing end-to-end: in `1 + x`, an unbound-`x` failure points at `x`, not at the statement;
+in `2 + 1/0`, the division-by-zero points at `1/0`.
 
-`interp.rs` evaluates a `BinOp`'s operands *before* wrapping the arithmetic call itself in
-error handling, so a sub-expression's own error (an unbound variable, a nested division by
-zero) keeps its own narrow span; only the arithmetic operation is tagged with the enclosing
-node's span. `docs/numerics.md` and the module docs on `interp.rs` have the pinned narrowing
-examples.
+`diagnostic.render(source, label, message, span)` takes a span and a message rather than an
+error value, which is what lets the REPL and script mode share it unchanged — the one
+difference between them is *when* each calls it, not how the output looks.
 
-`diagnostic::render(source, label, message, span)` takes a span and a message rather than an
-error value, which is what lets the REPL and script mode (`main.rs`) share it unchanged — the
-one difference between them is *when* each calls it, not how the output looks.
+## Engine notes
 
-## The interpreter is the engine
+- One generated Python line per top-level statement, with a `lineno → span` table riding on
+  the compiled unit; anything unexpected escaping the engine maps back through it.
+- Variables never become Python name loads or stores — reads go through `_e.var`, writes
+  through `_e.assign`/`_e.reassign` (bind-or-compare semantics). The user environment is a
+  plain dict kept separate from exec globals.
+- Statement outputs accumulate in order; the REPL prints only the last, script mode echoes
+  every statement and stops at the first failure.
 
-There is no bootstrap-then-replace split here. `interp.rs`'s tree-walking evaluator and the
-REPL/script drivers around it are the durable implementation, not a stand-in for a future
-interaction-net engine — that design direction is recorded in `DESIGN.md` as a future
-direction, not scheduled work (see `ROADMAP.md`). Nothing in this codebase is written
-expecting to be deleted.
+## The lowering is the engine
 
-## The numeric tower
-
-The design's exact-arithmetic tower — bignum integers, bignum rationals, symbolic closed
-forms, algebraic numbers, and a Recursive Real Arithmetic (RRA) fallback — is described in
-full in `DESIGN.md`. `docs/numerics.md` covers what's implemented today (the bottom two
-exact tiers plus a float fallback) and where the seam for the rest goes.
+There is no bootstrap-then-replace split here: the compiler + CPython execution is the
+durable implementation, not a stand-in for something else. The interaction-net direction in
+`DESIGN.md` remains a recorded future direction, not scheduled work — nothing here expects to
+be replaced by it.

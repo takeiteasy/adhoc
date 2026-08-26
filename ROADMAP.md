@@ -7,21 +7,24 @@ tickets. This file stays the source of reasoning; the tracker is the source of s
 Phased implementation plan derived from `DESIGN.md`, ordered by value and dependency rather
 than by section order in the design doc. The interaction-net engine described in `DESIGN.md`
 is a recorded future direction, not scheduled work — it does not appear as a phase here. The
-tree-walking interpreter (`src/interp.rs`) is the durable evaluation engine; later phases add
-language surface on top of it, they don't replace it.
+lowering pipeline (`adhoc/compiler.py` executing on CPython) is the durable evaluation engine;
+later phases add language surface on top of it, they don't replace it.
 
 ### phase 0 — foundations
 
-- Implementation language: **Rust** (decided). Numeric backing via `rug` (GMP/MPFR).
+- Implementation language: **Python**. Numeric backing via stdlib `int`/`Fraction`/`float`
+  behind the numeric seam (see `docs/numerics.md`; gmpy2/sympy can slot behind the same
+  seam later).
 - Lexer: whitespace-insensitive, single-char ascii/unicode identifiers, `--` comments,
   case-sensitivity, byte-offset spans on every token.
 - Parser: core grammar — literals, arithmetic (`+ - * / ^`, parens), assignment/equality-check
-  `=`, force-reassign `:=`. AST as a typed enum, spans on every node.
+  `=`, force-reassign `:=`. AST as frozen dataclasses, spans on every node.
 - Diagnostics: caret-pointing error rendering with source spans, per-node span narrowing.
 - REPL: multi-line continuation, history, line editing.
 - Script mode: `adhoc run script.ad` — the same grammar fed a whole file instead of
   line-by-line, sharing the REPL's diagnostic rendering.
-- Interpreter: the durable tree-walking evaluator — not a bootstrap for a later engine.
+- Evaluator: lowering of the adhoc AST to Python's own AST, executed on CPython through a
+  span-tracking runtime seam.
 
 ### phase 1 — core language semantics
 
@@ -41,8 +44,10 @@ language surface on top of it, they don't replace it.
 
 ### phase 2 — exact arithmetic tower
 
-The calculator's actual differentiator, and `rug` is already a dependency from phase 0 — no
-reason to wait on phase 3's collection types, which are independent of it.
+The calculator's actual differentiator; the numeric seam already routes every operation, so
+symbolic/algebraic backends (sympy being an obvious candidate) slot in without touching
+anything above the seam — no reason to wait on phase 3's collection types, which are
+independent of it.
 
 - Symbolic closed-form irrationals (`π`, `√n`, `eⁿ`, `ln(n)`, `sin(πn)`, `tan(πn)`, ...).
 - Algebraic numbers (roots of rational-coefficient polynomials).

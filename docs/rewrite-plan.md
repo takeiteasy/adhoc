@@ -63,7 +63,11 @@ tests/                  -- pytest; ports of every cargo test
 | 3 | Lowering + driver | `interp.rs` suite passes end-to-end through compile/exec; span-narrowing tests pass; emitted-Python snapshot tests | done |
 | 4 | CLI parity: REPL continuation/history, script mode | `tests/{repl,script}.rs` behaviors green; transcript diff of Rust vs Python binaries clean on an `.ad` corpus | done |
 | 5 | Interop v1: `\py(...)`, application syntax, value-conversion rules + docs | `\py("math.sqrt")(2)` → `= 1.4142135623730951`; conversion-matrix tests | |
-| 6 | Cutover: tag `rust-final`, remove Rust tree, doc sweep | Repo is Python-only, all tests green | |
+| 6 | Cutover: tag `rust-final`, remove Rust tree, doc sweep | Repo is Python-only, all tests green | done |
+
+Cutover notes: the transcript-parity harness (`tests/test_transcripts.py`) was retired with
+the Rust tree — its reference binary no longer exists; the REPL/script behavior ports live on
+in `tests/test_repl.py`/`tests/test_script.py`, and the harness itself is in git history.
 
 Stage 5 introduces postfix application `f(x)` early — the grammar already reserves it for
 later phases, so this is a forward-compatible addition, not a detour.

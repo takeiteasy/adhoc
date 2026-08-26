@@ -24,17 +24,19 @@ compatibility. See [`docs/language.md`](docs/language.md) for what's real today,
 
 Phase 0: a REPL and script runner that evaluate arithmetic exactly (`1/3 + 1/3 + 1/3` is `1`,
 not `0.999...`), with assignment, force-reassignment, and caret-pointing error diagnostics.
-Everything past that — functions, ranges, sums/products, the rest of the numeric tower,
-collections, symbolic algebra, graphing — is on the roadmap, not yet built. See
-[`ROADMAP.md`](ROADMAP.md).
+The implementation is pure Python: `ad` lowers to Python's own AST and runs on CPython, which
+is also the road to calling Python libraries from `ad`. Everything past phase 0 — functions,
+ranges, sums/products, the rest of the numeric tower, collections, symbolic algebra, graphing —
+is on the roadmap, not yet built. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it
 
-Requires Rust (edition 2024) and a C toolchain (for `rug`'s GMP/MPFR bindings).
+Requires Python 3.12+.
 
 ```
-cargo build --release
-cargo run
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/adhoc
 ```
 
 ```
@@ -44,12 +46,15 @@ cargo run
 < x = 3
 ```
 
-Or run a script: `cargo run -- run script.ad`.
+Or run a script: `.venv/bin/adhoc run script.ad`.
+
+Pass `--emit-py` anywhere on the command line to print the generated Python source for each
+statement to stderr — a window into the lowering.
 
 ## Tests
 
 ```
-cargo test
+.venv/bin/python -m pytest
 ```
 
 ## Docs

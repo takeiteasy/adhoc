@@ -335,8 +335,9 @@ Arithmetic operations try to stay at the lowest tier that remains exact (e.g. `r
 ## interpreter/compiler engine: interaction combinators (future direction)
 
 This section records design thinking for a possible future evaluation engine — it is not
-scheduled work and does not appear in `ROADMAP.md`. The current and durable engine is a
-tree-walking interpreter (`src/interp.rs`); see `docs/architecture.md`. Nothing here should be
+scheduled work and does not appear in `ROADMAP.md`. The current and durable engine lowers
+`ad` to Python's own AST and executes on CPython (`adhoc/compiler.py` + `adhoc/driver.py`);
+see `docs/architecture.md`. Nothing here should be
 read as a near-term plan.
 
 Rather than a tree-walking evaluator with a call stack and environment, `ad` could compile expressions into an **interaction net** (Lafont's interaction combinators) and execute by graph rewriting to normal form. The design below is from scratch, tailored to `ad`'s needs — HVM/HVM2 (Victor Taelin) is prior art/reference, not something to be ported directly.
