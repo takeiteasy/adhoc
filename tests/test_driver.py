@@ -379,9 +379,19 @@ def test_boolean_constants_drive_conditionals():
     assert run_source("\\if(\\false, 1)") == []  # statement no-op
 
 
-def test_const_declaration_via_sigil_and_keyword():
+def test_const_declaration_spellings_agree():
     assert last("c ≡ 5") == "c = 5"
+    assert last("k == 3") == "k = 3"
     assert last("\\const m = 10") == "m = 10"
+
+
+def test_double_eq_declares_a_constant():
+    # `==` never compares — it declares, and the name is permanently immutable.
+    env: dict = {}
+    consts: set = set()
+    assert last("k == 3", env, consts) == "k = 3"
+    with pytest.raises(EvalError, match="is a constant"):
+        run_source("k := 4", env, consts)
 
 
 def test_const_bindings_are_permanently_immutable():

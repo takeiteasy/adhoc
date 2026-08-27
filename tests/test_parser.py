@@ -297,6 +297,18 @@ def test_const_keyword_is_the_same_tree_as_the_sigil():
     assert shape(parse_program("\\const x = 5")) == shape(parse_program("x ≡ 5"))
 
 
+def test_double_eq_is_the_same_tree_as_the_sigil():
+    # `==` is pure ASCII sugar for `≡`: identical tree, spelling never reaches the AST.
+    node = parse_program("x == 5")
+    assert isinstance(node, ConstAssign)
+    assert node.name == "x"
+    assert node.span == Span(0, 6)
+    assert shape(node) == shape(parse_program("x ≡ 5"))
+    node = parse_program("\\bar == 5")
+    assert isinstance(node, ConstAssign)
+    assert node.name == "bar"
+
+
 def test_const_function_definition():
     node = parse_program("\\const f(x) = x^2")
     assert isinstance(node, FuncDef)

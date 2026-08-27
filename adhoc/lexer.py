@@ -130,12 +130,15 @@ class ColonEq(Token):
 
 @dataclass(frozen=True)
 class IdenticalTo(Token):
-    """`≡` — permanently-immutable binding (the unicode spelling of `\\const`):
-    statement-level only, like `=`/`:=`."""
+    """The permanently-immutable binding operator, statement-level only like `=`/`:=`:
+    `≡` (unicode) or `==` (ASCII alias). The spelling rides along purely so
+    diagnostics echo the source; both spellings mean exactly the same declaration."""
+
+    spelling: str = "≡"
 
     @property
     def describe(self) -> str:
-        return "`≡`"
+        return f"`{self.spelling}`"
 
 
 @dataclass(frozen=True)
@@ -316,6 +319,14 @@ def tokenize(src: str) -> list[Token]:
 
         if c == "." and i + 1 < n and entries[i + 1][1] == ".":
             tokens.append(DotDot(span=Span(pos, entries[i + 1][0] + 1)))
+            i += 2
+            continue
+
+        if c == "=" and i + 1 < n and entries[i + 1][1] == "=":
+            # `==` is the ASCII alias of `≡`, one token — two adjacent `=` were
+            # always a parse error before, so nothing else changes meaning here.
+            end = entries[i + 1][0] + 1
+            tokens.append(IdenticalTo(spelling="==", span=Span(pos, end)))
             i += 2
             continue
 

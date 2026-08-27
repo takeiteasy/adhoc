@@ -18,7 +18,9 @@ written against — it should stay in lockstep with the code.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
   Backslash names may be built-ins or user-defined names, including variables; an unbound
   one fails at evaluation.
-- Operators: `+ - * / ^ < > <= >= = := ≡ .. ( ) ,`. Statement separator: `;`.
+- Operators: `+ - * / ^ < > <= >= = := ≡ == .. ( ) ,`. Statement separator: `;`.
+  `==` is an ASCII alias for `≡` — it declares a constant, it never compares (see
+  `## Constants and the prelude`).
 
 ## Grammar (EBNF)
 
@@ -30,6 +32,7 @@ statement  ::= func-def
              | identifier ("=" | ":=") expr
              | expr ;
 const-stmt ::= identifier "≡" expr
+             | identifier "==" expr
              | "\const" name "=" expr
              | "\const" name "(" params? ")" "=" statement (";" statement)* ;
 
@@ -69,7 +72,7 @@ Loosest to tightest:
 
 | Level | Operators | Associativity |
 |---|---|---|
-| 1 | `=` `:=` `≡` | statement level only, non-associative |
+| 1 | `=` `:=` `≡` `==` | statement level only, non-associative |
 | 2 | `..` (range) | non-associative |
 | 3 | `<` `>` `<=` `>=` | non-associative |
 | 4 | `+` `-` (binary) | left |
@@ -245,16 +248,22 @@ framing.
 - `x = e`, `x` bound → **compare** current value to `v`, prints `true` / `false`
 - `x := e`, `x` bound → rebind, prints `x = v`
 - `x := e`, `x` unbound → error: `` `x` does not exist! ``
-- `x ≡ e` / `\const x = e`, `x` fresh → declare permanently immutable, prints `x = v`
-- `x ≡ e` / `\const x = e`, `x` bound or protected → error (see `## Constants and the prelude`)
+- `x ≡ e` / `x == e` / `\const x = e`, `x` fresh → declare permanently immutable, prints `x = v`
+- `x ≡ e` / `x == e` / `\const x = e`, `x` bound or protected → error (see `## Constants and the prelude`)
 - bare expression → prints `= v`
 
 ## Constants and the prelude
 
-`x ≡ e` (or `\const x = e`) declares a global binding that can never be rebound — not by
-`=`, not by `:=`, not by a local assignment, a parameter, or a binder name. `\const f(x) = ...`
-declares a function under the same rule. A declaration is not assign-or-check: the name
-must be fresh and top-level, and `:=` after `\const` is a parse error.
+`x ≡ e` (ASCII `x == e`, keyword `\const x = e`) declares a global binding that can never
+be rebound — not by `=`, not by `:=`, not by a local assignment, a parameter, or a binder
+name. `\const f(x) = ...` declares a function under the same rule (the `≡`/`==` spellings
+are bindings only). A declaration is not assign-or-check: the name must be fresh and
+top-level, and `:=` after `\const` is a parse error.
+
+`==` deliberately declares rather than compares: it is the fast-to-type spelling of `≡`,
+chosen precisely because statement-level `=` already covers assign-or-check and expression
+`=` is reserved for plain boolean equality — no `==` comparison operator exists or will.
+Read `x == 5` as "x is *identically* 5", never as a question.
 
 Built-in names live in a prelude scope protected by that same mechanism:
 

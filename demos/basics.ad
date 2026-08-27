@@ -30,7 +30,8 @@ r = 2;
 \sqrt(2);
 \sin(0);
 
--- ≡ (or \const) declares a name that can never be rebound — not even with :=
+-- ≡ (ASCII alias ==, keyword \const) declares a name that can never be rebound —
+-- not even with := ; note that == declares, it never compares
 -- (function definitions consume the rest of a script as their body, so defs
 -- belong in REPL input; bindings are fine here)
 φ ≡ 1.6180339887498948;

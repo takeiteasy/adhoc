@@ -48,7 +48,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Lazy conditionals: `\if(condition, then)` and `\if(condition, then, otherwise)`. A false
   two-argument conditional is a statement-level no-op; parenthesized sequences such as
   `(a = 1; a + 1)` support multi-statement branches.
-- Constant declarations: `c ≡ 5` or `\const c = 5` declare permanently-immutable globals —
+- Constant declarations: `c ≡ 5`, `c == 5` (ASCII alias — declares, never compares), or
+  `\const c = 5` declare permanently-immutable globals —
   no `=`, `:=`, local assignment, parameter, or binder can ever rebind the name, and
   `\const f(x) = ...` declares an immutable function the same way.
 - A protected prelude scope: `π`/`\pi`, `e`, `\true`/`\false`, and the `\sin`, `\cos`,

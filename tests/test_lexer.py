@@ -150,6 +150,19 @@ def test_identical_to_token():
     toks = tokenize("π ≡ 3")
     assert [type(t) for t in toks] == [Ident, IdenticalTo, Number, Eof]
     assert toks[1].span == Span(3, 6)  # π is 2 bytes, space 1, ≡ is 3 bytes
+    assert toks[1].describe == "`≡`"
+
+
+def test_double_eq_is_the_ascii_alias_token():
+    # `==` lexes as one IdenticalTo token carrying its spelling; a lone `=` stays Eq.
+    toks = tokenize("x == 5")
+    assert [type(t) for t in toks] == [Ident, IdenticalTo, Number, Eof]
+    assert toks[1].spelling == "=="
+    assert toks[1].span == Span(2, 4)
+    assert toks[1].describe == "`==`"
+    assert kinds("x = 5")[1] is Eq
+    # Spaced-out `= =` is two separate tokens, never the alias.
+    assert kinds("= =") == [Eq, Eq, Eof]
 
 
 def test_range_token_and_decimal_disambiguation():
