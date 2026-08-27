@@ -5,10 +5,10 @@ This document is mirrored into the sr.ht tracker: phases 0-1 as one ticket per b
 tickets. This file stays the source of reasoning; the tracker is the source of status.
 
 Phased implementation plan derived from `DESIGN.md`, ordered by value and dependency rather
-than by section order in the design doc. The interaction-net engine described in `DESIGN.md`
-is a recorded future direction, not scheduled work — it does not appear as a phase here. The
-lowering pipeline (`adhoc/compiler.py` executing on CPython) is the durable evaluation engine;
-later phases add language surface on top of it, they don't replace it.
+than by section order in the design doc. The lowering pipeline (`adhoc/compiler.py` executing
+on CPython) is the durable evaluation engine; later phases add language surface on top of it,
+they don't replace it. The interaction-net engine and parallel rewriting recorded in
+`DESIGN.md` are retired from this roadmap (see future directions).
 
 ### phase 0 — foundations
 
@@ -106,10 +106,35 @@ but doesn't depend on it.
 
 ### future directions (unscheduled)
 
-Recorded in `DESIGN.md` as design thinking, not committed to a phase:
+Not committed to a phase, ordered roughly by weight. The interaction-net engine and parallel
+active-pair rewriting from earlier drafts are retired: `DESIGN.md` keeps the design thinking,
+but nothing builds toward them unless an HVM-style engine is ever actually adopted as a real
+backend. The λ-literals and term-rewriting exploration is tracked as tickets 34/35 — the
+former is phase-independent, the latter rides phase 4.
 
-- **Interaction-net evaluation engine** — replacing the tree-walking interpreter with a
-  Lafont-combinator graph-rewriting engine. Would be a substantial rearchitecture; nothing
-  in phases 0-5 is written expecting it.
-- **Parallel active-pair rewriting** — concurrent reduction on the interaction-net engine
-  above, if it's ever built. Depends entirely on that engine existing first.
+- **LaTeX export** — `\tex(\expr(...))` renders an expression value back out as TeX/Unicode
+  source: `ad` reads like LaTeX, this is the round-trip. Small once phase-4 expression
+  values exist — pretty-printing over the quoted AST.
+- **Literate script mode** — strings are already comment-like statements; a script-mode flag
+  emits a Markdown/LaTeX transcript with each result inline. Half the feature exists.
+- **Number-theory prelude + postfix `!`** — `\gcd`, `\mod`, `\choose`, and factorial as a
+  postfix operator (the precedence table already reserves postfix slots). Wrinkle to settle
+  first: `a ≡ b (mod n)` congruence notation collides with `≡`-as-const.
+- **Exactness introspection** — ask which tier a value lives on (`\exact(v)`), control RRA
+  display precision. Small, and it makes the numerics story visible.
+- **Textbook multi-clause definitions** — `f(0) = 1; f(n) = n·f(n-1)` as one definition,
+  first matching clause winning; generalizes the designed piecewise `\otherwise` form.
+  Design tension: a clause sequence must read as one definition, not successive rebinding,
+  to coexist with the immutability rules.
+- **Recurrence-defined lazy sequences** — `a(n) = a(n-1) + a(n-2)` memoized and lazy,
+  foldable over `a(1)..`. The natural consumer of the existing lazy/convergence machinery.
+- **Units and dimensional analysis** — `9.8 \m \per \s^2` with dimension errors at the
+  numeric seam. The exact tower loves it and prelude protection gives unit names a home;
+  costly, high ceiling — positions `ad` as the physics quick-calc tool.
+- **Exact symbolic differentiation** — `\diff(\expr(x^2), x)` via product/chain-rule AST
+  rewriting; easier than `\solve` and exact where CAS-lite tools float. A candidate to
+  promote into phase 4 rather than past it.
+- **Arbitrary-precision float tier** — MPFR/gmpy2 behind the numeric seam with a `\prec(n)`
+  directive (docs/numerics.md already anticipates the slot); makes RRA display tunable.
+- **User modules / custom preludes** — `\use("file.ad")` importing bindings; the
+  protected-name machinery generalizes to "this file's constants are protected on import".
