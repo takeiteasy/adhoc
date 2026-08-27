@@ -7,9 +7,9 @@ from adhoc.runtime import EvalError
 from adhoc.span import Span
 
 
-def last(src: str, env: dict | None = None) -> str:
+def last(src: str, env: dict | None = None, consts: set | None = None) -> str:
     """Mirror interp.rs's run(...).format(): only the final statement's result."""
-    return run_source(src, env)[-1]
+    return run_source(src, env, consts)[-1]
 
 
 # --- ports of interp.rs's test suite ---
@@ -53,7 +53,7 @@ def test_seq_threads_env_and_returns_last():
 
 def test_backslash_ref_errors_unbound():
     with pytest.raises(EvalError) as e:
-        run_source("\\pi")
+        run_source("\\bogus")
     assert "not bound" in e.value.msg
 
 
@@ -71,8 +71,8 @@ def test_span_narrowing_division_by_zero():
 
 def test_span_narrowing_backslash_ref_is_sigil_inclusive():
     with pytest.raises(EvalError) as e:
-        run_source("\\pi")
-    assert e.value.span == Span(0, 3)
+        run_source("\\bogus")
+    assert e.value.span == Span(0, 6)
 
 
 def test_span_narrowing_second_statement_only():
@@ -126,8 +126,8 @@ def test_assignment_semantics_table():
 
 def test_grammar_unicode_identifier():
     env: dict = {}
-    assert last("π = 3", env) == "π = 3"
-    assert env["π"] == 3
+    assert last("α = 3", env) == "α = 3"
+    assert env["α"] == 3
 
 
 def test_exact_arithmetic_end_to_end():
@@ -298,3 +298,136 @@ def test_fold_and_limit_lower_through_engine_calls():
     assert "_e.fold(" in compiled.source
     assert "_e.limit(" in compiled.source
     assert compiled.definitions  # both bodies compiled alongside
+
+
+# --- prelude scope, protected names, constants (≡ / \const), booleans ---
+
+
+def test_prelude_constants_are_bound():
+    assert last("π") == "= 3.141592653589793"
+    assert last("\\pi") == "= 3.141592653589793"
+    assert last("e") == "= 2.718281828459045"
+
+
+def test_unicode_and_ascii_prelude_names_share_one_value():
+    import adhoc.runtime as runtime
+
+    assert runtime.PRELUDE["π"] is runtime.PRELUDE["pi"]
+
+
+def test_prelude_py_function_aliases():
+    assert last("\\sqrt(2)") == "= 1.4142135623730951"
+    assert last("\\sin(0)") == "= 0.0"
+    assert last("\\cos(0)") == "= 1.0"
+    assert last("\\ln(1)") == "= 0.0"
+    # The aliases are the plain math.* callables themselves.
+    assert last("\\sqrt") == "= <py math.sqrt>"
+    # They compose with the rest of the language.
+    out = last("\\lim(x=0) \\sin(x)/x")
+    assert abs(float(out[2:]) - 1.0) <= 1e-9
+
+
+def test_prelude_names_cannot_be_rebound():
+    for src in ["π = 3", "π := 3", "\\pi = 3", "e = 5", "e := 5",
+                "\\true = \\false", "\\true := 1"]:
+        with pytest.raises(EvalError) as e:
+            run_source(src)
+        assert "is a constant" in e.value.msg, f"for {src}"
+
+
+def test_prelude_names_cannot_be_shadowed_by_parameters():
+    for src in ["f(π) = 1", "f(e) = 1", "\\fact(π) = 1"]:
+        with pytest.raises(EvalError) as e:
+            run_source(src)
+        assert "is a constant" in e.value.msg, f"for {src}"
+
+
+def test_prelude_names_cannot_be_shadowed_by_locals():
+    env: dict = {}
+    run_source("f(x) = π = 1; x", env)  # definition succeeds; the body is never run
+    with pytest.raises(EvalError) as e:
+        run_source("f(5)", env)
+    assert e.value.msg == "`π` is a constant"
+
+
+def test_prelude_names_cannot_be_binder_variables():
+    with pytest.raises(EvalError, match="`π` is a constant"):
+        run_source("\\sum(π=1..2) π")
+    with pytest.raises(EvalError, match="`π` is a constant"):
+        run_source("\\lim(π=0) π")
+
+
+def test_prelude_names_are_not_in_the_user_env():
+    env: dict = {}
+    run_source("q = 1", env)
+    assert dict(env) == {"q": 1}
+
+
+def test_boolean_constants():
+    assert last("\\true") == "= true"
+    assert last("\\false") == "= false"
+    env: dict = {}
+    assert last("t = \\true", env) == "t = true"
+    assert last("t", env) == "= true"
+    assert last("x = 1 < 2", env) == "x = true"
+
+
+def test_boolean_constants_drive_conditionals():
+    assert last("\\if(\\true, 1, 2)") == "= 1"
+    assert last("\\if(\\false, 1, 2)") == "= 2"
+    assert last("\\if(1 < 2, 10, 20)") == "= 10"
+    assert run_source("\\if(\\false, 1)") == []  # statement no-op
+
+
+def test_const_declaration_via_sigil_and_keyword():
+    assert last("c ≡ 5") == "c = 5"
+    assert last("\\const m = 10") == "m = 10"
+
+
+def test_const_bindings_are_permanently_immutable():
+    env: dict = {}
+    consts: set = set()
+    assert last("c ≡ 5", env, consts) == "c = 5"
+    for src in ["c = 6", "c := 6", "c ≡ 6", "\\const c = 6"]:
+        with pytest.raises(EvalError) as e:
+            run_source(src, env, consts)
+        assert "is a constant" in e.value.msg, f"for {src}"
+
+
+def test_const_persists_across_executions():
+    # The consts set rides alongside env, so the REPL's immutability survives
+    # across independent statements.
+    env: dict = {}
+    consts: set = set()
+    run_source("d ≡ 5", env, consts)
+    with pytest.raises(EvalError, match="`d` is a constant"):
+        run_source("d := 6", env, consts)
+
+
+def test_const_over_a_bound_name_errors():
+    env: dict = {}
+    run_source("q = 1", env)
+    with pytest.raises(EvalError, match="already bound"):
+        run_source("q ≡ 2", env)
+
+
+def test_const_function_definitions_are_callable_and_immutable():
+    env: dict = {}
+    consts: set = set()
+    assert run_source("\\const \\double(x) = 2x", env, consts) == \
+        ["\\double = <fn \\double(x)>"]
+    assert last("\\double(21)", env) == "= 42"
+    with pytest.raises(EvalError, match="is a constant"):
+        run_source("\\double := 1", env, consts)
+
+
+def test_const_declarations_are_top_level_only():
+    env: dict = {}
+    run_source("f(x) = (r ≡ 5; r)", env)
+    with pytest.raises(EvalError, match="constants are global"):
+        run_source("f(1)", env)
+
+
+def test_multi_char_function_definitions_echo_single_sigil():
+    # assign's _name_text already sigilates; the echoed line shows one backslash.
+    assert run_source("\\fact(n) = n") == ["\\fact = <fn \\fact(n)>"]

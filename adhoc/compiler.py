@@ -14,7 +14,8 @@ Lowering rules:
 - A bare-string *statement* lowers to `pass`: one generated line per statement keeps the
   lineno ↔ span table aligned while producing no output.
 - Variables are never bare Python name loads or stores — reads go through `_e.var`,
-  writes through `_e.assign`/`_e.reassign` implementing bind-or-compare. The user env is
+  writes through `_e.assign`/`_e.reassign` implementing bind-or-compare, and constant
+  declarations (`x ≡ e` / `\\const x = e`) through `_e.const_assign`. The user env is
   a plain dict the engine holds; it never mixes with the exec globals.
 - `\name` lowers to `_e.bref("name", sid)`; application lowers to `_e.app(head, args,
   sid)`; `\\py(path)` is the one backslash name with semantics of its own and lowers to
@@ -40,6 +41,7 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    ConstAssign,
     Fold,
     FuncDef,
     IfExpr,
@@ -118,7 +120,12 @@ class _Lowerer:
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(stmt.body)
                 return pyast.unparse(_call("define", [pyast.Constant(stmt.name),
-                    pyast.Constant(stmt.params), pyast.Constant(stmt.force), pyast.Constant(sid)]))
+                    pyast.Constant(stmt.params), pyast.Constant(stmt.force),
+                    pyast.Constant(stmt.const), pyast.Constant(sid)]))
+            case ConstAssign(name=name, value=value, span=span):
+                sid = self._push(span)
+                return pyast.unparse(_call("const_assign",
+                    [pyast.Constant(name), self.expr(value), pyast.Constant(sid)]))
             case StrLit():
                 # A lone string is a comment-like no-op; `pass` keeps the one-line-per-
                 # statement invariant that the lineno ↔ span table depends on.
@@ -191,6 +198,12 @@ class _Lowerer:
             case Assign(name=name, value=value, span=span):
                 sid = self._push(span)
                 return _call("set", [pyast.Constant(name), self.expr(value), pyast.Constant(sid)])
+            case ConstAssign(name=name, value=value, span=span):
+                # Inside a parenthesized sequence; the engine rejects constant
+                # declarations off the top level with the node's span.
+                sid = self._push(span)
+                return _call("const_assign", [pyast.Constant(name), self.expr(value),
+                                              pyast.Constant(sid)])
             case Seq(statements=statements):
                 return pyast.Subscript(
                     value=pyast.Tuple(elts=[self.expr(s) for s in statements], ctx=pyast.Load()),

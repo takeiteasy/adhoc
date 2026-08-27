@@ -72,6 +72,7 @@ def run_repl(emit_py: bool = False) -> int:
             pass
 
     env: dict = {}
+    consts: set = set()  # user-declared constant names, protected for the session
     pending = ""
 
     while True:
@@ -121,7 +122,7 @@ def run_repl(emit_py: bool = False) -> int:
         if emit_py:
             print(compiled.source, file=sys.stderr)
         try:
-            outs = execute(compiled, env)
+            outs = execute(compiled, env, consts)
         except EvalError as e:
             print_eval_error(source, e)
             continue

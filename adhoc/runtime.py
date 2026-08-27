@@ -43,6 +43,18 @@ The conversion matrix (`_to_ad`) is therefore deliberately small:
 then attributes) and requires the result to be callable. This is a full-trust escape
 hatch by design: a script that can call `\\py` can do anything Python can.
 
+## The prelude
+
+A built-in scope present in every session (`PRELUDE` below): constants (`π`/`\\pi`,
+`e`, `\\true`, `\\false`) and py-function aliases (`\\sin`, `\\cos`, `\\tan`, `\\ln`,
+`\\sqrt` — plain `math.*` callables, float tier; symbolic closed forms are phase 2).
+Every unicode-named builtin is bound under both spellings to the same object (`π` and
+`\\pi` are one constant, not two). Prelude names are permanently protected — they can
+never be rebound or shadowed, so a parameter, local, or binder named like a prelude
+entry is a redefinition error, and every read of a prelude name yields the same value.
+User-declared constants (`x ≡ e` / `\\const x = e`) join the protected set for the rest
+of the session; the set lives on the root `Engine` and is shared with every child frame.
+
 ## Pinned divergences from the rug/MPFR backing (docs/numerics.md)
 
 - Float division by ±0.0 yields signed infinity (NaN only for 0/0) — MPFR semantics;
@@ -84,6 +96,25 @@ MAX_PROBES = 200
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod"}
 
 _NUMERIC_TYPES = (int, float, Fraction)
+
+# The prelude scope: built-in constants and py-function aliases, present in every
+# session (see the module docstring). `\ln` is natural log (math.log); the function
+# aliases are the float-tier `math.*` callables themselves — the symbolic tier will
+# replace these bindings in place, users never rebind them.
+PRELUDE: dict[str, Any] = {
+    "π": math.pi,
+    "pi": math.pi,
+    "e": math.e,
+    "true": True,
+    "false": False,
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "ln": math.log,
+    "sqrt": math.sqrt,
+}
+
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 
 @dataclass(frozen=True)
@@ -371,7 +402,8 @@ class AdFunction:
             raise EvalError(f"{self.name} takes {len(self.params)} arguments, got {len(args)}")
         frame = dict(zip(self.params, args))
         frame[self.name] = self
-        child = Engine(frame, self.body.spans, self.body.definitions, self.closure)
+        child = Engine(frame, self.body.spans, self.body.definitions, self.closure,
+                       self.closure.consts)
         try:
             scope = {"_e": child}
             exec(self.body.code, scope)
@@ -437,50 +469,103 @@ class Engine:
     `outputs` in evaluation order — the REPL prints only the last, script mode echoes all
     (matching main.rs's run_and_echo vs repl.rs)."""
 
-    def __init__(self, env: dict[str, Any], spans: Sequence[Span], definitions=None, parent=None):
+    def __init__(self, env: dict[str, Any], spans: Sequence[Span], definitions=None,
+                 parent=None, consts: set[str] | None = None):
         self.env = env
         self.spans = spans
         self.definitions = definitions or {}
         self.parent = parent
+        # User-declared constants join the prelude in the protected set. The set is
+        # created at the root engine (constant declaration is top-level only) and
+        # shared with every child frame, so protection checks need no chain walk.
+        self.consts: set[str] = consts if consts is not None else set()
         self.outputs: list[str] = []
         self.result: Any = None
 
     def _fail(self, msg: str, sid: int) -> NoReturn:
         raise EvalError(msg, self.spans[sid])
 
+    def _protected(self, name: str) -> bool:
+        """Prelude names are protected everywhere; session constants join them once
+        declared (`const_assign`). Covers rebinding by `=`, `:=`, local `set`,
+        function definition, and — at the definition/binder sites — parameters and
+        loop variables, so a protected name can never be shadowed."""
+        return name in _PRELUDE_PROTECTED or name in self.consts
+
+    def _lookup(self, name: str) -> Any:
+        """Walk the frame chain for `name`; the prelude sits outermost. Returns
+        _MISSING instead of failing so the caller reports with its own span table —
+        a parent engine's table is a different unit's and must never be indexed with
+        this frame's span ids."""
+        scope = self
+        while scope is not None:
+            if name in scope.env:
+                return scope.env[name]
+            scope = scope.parent
+        return PRELUDE.get(name, _MISSING)
+
     def var(self, name: str, sid: int) -> AdValue:
-        try:
-            return self.env[name]
-        except KeyError:
-            if self.parent is not None:
-                return self.parent.var(name, sid)
+        value = self._lookup(name)
+        if value is _MISSING:
             self._fail(f"`{name}` is not bound", sid)
+        return value
 
     def bref(self, name: str, sid: int) -> AdValue:
         if name == "py":
-            self._fail('`\\py` must be applied to a path: \\py("dotted.path")', sid)
-        if name in self.env:
-            return self.env[name]
-        if self.parent is not None:
-            return self.parent.bref(name, sid)
-        self._fail(f"`\\{name}` is not bound", sid)
+            self._fail(r'`\py` must be applied to a path: \py("dotted.path")', sid)
+        if name == "if":
+            self._fail("`\\if` must be applied: \\if(condition, then[, otherwise])", sid)
+        if name == "const":
+            self._fail("`\\const` declares constants: \\const x = e, or x ≡ e", sid)
+        value = self._lookup(name)
+        if value is _MISSING:
+            self._fail(f"`\\{name}` is not bound", sid)
+        return value
 
     def reserved(self, sid: int) -> NoReturn:
         """The parsed-but-unimplemented definition shape `f(x) = body` lowers here."""
         self._fail("function definitions are not implemented yet (reserved for phase 1)", sid)
 
-    def define(self, name, params, force, sid):
+    def define(self, name, params, force, const, sid):
+        # Parameters bind into the call frame exactly like assignments, so a protected
+        # parameter would shadow a prelude/constant name — rejected at definition.
+        for p in params:
+            if self._protected(p):
+                self._fail(f"`{p}` is a constant", sid)
         fn = AdFunction(name, params, self.definitions[sid], self)
-        result = self.reassign(name, fn, sid) if force else self.assign(name, fn, sid)
-        if len(name) > 1:
-            result = result.replace(f"{name} =", f"\\{name} =", 1)
-            self.outputs[-1] = result
-        return result
+        if const:
+            self.const_assign(name, fn, sid)
+        else:
+            (self.reassign if force else self.assign)(name, fn, sid)
+        # assign/reassign/const_assign already sigilate multi-character names via
+        # _name_text, so the echoed line needs no further rebranding.
+        return self.outputs[-1]
 
     def set(self, name, value, sid):
         self._check_assignable(value, sid)
+        if self._protected(name):
+            self._fail(f"`{name}` is a constant", sid)
         self.env[name] = value
         return value
+
+    def const_assign(self, name: str, value: AdValue, sid: int) -> str:
+        """`x ≡ e` / `\\const x = e` — declare a permanently-immutable global binding.
+        A declaration, not assign-or-check: the name must be fresh, top-level, and
+        unprotected. Afterwards no path can rebind it — `=` re-binds are protected,
+        `:=` is protected, and locals/parameters/binders named `x` are redefinition
+        errors (see `_protected`)."""
+        self._check_assignable(value, sid)
+        if self.parent is not None:
+            self._fail("constants are global; declare them at the top level", sid)
+        if self._protected(name):
+            self._fail(f"`{name}` is a constant", sid)
+        if name in self.env:
+            self._fail(f"`{name}` is already bound; constants declare fresh names", sid)
+        self.env[name] = value
+        self.consts.add(name)
+        result = f"{_name_text(name)} = {nshow(value)}"
+        self.outputs.append(result)
+        return result
 
     def _compare(self, op, a, b, sid):
         try:
@@ -519,7 +604,7 @@ class Engine:
         """Evaluate a compiled body once with the loop variable layered over a child
         frame. Scoping mirrors AdFunction.__call__: reads of other names fall through
         to the parent chain, writes stay local to this iteration."""
-        child = Engine(bindings, body.spans, body.definitions, self)
+        child = Engine(bindings, body.spans, body.definitions, self, self.consts)
         scope = {"_e": child}
         try:
             exec(body.code, scope)
@@ -543,6 +628,10 @@ class Engine:
         for bodies whose value approaches 0 (the remaining tail then exceeds the
         tolerance); a tail-aware or relative stopping rule would tighten that."""
         label = FOLD_LABELS.get(op_name, "\\sum")
+        # The loop variable binds like a parameter: a protected name is a
+        # redefinition error, never a shadow.
+        if self._protected(name):
+            self._fail(f"`{name}` is a constant", sid)
         if not isinstance(value, RangeValue):
             self._fail(f"{label} folds over a range, got {nshow(value)}", sid)
         fn = nmul if op_name == "mul" else nadd
@@ -581,6 +670,8 @@ class Engine:
         anchor = _as_float(point_value)
         if not math.isfinite(anchor):
             self._fail("\\lim approaches a finite point", sid)
+        if self._protected(name):
+            self._fail(f"`{name}` is a constant", sid)
         body = self.definitions[sid]
         h = max(abs(anchor), 1.0) * 0.5**7  # start close enough that ~60 halvings pass any ulp floor
         estimates: list[float] = []
@@ -697,6 +788,8 @@ class Engine:
 
     def assign(self, name: str, value: AdValue, sid: int) -> str:
         self._check_assignable(value, sid)
+        if self._protected(name):
+            self._fail(f"`{name}` is a constant", sid)
         if name in self.env:
             matches = neq(self.env[name], value)
             result = "true" if matches else "false"
@@ -708,6 +801,8 @@ class Engine:
 
     def reassign(self, name: str, value: AdValue, sid: int) -> str:
         self._check_assignable(value, sid)
+        if self._protected(name):
+            self._fail(f"`{name}` is a constant", sid)
         if name not in self.env:
             self._fail(f"`{name}` does not exist!", sid)
         self.env[name] = value

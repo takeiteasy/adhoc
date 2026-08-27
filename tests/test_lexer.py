@@ -9,6 +9,7 @@ from adhoc.lexer import (
     Eq,
     Eof,
     Ident,
+    IdenticalTo,
     LexError,
     LParen,
     Minus,
@@ -144,6 +145,13 @@ def test_comma_token():
     assert kinds(",") == [Comma, Eof]
 
 
+def test_identical_to_token():
+    # ≡ is a math symbol (not isalpha), so it gets an explicit token; spans stay bytes.
+    toks = tokenize("π ≡ 3")
+    assert [type(t) for t in toks] == [Ident, IdenticalTo, Number, Eof]
+    assert toks[1].span == Span(3, 6)  # π is 2 bytes, space 1, ≡ is 3 bytes
+
+
 def test_range_token_and_decimal_disambiguation():
     toks = tokenize("1..2 1.25")
     assert [type(t) for t in toks] == [Number, DotDot, Number, Number, Eof]
@@ -151,7 +159,9 @@ def test_range_token_and_decimal_disambiguation():
     assert toks[3].text == "1.25"
 
 
-def test_py_name_lexes_from_known_table():
+def test_py_name_lexes_generically():
+    # There is no known-name table in the lexer: every \name lexes the same way,
+    # and it is the parser/prelude that gives names meaning.
     toks = tokenize("\\py")
     assert isinstance(toks[0], Backslash)
     assert toks[0].name == "py"

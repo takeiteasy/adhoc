@@ -20,10 +20,13 @@ def compile_source(src: str) -> Compiled:
     return compile_program(parse_program(src))
 
 
-def execute(compiled: Compiled, env: dict) -> list[str]:
-    """Run a compiled unit against `env`, returning one formatted string per statement."""
+def execute(compiled: Compiled, env: dict, consts: set[str] | None = None) -> list[str]:
+    """Run a compiled unit against `env`, returning one formatted string per statement.
+    `consts` is the session's set of user-declared constant names — pass the same set
+    across calls (as the REPL does alongside `env`) so permanent immutability outlives
+    a single statement."""
     g: dict = {}
-    g["_e"] = Engine(env, compiled.spans, compiled.definitions)
+    g["_e"] = Engine(env, compiled.spans, compiled.definitions, consts=consts)
     try:
         exec(compiled.code, g)  # noqa: S102 - generated from our own AST only
     except EvalError as e:
@@ -48,8 +51,9 @@ def _map_unexpected(e: Exception, compiled: Compiled) -> EvalError:
     return EvalError(msg, span)
 
 
-def run_source(src: str, env: dict | None = None) -> list[str]:
+def run_source(src: str, env: dict | None = None,
+               consts: set[str] | None = None) -> list[str]:
     """Convenience for callers that just want text in, strings out."""
     if env is None:
         env = {}
-    return execute(compile_source(src), env)
+    return execute(compile_source(src), env, consts)

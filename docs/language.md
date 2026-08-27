@@ -43,9 +43,18 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
   semicolon-sequenced bodies, first-class function values, and recursion.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
+- Booleans are real values: comparisons produce them, arithmetic rejects them, `\if`
+  consumes them, and `\true`/`\false` are bound constants.
 - Lazy conditionals: `\if(condition, then)` and `\if(condition, then, otherwise)`. A false
   two-argument conditional is a statement-level no-op; parenthesized sequences such as
   `(a = 1; a + 1)` support multi-statement branches.
+- Constant declarations: `c ≡ 5` or `\const c = 5` declare permanently-immutable globals —
+  no `=`, `:=`, local assignment, parameter, or binder can ever rebind the name, and
+  `\const f(x) = ...` declares an immutable function the same way.
+- A protected prelude scope: `π`/`\pi`, `e`, `\true`/`\false`, and the `\sin`, `\cos`,
+  `\tan`, `\ln`, `\sqrt` function aliases (the plain `math.*` callables, float tier).
+  Prelude names can never be rebound or shadowed, and unicode/ASCII spellings are one and
+  the same value (`π` and `\pi` are a single constant).
 - Lazy arithmetic ranges: `a..b` is an inclusive step-1 range, `a..` is infinite, and
   `a,c..b` / `a,c..` infer the step as `c-a`. Finite ranges stop before crossing an
   unreachable endpoint; ranges display as `<range ...>` and can be assigned.
@@ -75,14 +84,15 @@ unambiguously means `a * b`; anything spelled with more than one character needs
 avoid colliding with that. The `\` names are chosen to match LaTeX commands where one exists,
 so `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX —
 see `README.md`. This is a naming convention, not a claim that `ad` parses TeX: there are no
-layout or document commands, and the `\`-name table is a small fixed set.
+layout or document commands, and the set of `\`-names with language-defined meaning is small
+and closed.
 
-Two `\`-names have semantics today: `\py("dotted.path")` resolves into Python and returns
-the callable (docs/grammar.md), and `\sum`/`\prod`/`\lim` are the fold and limit special
-forms (docs/grammar.md, `## Special forms`) — with `Σ` ≡ `\sum` and `Π` ≡ `\prod`. The rest
-still recognize and lex cleanly, but evaluating one is currently an "unbound name" error,
-not a lex error — they're seeded so later phases only need to add bindings, not touch the
-lexer.
+The lexer itself carries no name table: any `\`+letters sequence tokenizes the same way, and
+meaning comes from two places — the parser's closed set of special forms (`\sum`/`\prod`/`\lim`
+binders, call-shaped `\if`, `\py`, `\const`) and the prelude scope of built-in constants and
+function aliases (see docs/grammar.md, `## Constants and the prelude`). Everything else lexes
+cleanly and fails at evaluation as an unbound name, so later phases add bindings without
+touching the lexer.
 
 ## Known limitations (not bugs)
 

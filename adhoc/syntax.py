@@ -127,12 +127,14 @@ class Call(Node):
 
 @dataclass(frozen=True)
 class FuncDef(Node):
-    """A function definition with a semicolon-sequenced body."""
+    """A function definition with a semicolon-sequenced body. `const` marks the
+    `\\const f(x) = ...` form: the name is declared permanently immutable."""
 
     name: str
     params: tuple[str, ...]
     force: bool
     body: Node
+    const: bool = False
 
 
 @dataclass(frozen=True)
@@ -145,6 +147,16 @@ class UnOp(Node):
 class Assign(Node):
     name: str
     force: bool
+    value: Node
+
+
+@dataclass(frozen=True)
+class ConstAssign(Node):
+    """`x ≡ e` / `\\const x = e` — declare a global binding that can never be
+    reassigned, even with `:=`. Unlike `=` this is a declaration, not
+    assign-or-check: the name must be fresh. Statement-level only."""
+
+    name: str
     value: Node
 
 

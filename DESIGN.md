@@ -41,7 +41,7 @@ ADhoc Higher Order Calculator — a cli based calculator and language like `bc` 
 - The names are chosen to match their LaTeX command where one exists (`\sum`, `\prod`, `\sqrt`, `\cup`, `\cap`, `\in`, `\setminus`, `\circ`, `\lim`, `\sin`, `\ln`, ...) — `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX. This is a naming convention, not a compatibility claim: `ad` is not a TeX parser and has no layout/document commands.
 - Bracket syntax (`[...]`, `{...}`, `⟨...⟩`) is unaffected by this rule — `\arr(...)` is the ASCII *spelling* of `⟨...⟩`, a form rather than a name.
 - User-defined infix operators (`⊕` via `\infix(N) ⊕(a, b) = ...`) are exempt — the sigil rule is about language-defined names, not names an author invents.
-- Comparisons `<`, `>`, `<=`, `>=` produce booleans displayed as `true`/`false`; booleans are valid conditions but not numeric operands. Logical operators remain future work.
+- Comparisons `<`, `>`, `<=`, `>=` produce real booleans, displayed as `true`/`false`: valid conditions and bindable values, rejected as numeric operands. The literal spellings are `\true`/`\false`, bound in the prelude. Logical operators remain future work.
 
 ## precedence
 
@@ -135,7 +135,7 @@ literals:
 
 - Piecewise notation, matching how math textbooks write conditional functions, reusing the existing `;`-separated body style.
 - `\otherwise` is sugar for a final catch-all branch (no condition needed).
-- `=` inside a condition (`x >= 0`) is always a comparison, never a binding — binding-or-check `=` only appears at statement level (`x = 1`), never inside an expression. TODO: specific comparison/logical operators (`<`, `>`, `\and`, `\or`, etc.) to be added as they come up; not enumerating them yet.
+- `=` inside a condition (`x >= 0`) is always a comparison, never a binding — binding-or-check `=` only appears at statement level (`x = 1`), never inside an expression. Comparisons `<`, `>`, `<=`, `>=` exist and produce booleans; `\and`/`\or`/`\not` and other logical operators remain future work.
 - Recursion works — a function's own name is bound within its own body scope before evaluation, so `fact(n) = 1 \if n <= 1; n * fact(n-1) \otherwise` is valid. Specifics (e.g. tail-call handling) TBD.
 
 ## globals / constants
@@ -149,10 +149,11 @@ literals:
 < ERROR! `π` is a constant
 ```
 
-- `≡` ("identically equal to") declares a global, permanently-immutable binding — stronger than plain `=` (which permits `:=` to force-reassign later). `\const` is the ASCII keyword sugar.
+- `≡` ("identically equal to") declares a global, permanently-immutable binding — stronger than plain `=` (which permits `:=` to force-reassign later). `\const` is the ASCII keyword sugar, and both spellings cover function definitions too (`\const f(x) = ...` declares an immutable callable).
 - Regular globals (via `=`) still follow existing rules: immutable by default, force-reassignable with `:=`.
-- Built-in constants/functions (`π`, `e`, `\sin`, `\sqrt`, ...) are presumably declared this way in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same constant, not two different ones.
-- Prelude names are **protected everywhere**, not shadowable — a function parameter or local binding named `π` (or any other prelude name) is a redefinition error, not a local shadow. This keeps a prelude name's meaning fixed regardless of where it's read from, at the cost of a handful of single-character names (`π`, `e`, `i`, ...) being permanently unavailable as ordinary variable names.
+- A `≡`/`\const` declaration is not assign-or-check: the name must be fresh (and top-level); rebinding an existing name is an error, not a conversion to constant.
+- Built-in constants/functions (`π`/`\pi`, `e`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`) live in a prelude scope declared through this same mechanism. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same constant, not two different ones. The function aliases are the plain float-tier `math.*` callables; the symbolic closed forms of phase 2 replace those bindings in place.
+- Prelude names are **protected everywhere**, not shadowable — a function parameter, local binding, or fold/limit binder named `π` (or any other prelude name) is a redefinition error, not a local shadow. This keeps a prelude name's meaning fixed regardless of where it's read from, at the cost of a handful of single-character names (`π`, `e`) being permanently unavailable as ordinary variable names.
 
 ## numeric types
 

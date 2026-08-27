@@ -47,6 +47,7 @@ from .lexer import (
     Eq,
     Eof,
     Ident,
+    IdenticalTo,
     LexError,
     LParen,
     Less,
@@ -75,6 +76,7 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    ConstAssign,
     Fold,
     FuncDef,
     IfExpr,
@@ -158,14 +160,24 @@ class _Parser:
         span = statements[0].span.to(statements[-1].span)
         return Seq(statements=tuple(statements), span=span)
 
-    # statement ::= func-def | string | identifier ("=" | ":=") expr | expr ;
+    # statement ::= func-def | const-stmt | string
+    #             | identifier ("=" | ":=") expr | expr ;
     def statement(self) -> Node:
         tok = self.peek()
         if isinstance(tok, Str):
             # A string alone is a statement — ignored like a comment (docs/grammar.md).
             self.advance()
             return StrLit(text=tok.text, span=tok.span)
+        if isinstance(tok, Backslash) and tok.name == "const":
+            return self._const_statement()
         if isinstance(tok, (Ident, Backslash)):
+            if isinstance(self.peek2(), IdenticalTo):
+                ident_tok = self.advance()
+                self.advance()  # ≡
+                value = self.expr()
+                name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+                return ConstAssign(name=name, value=value,
+                                   span=ident_tok.span.to(value.span))
             if isinstance(self.peek2(), (Eq, ColonEq)):
                 ident_tok = self.advance()
                 force = isinstance(self.advance(), ColonEq)
@@ -180,6 +192,62 @@ class _Parser:
                     return defn
                 self.pos = saved  # not the def shape after all — reparse as an application
         return self.expr()
+
+    # const-stmt ::= "\const" name "=" expr
+    #              | "\const" name "(" params? ")" "=" statement (";" statement)* ;
+    # Committed form (unlike the speculative plain func-def): once `\const` names a
+    # binding, anything but `=` or a parameter list is a genuine parse error.
+    def _const_statement(self) -> Node:
+        const_tok = self.advance()  # the `\const` token
+        if not isinstance(self.peek(), (Ident, Backslash)):
+            raise self.error_at_current("expected a name after `\\const`")
+        ident_tok = self.advance()
+        name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+        if isinstance(self.peek(), ColonEq):
+            raise ParseError("constants cannot be force-reassigned", self.peek().span)
+        if isinstance(self.peek(), LParen):
+            self.advance()
+            params = self._func_params()
+            if isinstance(self.peek(), ColonEq):
+                raise ParseError("constants cannot be force-reassigned", self.peek().span)
+            self.expect(Eq, "`=`")
+            body = self._func_body()
+            return FuncDef(name=name, params=params, force=False, body=body, const=True,
+                           span=const_tok.span.to(body.span))
+        self.expect(Eq, "`=`")
+        value = self.expr()
+        return ConstAssign(name=name, value=value, span=const_tok.span.to(value.span))
+
+    def _func_params(self) -> tuple[str, ...]:
+        params: list[str] = []
+        while True:
+            tok = self.peek()
+            if isinstance(tok, Ident):
+                params.append(tok.ch)
+                self.advance()
+            elif isinstance(tok, RParen):
+                break
+            else:
+                raise self.error_at_current(
+                    f"expected a parameter name, found {tok.describe}")
+            if isinstance(self.peek(), Comma):
+                self.advance()
+            else:
+                break
+        self.expect(RParen, "`)`")
+        return tuple(params)
+
+    def _func_body(self) -> Node:
+        body_stmts = [self.statement()]
+        while isinstance(self.peek(), Semi):
+            self.advance()
+            if isinstance(self.peek(), Eof):
+                break
+            body_stmts.append(self.statement())
+        if len(body_stmts) == 1:
+            return body_stmts[0]
+        return Seq(statements=tuple(body_stmts),
+                   span=body_stmts[0].span.to(body_stmts[-1].span))
 
     # func-def ::= identifier "(" params? ")" ("=" | ":=") expr ;
     # Speculative: parse the head shape, and only commit when an `=`/`:=` follows the
@@ -208,15 +276,7 @@ class _Parser:
         if not isinstance(self.peek(), (Eq, ColonEq)):
             return None
         force = isinstance(self.advance(), ColonEq)
-        body_stmts = [self.statement()]
-        while isinstance(self.peek(), Semi):
-            self.advance()
-            if isinstance(self.peek(), Eof):
-                break
-            body_stmts.append(self.statement())
-        body = body_stmts[0] if len(body_stmts) == 1 else Seq(
-            statements=tuple(body_stmts), span=body_stmts[0].span.to(body_stmts[-1].span)
-        )
+        body = self._func_body()
         span = ident_tok.span.to(body.span)
         name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
         return FuncDef(name=name, params=tuple(params), force=force, body=body, span=span)
@@ -328,8 +388,18 @@ class _Parser:
         if (
             (fold_op is not None or self._limit_head(node))
             and isinstance(self.peek(), LParen)
-            and self._binder_shape_ahead()
         ):
+            if not self._binder_shape_ahead():
+                # Fold/limit heads are reserved special forms — any parenthesized use
+                # that is not the binder shape is a usage error, not an application of
+                # an unbound name.
+                usage = ("\\lim(x=a) body" if fold_op is None
+                         else "\\sum(i=a..b) body")
+                raise ParseError(
+                    f"{self._form_label(node)} takes a binder as its first "
+                    f"argument: {usage}",
+                    node.span.to(self.peek().span),
+                )
             # Binder shape committed: bare `=` cannot occur in a general expression,
             # so from here on malformed binders are genuine parse errors.
             return self._special_form(node, fold_op)

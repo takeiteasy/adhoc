@@ -25,7 +25,9 @@ compatibility. See [`docs/language.md`](docs/language.md) for what's real today,
 Core phase 0 plus phase-1 language: a REPL and script runner that evaluate arithmetic exactly
 (`1/3 + 1/3 + 1/3` is `1`, not `0.999...`), with assignment, force-reassignment, caret-pointing
 error diagnostics, postfix application (`f(x)`), functions with local scoping, lazy conditionals
-(`\if`), and the `\py("math.sqrt")(2)` escape hatch into Python — full trust, native conversion
+(`\if`), real booleans with `\true`/`\false`, permanently-immutable constants (`φ ≡ 1.618...`),
+a protected prelude scope (`π`, `\sqrt`, `\sin`, ...), and the `\py("math.sqrt")(2)` escape
+hatch into Python — full trust, native conversion
 both ways (docs/numerics.md). Strings are literals, not values: they name Python paths and act
 as comment-like statements, nothing more (docs/grammar.md). The implementation is pure Python:
 `ad` lowers to Python's own AST and runs on CPython. Ranges are lazy and support finite/infinite

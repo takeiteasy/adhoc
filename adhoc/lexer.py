@@ -21,13 +21,6 @@ from dataclasses import dataclass
 
 from .span import Span
 
-KNOWN_BACKSLASH_NAMES = (
-    "pi", "sum", "prod", "sqrt", "cup", "cap", "in", "subseteq", "setminus", "circ", "lim",
-    "const", "arr", "expr", "if", "otherwise", "sin", "cos", "tan", "ln", "solve", "simplify",
-    "expand", "factor", "eval", "body", "map", "fold", "filter", "graph", "infix", "and", "or",
-    "not", "py",
-)
-
 
 class LexError(Exception):
     def __init__(self, msg: str, span: Span):
@@ -133,6 +126,16 @@ class ColonEq(Token):
     @property
     def describe(self) -> str:
         return "`:=`"
+
+
+@dataclass(frozen=True)
+class IdenticalTo(Token):
+    """`≡` — permanently-immutable binding (the unicode spelling of `\\const`):
+    statement-level only, like `=`/`:=`."""
+
+    @property
+    def describe(self) -> str:
+        return "`≡`"
 
 
 @dataclass(frozen=True)
@@ -289,6 +292,12 @@ def tokenize(src: str) -> list[Token]:
                 raise LexError("bare `\\` with no name following", span)
             tokens.append(Backslash(name=name, span=span))
             i = j
+            continue
+
+        if c == "≡":
+            end = pos + len(c.encode("utf-8"))
+            tokens.append(IdenticalTo(span=Span(pos, end)))
+            i += 1
             continue
 
         if c.isalpha():

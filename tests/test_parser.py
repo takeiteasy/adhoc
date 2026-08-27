@@ -8,6 +8,7 @@ from adhoc.syntax import (
     BinOp,
     BinOperator as B,
     Call,
+    ConstAssign,
     Fold,
     FuncDef,
     Limit,
@@ -22,7 +23,7 @@ from adhoc.syntax import (
 
 
 def shape(node):
-    """A span-free structural snapshot, for comparing trees built from source spellings
+    r"""A span-free structural snapshot, for comparing trees built from source spellings
     of different byte widths (`Σ` vs `\sum`)."""
     if not hasattr(node, "__dataclass_fields__"):
         return repr(node)
@@ -274,6 +275,56 @@ def test_def_attempt_with_non_ident_param_reparses_as_application():
     assert not isinstance(node, FuncDef)
 
 
+# --- constant declarations: x ≡ e and \const x = e ---
+
+
+def test_identical_to_binding_parses_into_const_assign():
+    node = parse_program("x ≡ 5")
+    assert isinstance(node, ConstAssign)
+    assert node.name == "x"
+    assert isinstance(node.value, NumLit)
+    # Spans are bytes: ≡ is 3 UTF-8 bytes wide, and the node spans name to value.
+    assert node.span == Span(0, 7)
+
+
+def test_identical_to_accepts_backslash_names():
+    node = parse_program("\\bar ≡ 5")
+    assert isinstance(node, ConstAssign)
+    assert node.name == "bar"
+
+
+def test_const_keyword_is_the_same_tree_as_the_sigil():
+    assert shape(parse_program("\\const x = 5")) == shape(parse_program("x ≡ 5"))
+
+
+def test_const_function_definition():
+    node = parse_program("\\const f(x) = x^2")
+    assert isinstance(node, FuncDef)
+    assert node.name == "f"
+    assert node.const is True
+    assert node.force is False
+    node = parse_program("\\const \\double(x) = 2x")
+    assert isinstance(node, FuncDef)
+    assert node.name == "double"
+    assert node.const is True
+
+
+def test_const_rejects_force_reassignment_spelling():
+    for src in ["\\const x := 5", "\\const f(x) := 5"]:
+        with pytest.raises(ParseError, match="force-reassigned"):
+            parse_program(src)
+
+
+def test_const_requires_a_name():
+    with pytest.raises(ParseError, match="expected a name"):
+        parse_program("\\const = 5")
+
+
+def test_const_needs_eq_after_name():
+    with pytest.raises(IncompleteInput):
+        parse_program("\\const x =")
+
+
 def test_incomplete_def_offers_continuation():
     for src in ["f(x) =", "f(x", "f("]:
         with pytest.raises(IncompleteInput):
@@ -392,14 +443,14 @@ def test_missing_body_after_closed_binder_is_incomplete():
         parse_program("\\sum(i=1..10)")
 
 
-def test_non_binder_use_of_special_heads_stays_an_application():
-    # The (ident = shape is what commits a special form; anything else keeps the
-    # ordinary call path (and fails at evaluation like any other unbound name).
-    node = parse_program("\\sum(2)")
-    match node:
-        case Call(head=BackslashRef(name="sum"), args=(NumLit(text="2"),)):
-            pass
-        case _:
-            pytest.fail(f"expected ordinary application fallback, got {node!r}")
-    node = parse_program("Σ(x)")
-    assert isinstance(node, Call)
+def test_non_binder_use_of_special_heads_is_a_usage_error():
+    # Fold/limit heads are reserved special forms: a paren that is not the binder
+    # shape is a usage error at the head, not an application of an unbound name.
+    for src, head in [("\\sum(2)", "\\sum"), ("Σ(x)", "Σ"), ("\\lim(2)", "\\lim")]:
+        with pytest.raises(ParseError, match="takes a binder as its first argument") as e:
+            parse_program(src)
+        assert head in e.value.msg
+    # Without a paren there is no application to misread; the head is simply an
+    # unbound name at evaluation.
+    node = parse_program("\\sum")
+    assert isinstance(node, BackslashRef) and node.name == "sum"

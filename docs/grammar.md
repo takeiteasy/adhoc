@@ -18,16 +18,20 @@ written against — it should stay in lockstep with the code.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
   Backslash names may be built-ins or user-defined names, including variables; an unbound
   one fails at evaluation.
-- Operators: `+ - * / ^ < > <= >= = := .. ( ) ,`. Statement separator: `;`.
+- Operators: `+ - * / ^ < > <= >= = := ≡ .. ( ) ,`. Statement separator: `;`.
 
 ## Grammar (EBNF)
 
 ```
 program    ::= statement (";" statement)* ";"? ;
 statement  ::= func-def
-               | string
-               | identifier ("=" | ":=") expr
-               | expr ;
+             | const-stmt
+             | string
+             | identifier ("=" | ":=") expr
+             | expr ;
+const-stmt ::= identifier "≡" expr
+             | "\const" name "=" expr
+             | "\const" name "(" params? ")" "=" statement (";" statement)* ;
 
 expr       ::= range ;
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
@@ -65,7 +69,7 @@ Loosest to tightest:
 
 | Level | Operators | Associativity |
 |---|---|---|
-| 1 | `=` `:=` | statement level only, non-associative |
+| 1 | `=` `:=` `≡` | statement level only, non-associative |
 | 2 | `..` (range) | non-associative |
 | 3 | `<` `>` `<=` `>=` | non-associative |
 | 4 | `+` `-` (binary) | left |
@@ -164,8 +168,9 @@ Booleans are valid values and conditions but are not numeric operands.
 `\sum`, `\prod`, `\lim`, and the unicode spellings `Σ` ≡ `\sum`, `Π` ≡ `\prod` are
 **special forms**, not functions: their first parenthesized argument is a binding — an
 identifier, `=`, then the bound expression — which general expressions cannot contain.
-The parser recognizes the `(ident =` shape after one of these heads; any other use keeps
-the ordinary call path (and fails at evaluation like any other unbound name).
+The parser recognizes the `(ident =` shape after one of these heads; any other
+parenthesized use is a parse-time usage error naming the expected binder form, and
+without a paren the head is simply an unbound name at evaluation.
 
 ```
 \sum(i=1..10) i^2            ->  = 385          -- fold + over the range
@@ -230,8 +235,9 @@ there is no unicode form, the `\` spelling is the only one (`\sin`, `\lim`, `\so
 
 The names are chosen to match their LaTeX command where one exists, so `ad` source reads like
 the ASCII you'd already type to write the same expression in LaTeX — this is a naming
-convention, not a claim that `ad` parses TeX. See `docs/language.md` for the full table and
-`README.md` for the framing.
+convention, not a claim that `ad` parses TeX. The built-ins bound today are listed under
+`## Constants and the prelude`; `docs/language.md` has the fuller picture and `README.md` the
+framing.
 
 ## Assignment semantics
 
@@ -239,7 +245,35 @@ convention, not a claim that `ad` parses TeX. See `docs/language.md` for the ful
 - `x = e`, `x` bound → **compare** current value to `v`, prints `true` / `false`
 - `x := e`, `x` bound → rebind, prints `x = v`
 - `x := e`, `x` unbound → error: `` `x` does not exist! ``
+- `x ≡ e` / `\const x = e`, `x` fresh → declare permanently immutable, prints `x = v`
+- `x ≡ e` / `\const x = e`, `x` bound or protected → error (see `## Constants and the prelude`)
 - bare expression → prints `= v`
+
+## Constants and the prelude
+
+`x ≡ e` (or `\const x = e`) declares a global binding that can never be rebound — not by
+`=`, not by `:=`, not by a local assignment, a parameter, or a binder name. `\const f(x) = ...`
+declares a function under the same rule. A declaration is not assign-or-check: the name
+must be fresh and top-level, and `:=` after `\const` is a parse error.
+
+Built-in names live in a prelude scope protected by that same mechanism:
+
+| spelling | value |
+|---|---|
+| `π` / `\pi` | 3.141592653589793 |
+| `e` | 2.718281828459045 |
+| `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
+| `\sin` `\cos` `\tan` `\ln` `\sqrt` | the `math.*` float-tier callables |
+
+Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
+`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `π` is a constant ``),
+never shadows. Unicode and ASCII spellings are the same value — `π` and `\pi` are one
+constant, not two. The function aliases are the plain float-tier `math.*` callables
+(`\sqrt(2)` is `1.4142135623730951`, not an exact symbolic value); the symbolic closed
+forms of the exact-arithmetic tower will replace those bindings in place.
+
+User constants (`c ≡ 5`) join the protected set for the rest of the session — across
+REPL inputs, exactly like ordinary bindings.
 
 ## Ranges
 
