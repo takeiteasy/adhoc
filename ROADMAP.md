@@ -1,8 +1,8 @@
 ## roadmap
 
-This document is mirrored into the sr.ht tracker: phases 0-1 as one ticket per bullet, phases
-2+ as one checklist ticket per phase, and unresolved `DESIGN.md` audit items as their own
-tickets. This file stays the source of reasoning; the tracker is the source of status.
+This document is mirrored into the sr.ht tracker: one ticket per phase bullet, and unresolved
+`DESIGN.md` audit items as their own tickets. This file stays the source of reasoning; the
+tracker is the source of status.
 
 Phased implementation plan derived from `DESIGN.md`, ordered by value and dependency rather
 than by section order in the design doc. The lowering pipeline (`adhoc/compiler.py` executing
