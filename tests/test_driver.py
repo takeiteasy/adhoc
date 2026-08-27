@@ -379,6 +379,23 @@ def test_boolean_constants_drive_conditionals():
     assert run_source("\\if(\\false, 1)") == []  # statement no-op
 
 
+def test_unary_minus_on_a_boolean_reports_a_spanned_error():
+    # Booleans are bindable now, so `-t` on a bound \true reaches nneg — the failure
+    # must come back as the caret-pointed typed error, not an internal error.
+    with pytest.raises(EvalError) as e:
+        run_source("t = \\true; -t")
+    assert e.value.msg == "booleans are not numbers"
+    assert e.value.span == Span(11, 13)  # the `-t` node
+
+
+def test_lim_body_producing_a_boolean_reports_a_spanned_error():
+    # Same wrapping contract for the limit probes' float widening.
+    with pytest.raises(EvalError) as e:
+        run_source("\\lim(x=0) \\true")
+    assert e.value.msg == "booleans are not numbers"
+    assert e.value.span == Span(0, 15)  # the whole \lim node
+
+
 def test_const_declaration_spellings_agree():
     assert last("c ≡ 5") == "c = 5"
     assert last("k == 3") == "k = 3"

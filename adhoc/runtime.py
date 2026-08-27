@@ -684,7 +684,10 @@ class Engine:
                 if probe == anchor:
                     break  # step underflowed onto the anchor itself — never evaluate there
                 raw = self._eval_bound(body, {name: probe}, "\\lim", sid)
-                estimate = _as_float(raw)
+                try:
+                    estimate = _as_float(raw)
+                except NumError as e:
+                    self._fail(e.args[0], sid)
                 if previous is not None and _settled(previous, estimate):
                     converged = True
                     break
@@ -774,7 +777,12 @@ class Engine:
         return self._binop(npow, a, b, sid)
 
     def neg(self, a: AdValue, sid: int) -> AdValue:
-        return nneg(a)
+        # Unary, so not _binop (which passes two operands) — same wrapping contract
+        # though: a seam NumError becomes a spanned EvalError at this node's span.
+        try:
+            return nneg(a)
+        except NumError as e:
+            self._fail(e.args[0], sid)
 
     def out(self, v: AdValue | str, sid: int) -> str:
         result = f"= {nshow(v)}"
