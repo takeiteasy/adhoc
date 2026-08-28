@@ -121,7 +121,7 @@ def test_unicode_ident_spans_are_byte_offsets():
     assert toks[1].span == Span(3, 5)
 
 
-# --- string literals (stage 5): escape-free, terminated by the next quote ---
+# --- string literals (stage 5): four escapes, terminated by the next quote ---
 
 
 def test_string_literal_token_and_span():
@@ -138,7 +138,7 @@ def test_empty_string():
     assert tok.span == Span(0, 2)
 
 
-def test_string_is_escape_free_ends_at_next_quote():
+def test_string_ends_at_next_quote_plain_chars_pass_through():
     tok = tokenize('"a+b*c"')[0]
     assert tok.text == "a+b*c"
 
@@ -148,6 +148,46 @@ def test_string_may_span_lines():
     assert kinds('"a\nb"') == [Str, Eof]
     assert toks[0].text == "a\nb"
     assert toks[0].span == Span(0, 5)  # bytes, newline included
+
+
+def test_string_escapes_decode():
+    tok = tokenize('"a\\"b\\\\c\\n\\td"')[0]
+    assert tok.text == 'a"b\\c\n\td'
+
+
+def test_string_span_covers_raw_source_not_decoded_text():
+    # The span stays in raw bytes — backslashes included — while text is decoded:
+    # source `"a\"b"` is 6 bytes but decodes to 3 characters.
+    tok = tokenize('"a\\"b"')[0]
+    assert tok.text == 'a"b'
+    assert tok.span == Span(0, 6)
+
+
+def test_string_escape_span_stays_bytes_with_unicode():
+    # π is 2 UTF-8 bytes: source `"\tπ"` is 6 bytes, decodes to 2 characters.
+    tok = tokenize('"\\tπ"')[0]
+    assert tok.text == "\tπ"
+    assert tok.span == Span(0, 6)
+
+
+def test_string_unknown_escape_errors():
+    with pytest.raises(LexError) as e:
+        tokenize('"a\\qb"')
+    assert "unknown string escape" in e.value.msg
+    assert e.value.span == Span(2, 4)  # backslash + the offending letter
+
+
+def test_trailing_backslash_is_unterminated():
+    with pytest.raises(UnterminatedString) as e:
+        tokenize('"abc\\')
+    assert e.value.span == Span(0, 5)  # open quote to EOF
+
+
+def test_escaped_quote_can_still_be_unterminated():
+    # `\"` does not close the literal, so `"abc\"` never terminates.
+    with pytest.raises(UnterminatedString) as e:
+        tokenize('"abc\\"')
+    assert e.value.span == Span(0, 6)
 
 
 def test_unterminated_string_has_dedicated_error():

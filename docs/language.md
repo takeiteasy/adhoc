@@ -125,6 +125,3 @@ later phases add bindings without touching the lexer.
   full-width or combining-mark identifier character will make the caret land a column or two
   off; ordinary unicode letters like `π` are unaffected (1 character, 1 column). Not worth a
   `unicode-width` dependency for a case that essentially never arises in a calculator.
-- Strings have no escape sequences: a literal ends at its closing quote, so a string
-  containing a double quote is unrepresentable. Deliberate v1 scope; revisit if a real need
-  shows up.

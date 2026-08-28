@@ -11,10 +11,11 @@ number literal's source text, a backslash name with its sigil stripped, a string
 literal's raw contents).
 
 Strings are literals, not values (docs/grammar.md): they appear as `\\py` arguments or as
-standalone statements (ignored, comment-like). The scanner keeps them escape-free — the
-literal ends at the next `"`, whatever it contains — and an unterminated one raises
-`UnterminatedString`, which the parser maps to `IncompleteInput` so the REPL offers a
-continuation prompt exactly like an unclosed parenthesis.
+standalone statements (ignored, comment-like). Inside a literal exactly four escapes
+decode — `\\"`, `\\\\`, `\\n`, `\\t` — and any other backslash pair is an error; a literal
+may still span lines. An unterminated one raises `UnterminatedString`, which the parser
+maps to `IncompleteInput` so the REPL offers a continuation prompt exactly like an
+unclosed parenthesis.
 """
 
 from dataclasses import dataclass
@@ -240,6 +241,8 @@ _SINGLE_CHAR_TOKENS = {
     "?": Question,
 }
 
+_STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
+
 
 def tokenize(src: str) -> list[Token]:
     """Tokenize source text. Token spans are byte offsets; entries carry (byte_off, char)
@@ -268,15 +271,35 @@ def tokenize(src: str) -> list[Token]:
             continue
 
         if c == '"':
-            # Escape-free: the literal ends at the next `"`, whatever it contains.
+            # Exactly four escapes decode inside a literal (`\"`, `\\`, `\n`, `\t`);
+            # any other backslash pair is an error. The span stays over the raw source
+            # bytes — backslashes included — while `text` carries the decoded value.
             j = i + 1
+            parts: list[str] = []
             while j < n and entries[j][1] != '"':
-                j += 1
+                ch = entries[j][1]
+                if ch != "\\":
+                    parts.append(ch)
+                    j += 1
+                    continue
+                if j + 1 >= n:
+                    raise UnterminatedString(
+                        "unterminated string literal", Span(pos, eof_off)
+                    )
+                esc = entries[j + 1][1]
+                decoded = _STRING_ESCAPES.get(esc)
+                if decoded is None:
+                    raise LexError(
+                        f"unknown string escape `\\{esc}`",
+                        Span(entries[j][0], entries[j][0] + 1 + len(esc.encode("utf-8"))),
+                    )
+                parts.append(decoded)
+                j += 2
             end = entries[j][0] + 1 if j < n else eof_off
             span = Span(pos, end)
             if j >= n:
                 raise UnterminatedString("unterminated string literal", span)
-            tokens.append(Str(text=src[i + 1 : j], span=span))
+            tokens.append(Str(text="".join(parts), span=span))
             i = j + 1
             continue
 

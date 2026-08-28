@@ -10,9 +10,10 @@ written against — it should stay in lockstep with the code.
 - A **number literal** is a decimal integer or float: `3`, `0.5`, `12.34`. A `.` is only
   consumed as part of a number when a digit follows it — `1.` lexes as `1`, then fails on the
   lone `.`.
-- A **string literal** is `"…"`: raw characters up to the next `"`, escape-free (there are no
-  backslash escapes — a string may even span lines). Strings are *literals, not values*: see
-  `## String literals` for where they may appear.
+- A **string literal** is `"…"`: characters up to the closing `"`, possibly spanning lines.
+  Inside a literal exactly four escapes decode — `\"` (quote), `\\` (backslash), `\n`
+  (newline), `\t` (tab) — and any other backslash pair is a lex error. Strings are
+  *literals, not values*: see `## String literals` for where they may appear.
 - An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
   This is what makes `ab` unambiguous as `a * b` — see below.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
