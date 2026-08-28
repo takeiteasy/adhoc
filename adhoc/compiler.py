@@ -14,9 +14,9 @@ Lowering rules:
 - A bare-string *statement* lowers to `pass`: one generated line per statement keeps the
   lineno ↔ span table aligned while producing no output.
 - Variables are never bare Python name loads or stores — reads go through `_e.var`,
-  writes through `_e.assign` (bind-or-compare; there is no force-reassignment spelling —
-  an unconditional rebind goes through a sequence group's `_e.set`), and constant
-  declarations (`x ≡ e` / `\\const x = e`) through `_e.const_assign`. The user env is
+  every `x = e` write-or-compare through `_e.assign` (declare-once-then-check: binds a
+  fresh name into the current frame, compares against one already bound there; there
+  is no force-reassignment spelling and no declaration operator). The user env is
   a plain dict the engine holds; it never mixes with the exec globals.
 - `\name` lowers to `_e.bref("name", sid)`; application lowers to `_e.app(head, args,
   kwargs, sid)` with the kwargs as a dict literal; `\\py(path)` is the one backslash name
@@ -45,7 +45,6 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
-    ConstAssign,
     Fold,
     FuncDef,
     IfExpr,
@@ -127,12 +126,7 @@ class _Lowerer:
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(stmt.body)
                 return pyast.unparse(_call("define", [pyast.Constant(stmt.name),
-                    pyast.Constant(stmt.params), pyast.Constant(stmt.const),
-                    pyast.Constant(sid)]))
-            case ConstAssign(name=name, value=value, span=span):
-                sid = self._push(span)
-                return pyast.unparse(_call("const_assign",
-                    [pyast.Constant(name), self.expr(value), pyast.Constant(sid)]))
+                    pyast.Constant(stmt.params), pyast.Constant(sid)]))
             case Import(path=path, members=members, span=span):
                 sid = self._push(span)
                 return pyast.unparse(_call("import_",
@@ -154,8 +148,11 @@ class _Lowerer:
             case Assign(name=name, value=value, span=span):
                 sid = self._push(span)
                 inner = self.expr(value)
+                # Statement level echoes: the binding rule reports the outcome
+                # (the echo or the comparison result) into the transcript.
                 return pyast.unparse(_call("assign",
-                    [pyast.Constant(name), inner, pyast.Constant(sid)]))
+                    [pyast.Constant(name), inner, pyast.Constant(sid),
+                     pyast.Constant(True)]))
             case _:
                 sid = self._push(stmt.span)
                 inner = self.expr(stmt)
@@ -211,14 +208,12 @@ class _Lowerer:
                 return _call("limit", [pyast.Constant(var), self.expr(point),
                     pyast.Constant(sid)])
             case Assign(name=name, value=value, span=span):
+                # Assign is legal in expression position (a parenthesized sequence's
+                # statements compile through here); the engine's one binding rule
+                # covers every context — frame-local fresh bind or compare.
                 sid = self._push(span)
-                return _call("set", [pyast.Constant(name), self.expr(value), pyast.Constant(sid)])
-            case ConstAssign(name=name, value=value, span=span):
-                # Inside a parenthesized sequence; the engine rejects constant
-                # declarations off the top level with the node's span.
-                sid = self._push(span)
-                return _call("const_assign", [pyast.Constant(name), self.expr(value),
-                                              pyast.Constant(sid)])
+                return _call("assign", [pyast.Constant(name), self.expr(value),
+                                        pyast.Constant(sid)])
             case Seq(statements=statements):
                 return pyast.Subscript(
                     value=pyast.Tuple(elts=[self.expr(s) for s in statements], ctx=pyast.Load()),
@@ -277,10 +272,7 @@ def _compile_body(node: Node) -> CompiledBody:
     lines = ["_result = None"]
     for stmt in statements:
         sid = lowerer._push(stmt.span)
-        if isinstance(stmt, Assign):
-            value = lowerer.expr(stmt.value)
-            expr = _call("set", [pyast.Constant(stmt.name), value, pyast.Constant(sid)])
-        elif isinstance(stmt, StrLit):
+        if isinstance(stmt, StrLit):
             expr = pyast.Constant(None)
         elif isinstance(stmt, IfExpr) and stmt.otherwise is None:
             thunk = pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],

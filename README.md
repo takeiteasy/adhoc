@@ -26,7 +26,8 @@ Core phase 0 plus phase-1 language: a REPL and script runner that evaluate arith
 (`1/3 + 1/3 + 1/3` is `1`, not `0.999...`), with assignment, caret-pointing
 error diagnostics, postfix application (`f(x)`), functions with local scoping, lazy conditionals
 (`\if`, plus the ternary spelling `c ? a : b`), real booleans with `\true`/`\false`,
-permanently-immutable constants (`φ ≡ 1.618...`), name aliases (`Σ` is `\sum`; declare your
+immutable bindings (`x = 1` binds once and compares thereafter — there is no
+reassignment or declaration spelling), name aliases (`Σ` is `\sum`; declare your
 own with `\alias`, or define both spellings at once with `\dual \alpha, α = 3.14`),
 a protected prelude scope (`π`, `\sqrt`, `\sin`, ...), and the `\py("math.sqrt")(2)` escape
 hatch into Python — full trust, native conversion

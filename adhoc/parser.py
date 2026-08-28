@@ -2,7 +2,7 @@
 precedence table in docs/grammar.md:
 
     program     ::= statement (";" statement)* ;
-    statement   ::= func-def | const-stmt | string | identifier "=" expr | expr ;
+    statement   ::= func-def | string | identifier "=" expr | expr ;
     expr        ::= ternary ;
     ternary     ::= range ("?" ternary ":" ternary)? ;   -- lazy \\if spelling
     additive    ::= multiplicative (("+" | "-") multiplicative)* ;
@@ -50,7 +50,6 @@ from .lexer import (
     Eq,
     Eof,
     Ident,
-    IdenticalTo,
     LexError,
     LParen,
     Less,
@@ -81,7 +80,6 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
-    ConstAssign,
     Fold,
     FuncDef,
     IfExpr,
@@ -123,8 +121,7 @@ ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi"}
 
 
 class _Parser:
-    def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None,
-                 protected: set[str] | None = None):
+    def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None):
         self.tokens = tokens
         self.pos = 0
         # Working alias map: the session's map (if given) layered over the seed.
@@ -133,9 +130,10 @@ class _Parser:
         self.aliases = dict(ALIAS_SEED)
         if aliases:
             self.aliases.update(aliases)
-        # Names a spelling declaration may not repurpose: the prelude plus the
-        # caller's session constants (the REPL passes its consts set).
-        self.protected = frozenset(PRELUDE) | (protected or set())
+        # Names a spelling declaration may not repurpose: the prelude. It is the
+        # only protected set — user bindings are immutable by the binding rule
+        # itself, not by declaration.
+        self.protected = frozenset(PRELUDE)
         # Statement nesting depth: `\alias`/`\dual` are top-level directives —
         # declaring one inside a function body or group would take effect at
         # parse time whether or not the body ever runs.
@@ -207,7 +205,7 @@ class _Parser:
         span = statements[0].span.to(statements[-1].span)
         return Seq(statements=tuple(statements), span=span)
 
-    # statement ::= func-def | const-stmt | string
+    # statement ::= func-def | string
     #             | identifier "=" expr | expr ;
     def statement(self) -> Node:
         tok = self.peek()
@@ -217,8 +215,6 @@ class _Parser:
             # expression whose atom happens to be a string.
             self.advance()
             return StrLit(text=tok.text, span=tok.span)
-        if isinstance(tok, Backslash) and tok.name == "const":
-            return self._const_statement()
         if (
             isinstance(tok, Backslash)
             and tok.name in ("import", "pyimport")
@@ -232,17 +228,9 @@ class _Parser:
         ):
             return self._spelling_statement(tok.name)
         if isinstance(tok, (Ident, Backslash)):
-            if isinstance(self.peek2(), IdenticalTo):
-                ident_tok = self.advance()
-                self.advance()  # ≡
-                value = self.expr()
-                name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
-                        else ident_tok.name)
-                return ConstAssign(name=name, value=value,
-                                   span=ident_tok.span.to(value.span))
             if isinstance(self.peek2(), Eq):
                 ident_tok = self.advance()
-                self.advance()  # `=` — bind-or-check, there is no force spelling
+                self.advance()  # `=` — declare-once-then-check, there is no other spelling
                 value = self.expr()
                 span = ident_tok.span.to(value.span)
                 name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
@@ -255,28 +243,6 @@ class _Parser:
                     return defn
                 self.pos = saved  # not the def shape after all — reparse as an application
         return self.expr()
-
-    # const-stmt ::= "\const" name "=" expr
-    #              | "\const" name "(" params? ")" "=" statement (";" statement)* ;
-    # Committed form (unlike the speculative plain func-def): once `\const` names a
-    # binding, anything but `=` or a parameter list is a genuine parse error.
-    def _const_statement(self) -> Node:
-        const_tok = self.advance()  # the `\const` token
-        if not isinstance(self.peek(), (Ident, Backslash)):
-            raise self.error_at_current("expected a name after `\\const`")
-        ident_tok = self.advance()
-        name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
-                else ident_tok.name)
-        if isinstance(self.peek(), LParen):
-            self.advance()
-            params = self._func_params()
-            self.expect(Eq, "`=`")
-            body = self._func_body()
-            return FuncDef(name=name, params=params, body=body, const=True,
-                           span=const_tok.span.to(body.span))
-        self.expect(Eq, "`=`")
-        value = self.expr()
-        return ConstAssign(name=name, value=value, span=const_tok.span.to(value.span))
 
     # import-stmt ::= "\\import" "(" string (":" member ("," member)*)? ")" ;
     # pyimport-stmt ::= "\\pyimport" "(" string ":" member ("," member)* ")" ;
@@ -327,7 +293,8 @@ class _Parser:
     # working alias map immediately — its effect starts with the next statement, so
     # a spelling cannot be used before it is declared. `\dual` reuses the ordinary
     # definition forms: the node binds the canonical name only; the short spelling
-    # reads (and assign-or-checks) as the very same name from then on.
+    # reads (and checks against, via the statement `=` rule) as the very same name
+    # from then on.
     def _spelling_statement(self, kind: str) -> Node:
         head = self.advance()  # the `\alias` / `\dual` token
         if self.depth > 0:
@@ -354,7 +321,7 @@ class _Parser:
             if short == canonical:
                 raise ParseError(f"`{short}` already names itself", short_tok.span)
             if short in self.protected:
-                raise ParseError(f"`{short}` is a constant", short_tok.span)
+                raise ParseError(f"`{short}` is protected", short_tok.span)
             existing = self.aliases.get(short)
             if existing is not None and existing != canonical:
                 raise ParseError(
@@ -760,8 +727,7 @@ class _Parser:
                 raise self.error_at_current(f"unexpected token {tok.describe}")
 
 
-def parse_program(src: str, aliases: dict[str, str] | None = None,
-                  protected: set[str] | None = None) -> Node:
+def parse_program(src: str, aliases: dict[str, str] | None = None) -> Node:
     """Tokenize and parse a complete program from source text.
 
     `aliases` is the session alias map (short spelling → canonical name); the parse
@@ -769,9 +735,7 @@ def parse_program(src: str, aliases: dict[str, str] | None = None,
     the caller's dict only after a fully successful parse, so a failed or incomplete
     input leaves the session map untouched. `None` means a throwaway seed-only map —
     the right choice for scripts and imported modules, which do not inherit or export
-    session aliases (docs/grammar.md, `## Name aliases`). `protected` adds session
-    constant names (the REPL passes its consts set) to the prelude names that spelling
-    declarations may not repurpose."""
+    session aliases (docs/grammar.md, `## Name aliases`)."""
     try:
         tokens = tokenize(src)
     except UnterminatedString as e:
@@ -780,7 +744,7 @@ def parse_program(src: str, aliases: dict[str, str] | None = None,
         raise IncompleteInput(e.msg, e.span) from e
     except LexError as e:
         raise ParseError(e.msg, e.span) from e
-    parser = _Parser(tokens, aliases, protected)
+    parser = _Parser(tokens, aliases)
     node = parser.program()
     if aliases is not None:
         aliases.update(parser.aliases)

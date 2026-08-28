@@ -72,7 +72,6 @@ def run_repl(emit_py: bool = False) -> int:
             pass
 
     env: dict = {}
-    consts: set = set()  # user-declared constant names, protected for the session
     modules: dict = {}  # session import registry: `\import` evaluates each file once
     aliases: dict = dict(ALIAS_SEED)  # session alias map; `\alias`/`\dual` extend it
     pending = ""
@@ -86,7 +85,7 @@ def run_repl(emit_py: bool = False) -> int:
                 # Re-parse the buffered statement so its (still incomplete) diagnostic
                 # renders instead of exiting silently mid-statement.
                 try:
-                    parse_program(pending, aliases, consts)
+                    parse_program(pending, aliases)
                 except ParseError as e:
                     print_parse_error(pending, e)
             print()
@@ -110,7 +109,7 @@ def run_repl(emit_py: bool = False) -> int:
             continue
 
         try:
-            node = parse_program(source, aliases, consts)
+            node = parse_program(source, aliases)
         except IncompleteInput:
             pending = source
             continue
@@ -124,7 +123,7 @@ def run_repl(emit_py: bool = False) -> int:
         if emit_py:
             print(compiled.source, file=sys.stderr)
         try:
-            outs = execute(compiled, env, consts, modules)
+            outs = execute(compiled, env, modules)
         except EvalError as e:
             print_eval_error(source, e)
             continue

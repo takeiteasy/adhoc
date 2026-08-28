@@ -7,7 +7,7 @@
 -- imported functions keep the module's environment as their closure
 \hyp(3, 4);
 
--- imported names are ordinary bindings; φ was declared with ≡ inside the module
+-- imported names are ordinary bindings; φ was bound with `=` inside the module
 φ;
 
 -- selective import of a Python-module member

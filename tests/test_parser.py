@@ -9,7 +9,6 @@ from adhoc.syntax import (
     BinOperator as B,
     Call,
     Compare,
-    ConstAssign,
     Fold,
     FuncDef,
     IfExpr,
@@ -348,66 +347,31 @@ def test_def_attempt_with_non_ident_param_reparses_as_application():
     assert not isinstance(node, FuncDef)
 
 
-# --- constant declarations: x ≡ e and \const x = e ---
+# --- the declaration operators are gone outright ---
 
 
-def test_identical_to_binding_parses_into_const_assign():
-    node = parse_program("x ≡ 5")
-    assert isinstance(node, ConstAssign)
-    assert node.name == "x"
-    assert isinstance(node.value, NumLit)
-    # Spans are bytes: ≡ is 3 UTF-8 bytes wide, and the node spans name to value.
-    assert node.span == Span(0, 7)
+def test_identical_to_char_is_a_lex_error():
+    with pytest.raises(ParseError, match="unexpected character `≡`"):
+        parse_program("x ≡ 5")
 
 
-def test_identical_to_accepts_backslash_names():
-    node = parse_program("\\bar ≡ 5")
-    assert isinstance(node, ConstAssign)
-    assert node.name == "bar"
+def test_double_eq_is_two_eq_tokens():
+    # `k == 3` lexes as two `=`: the statement rule consumes the first, the second
+    # is an unexpected token — there is no declaration spelling to fall into.
+    with pytest.raises(ParseError, match="unexpected token `=`"):
+        parse_program("x == 5")
 
 
-def test_const_keyword_is_the_same_tree_as_the_sigil():
-    assert shape(parse_program("\\const x = 5")) == shape(parse_program("x ≡ 5"))
-
-
-def test_double_eq_is_the_same_tree_as_the_sigil():
-    # `==` is pure ASCII sugar for `≡`: identical tree, spelling never reaches the AST.
-    node = parse_program("x == 5")
-    assert isinstance(node, ConstAssign)
-    assert node.name == "x"
-    assert node.span == Span(0, 6)
-    assert shape(node) == shape(parse_program("x ≡ 5"))
-    node = parse_program("\\bar == 5")
-    assert isinstance(node, ConstAssign)
-    assert node.name == "bar"
-
-
-def test_const_function_definition():
-    node = parse_program("\\const f(x) = x^2")
-    assert isinstance(node, FuncDef)
-    assert node.name == "f"
-    assert node.const is True
-    node = parse_program("\\const \\double(x) = 2x")
-    assert isinstance(node, FuncDef)
-    assert node.name == "double"
-    assert node.const is True
-
-
-def test_const_with_stray_colon_errors_at_the_colon():
-    # `:=` no longer exists; `\const` demands `=` immediately.
-    for src in ["\\const x := 5", "\\const f(x) := 5"]:
-        with pytest.raises(ParseError, match="expected `=`"):
-            parse_program(src)
-
-
-def test_const_requires_a_name():
-    with pytest.raises(ParseError, match="expected a name"):
-        parse_program("\\const = 5")
-
-
-def test_const_needs_eq_after_name():
-    with pytest.raises(IncompleteInput):
-        parse_program("\\const x =")
+def test_const_is_an_ordinary_unbound_name():
+    # `\const` has no special form anymore: it parses as a `\`-name expression and
+    # fails at evaluation like any unbound name.
+    node = parse_program("\\const + 1")
+    assert isinstance(node, BinOp)
+    match node.lhs:
+        case BackslashRef(name="const"):
+            pass
+        case _:
+            pytest.fail(f"expected a BackslashRef, got {node.lhs!r}")
 
 
 def test_incomplete_def_offers_continuation():
@@ -641,7 +605,7 @@ def test_alias_short_must_be_single_character():
 
 
 def test_alias_cannot_repurpose_a_protected_name():
-    with pytest.raises(ParseError, match="`e` is a constant"):
+    with pytest.raises(ParseError, match="`e` is protected"):
         parse_program("\\alias x, e")
 
 

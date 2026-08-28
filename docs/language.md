@@ -25,9 +25,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   (`2x` = `2 * x`, `ab` = `a * b`).
 - Bare identifiers are exactly one character (ASCII or unicode); multi-character names,
   including user-defined function names, use the backslash sigil (`\fact`).
-- Assignment (`x = 1` binds a fresh name) with assign-or-check semantics: `x = 1` again
-  *compares*, printing `true`/`false` — globals are bound once, never reassigned
-  (docs/grammar.md, `## Assignment semantics`).
+- Assignment (`x = 1`) with declare-once-then-check semantics: a fresh name binds; `x = 1`
+  again *compares*, printing `true`/`false` — there is no reassignment and no declaration
+  operator, every binding is immutable (docs/grammar.md, `## Assignment semantics`).
 - Multi-character variables use the same backslash sigil as multi-character functions:
   `\bar = 100; \foo = 200; \foobar = \foo\bar`.
 - `--` line comments, plus bare string literals as comment-like statements (`"a note"` alone
@@ -63,10 +63,6 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   two-argument conditional is a statement-level no-op; parenthesized sequences such as
   `(a = 1; a + 1)` support multi-statement branches. The ternary `c ? a : b` is the same
   lazy conditional in operator spelling (right-associative, loosest expression precedence).
-- Constant declarations: `c ≡ 5`, `c == 5` (ASCII alias — declares, never compares), or
-  `\const c = 5` declare permanently-immutable globals —
-  no `=`, local assignment, parameter, or binder can ever rebind the name, and
-  `\const f(x) = ...` declares an immutable function the same way.
 - A protected prelude scope: `π`/`\pi`, `e`, `\inf`, `\nan`, `\true`/`\false`, and the
   `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function aliases (the plain `math.*`
   callables, float tier).
@@ -83,7 +79,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   only, protected names repurposed by no one; docs/grammar.md, `## Name aliases`).
 - Dual-form definitions: `\dual \alpha, α = 3.14` and `\dual \fact, φ(n) = ...` define
   the canonical name and register its short spelling in one statement; both spellings
-  read, assign, and assign-or-check as the same binding.- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
+  read and compare as the same binding.- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
   — approximate iteration in the float tier until values stabilize within tolerance,
   erroring at the iteration cap rather than returning a misleading partial (`\sum(i=1..) i`
   errors; docs/numerics.md).
@@ -111,7 +107,7 @@ and closed.
 
 The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
 same way, and meaning comes from three places — the parser's closed set of special forms
-(`\sum`/`\prod`/`\lim` binders, call-shaped `\if`, `\py`, `\const`, statement-shaped
+(`\sum`/`\prod`/`\lim` binders, call-shaped `\if`, `\py`, statement-shaped
 `\import`/`\pyimport`), the session alias map that normalizes short spellings to canonical
 names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`), and
 the prelude scope of

@@ -40,16 +40,16 @@ r = 2;
 r > 0 ? r : -r;
 \sum(i=1..10) i > 5 ? i : 0;
 
--- ≡ (ASCII alias ==, keyword \const) declares a name that can never be rebound;
--- note that == declares, it never compares
+-- a binding is immutable: `x = e` binds a fresh name, and repeating it compares
+-- (`x = 1` again echoes true) — there is no reassignment spelling at all
 -- (function definitions consume the rest of a script as their body, so defs
 -- belong in REPL input; bindings are fine here)
-φ ≡ 1.6180339887498948;
+φ = 1.6180339887498948;
 φ;
 
 -- name aliases: Σ is \sum by seed; \alias declares your own short spelling.
 -- \dual defines a name under two spellings at once (the short form reads,
--- assigns, and compares as the very same binding)
+-- and compares as the very same binding)
 \alias \prod, ρ;
 ρ(j=1..4) j;
 \dual \golden, γ = φ;

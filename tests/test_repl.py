@@ -86,7 +86,7 @@ def test_bare_string_statement_echoes_nothing(tmp_path):
 
 
 def test_alias_declared_in_repl_persists_across_inputs(tmp_path):
-    # The session alias map rides alongside env/consts/modules: a `\alias` on one
+    # The session alias map rides alongside env/modules: a `\alias` on one
     # line normalizes spellings on every later line.
     out = run_repl("\\alias \\sum, σ\nσ(i=1..3) i\n", tmp_path).stdout
     assert "ERROR" not in out

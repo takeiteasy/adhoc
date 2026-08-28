@@ -17,7 +17,7 @@ ADhoc Higher Order Calculator — a cli based calculator and language like `bc` 
 - Whitespace is ignored
 - Variable names and functions must be a single ascii or unicode character
 - Case-dependent, `a is not A`
-- Unicode is entirely optional in the core language: every unicode operator, constant, or keyword (`Σ`, `Π`, `≡`, `⟨⟩`, `∪`, `π`, ...) has a mandatory ASCII equivalent. A program never has to use unicode to be valid `ad`; unicode is sugar for people who want the math-notation feel, not a requirement.
+- Unicode is entirely optional in the core language: every unicode operator, constant, or keyword (`Σ`, `Π`, `⟨⟩`, `∪`, `π`, ...) has a mandatory ASCII equivalent. A program never has to use unicode to be valid `ad`; unicode is sugar for people who want the math-notation feel, not a requirement.
 
 ```
 > f(a, b) = c = ab; cc
@@ -33,7 +33,7 @@ ADhoc Higher Order Calculator — a cli based calculator and language like `bc` 
 - An identifier is exactly one character, ascii or unicode (see above) — this is what makes `ab` unambiguous as `a * b`.
 - Every language-defined name longer than one character is written with a `\` prefix, regardless of script: `\pi`, `\sum`, `\sqrt`, `\sin`, `\solve`, `\map`, `\graph`, ... The backslash is what a multi-character name costs to stay unambiguous with juxtaposition.
 - Where a `\`-name has a single-character unicode form, the two are the same name, not two different ones: `\pi` ≡ `π`, `\sum` ≡ `Σ`, `\prod` ≡ `Π`, `\sqrt` ≡ `√`, `\cup` ≡ `∪`, `\cap` ≡ `∩`, `\in` ≡ `∈`, `\subseteq` ≡ `⊆`, `\setminus` ≡ `∖`, `\circ` ≡ `∘`.
-- Where there is no unicode form, the `\` spelling is the only spelling: `\lim`, `\const`, `\arr`, `\expr`, `\if`, `\otherwise`, `\sin`, `\cos`, `\tan`, `\ln`, `\solve`, `\simplify`, `\expand`, `\factor`, `\eval`, `\body`, `\map`, `\fold`, `\filter`, `\graph`, `\infix`.
+- Where there is no unicode form, the `\` spelling is the only spelling: `\lim`, `\arr`, `\expr`, `\if`, `\otherwise`, `\sin`, `\cos`, `\tan`, `\ln`, `\solve`, `\simplify`, `\expand`, `\factor`, `\eval`, `\body`, `\map`, `\fold`, `\filter`, `\graph`, `\infix`.
 - The names are chosen to match their LaTeX command where one exists (`\sum`, `\prod`, `\sqrt`, `\cup`, `\cap`, `\in`, `\setminus`, `\circ`, `\lim`, `\sin`, `\ln`, ...) — `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX. This is a naming convention, not a compatibility claim: `ad` is not a TeX parser and has no layout/document commands.
 - Bracket syntax (`[...]`, `{...}`, `⟨...⟩`) is unaffected by this rule — `\arr(...)` is the ASCII *spelling* of `⟨...⟩`, a form rather than a name.
 - User-defined infix operators (`⊕` via `\infix(N) ⊕(a, b) = ...`) are exempt — the sigil rule is about language-defined names, not names an author invents.
@@ -45,7 +45,7 @@ Loosest to tightest binding:
 
 | level | operators | associativity |
 |---|---|---|
-| 1 | `=` `≡`/`==` | statement level only, non-associative |
+| 1 | `=` (binding/check) | statement level only, non-associative |
 | 2 | `..` (range) | non-associative |
 | 3 | `+` `-` (binary) | left |
 | 4 | `*` `/` | left |
@@ -61,9 +61,9 @@ Juxtaposition binding tighter than `*`/`/` but looser than `^` is a deliberate c
 `=` is a single token reused in three ways, disambiguated by position rather than by
 introducing a separate `==` operator:
 
-1. **Statement-level, bare identifier on the left** (`x = 1`) — assign-or-check: binds `x` if
-   unbound, compares against the current value if bound. See `## globals / constants` and the
-   worked assignment-semantics examples above.
+1. **Statement-level, bare identifier on the left** (`x = 1`) — declare-once-then-check: binds `x`
+   into the current frame if unbound there, compares against it if bound there. See
+   `## globals / constants` and docs/grammar.md, `## Assignment semantics`.
 2. **Anywhere else in an expression** (`x = 0` as an operand, e.g. `\solve(e = 0, x)`) — plain
    boolean equality, no different from `<`/`>=`/etc. `\solve`'s first argument is simply a
    normal argument that happens to be an equality expression; no special-casing is needed for
@@ -137,19 +137,20 @@ literals:
 ## globals / constants
 
 ```
-> π ≡ 3.14159265358979
+> π = 3.14159265358979
 < π = 3.14159265358979
-> \const π = 3.14159265358979 -- ASCII keyword sugar for the same thing
-< π = 3.14159265358979
-> π = 4 -- error, ≡/\const bindings can never be reassigned
-< ERROR! `π` is a constant
+> π = 4 -- a repeat `=` compares; it can never overwrite
+< false
 ```
 
-- `≡` ("identically equal to") declares a global, permanently-immutable binding — the same immutability plain `=` already gives (globals are single-assignment; there is no force-reassign operator). `\const` is the ASCII keyword sugar, and both spellings cover function definitions too (`\const f(x) = ...` declares an immutable callable).
-- Regular globals (via `=`) are immutable once bound: rebinding *compares* instead of overwriting.
-- A `≡`/`\const` declaration is not assign-or-check: the name must be fresh (and top-level); rebinding an existing name is an error, not a conversion to constant.
-- `==` is the fast-to-type ASCII alias for `≡` — three spellings, one declaration. It is deliberately *not* an equality operator: statement-level `=` already covers assign-or-check, expression `=` is reserved for plain boolean equality, and `==` never compares (the `≡`/`==` spellings are bindings only; function definitions go through `\const`).
-- Built-in constants/functions (`π`/`\pi`, `e`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`) live in a prelude scope declared through this same mechanism. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same constant, not two different ones. The function aliases are the plain float-tier `math.*` callables; the symbolic closed forms of phase 2 replace those bindings in place.
+- Every binding is immutable by the assignment rule itself: a fresh `=` binds, a repeat
+  compares (value-based, tower semantics — `1 = 1.0` is `true`). There is no
+  reassignment operator and no declaration spelling — the former `≡`/`==`/`\const`
+  forms are gone outright, since plain `=` already gave the same immutability.
+- Function definitions (`f(x) = body`) are declarations, not checks: a protected or
+  already-visible name is an error, since functions compare by identity and a check
+  would be meaningless.
+- Built-in constants/functions (`π`/`\pi`, `e`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`) live in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same name, not two different ones. The function aliases are the plain float-tier `math.*` callables; the symbolic closed forms of phase 2 replace those bindings in place.
 - Prelude names are **protected everywhere**, not shadowable — a function parameter, local binding, or fold/limit binder named `π` (or any other prelude name) is a redefinition error, not a local shadow. This keeps a prelude name's meaning fixed regardless of where it's read from, at the cost of a handful of single-character names (`π`, `e`) being permanently unavailable as ordinary variable names.
 
 ## numeric types
@@ -199,7 +200,7 @@ $ adhoc run script.ad
 - Bracket + row/column-separator syntax (`,` for columns, `;` for rows) follows the same convention as MATLAB/Octave — well-worn, math-notation-adjacent, and reuses `;` without conflict since it's scoped inside `[...]`.
 - Indexing is 1-based, matching standard math notation (`m[1,2]` not `m[0,1]`).
 - `'` for transpose (common shorthand); TODO: distinguish elementwise vs. matrix multiply/divide (e.g. MATLAB's `.*`/`./`) once operator design happens.
-- Strings are values, deliberately minimal (revised from the original "no string type" stance once text round-trips mattered for data loading and `\graph`-style export flows). `"…"` binds, concatenates via `+` (the only string operator; mixed arithmetic is the usual typed rejection), and composes `\py` paths; a standalone string statement remains the comment-like literate note. There is no string indexing, ordering, or equality *operator* (`==` stays the `≡` alias).
+- Strings are values, deliberately minimal (revised from the original "no string type" stance once text round-trips mattered for data loading and `\graph`-style export flows). `"…"` binds, concatenates via `+` (the only string operator; mixed arithmetic is the usual typed rejection), and composes `\py` paths; a standalone string statement remains the comment-like literate note. There is no string indexing, ordering, or equality *operator* — the language has no `==` at all.
 - Vector/matrix are special cases (1D/2D) of a general **tensor** type — see below. `[...]` syntax and its rules (1-indexed, `,`/`;` separators, transpose) apply uniformly to tensors of any rank.
 
 ## collection types: tensor / array / set
@@ -366,7 +367,7 @@ Found on a final pass through the doc — real contradictions/gaps, not just unf
 
 1. **RESOLVED — piecewise braces contradiction.** The original `## conditionals` section still showed brace syntax while a later revision dropped braces. Fixed by merging into a single `## conditionals` section using the brace-free form throughout.
 
-2. **RESOLVED — `=` overloaded across contexts.** Kept as a single token, disambiguated by position rather than adding a separate `==`: statement-level bare-identifier `=` is assign-or-check (phase 0); anywhere else in an expression `=` is plain boolean equality (subsuming what would otherwise be a separate comparison operator and `\solve`'s equation argument, which needs no special-casing); a small closed list of builtins (`\sum`, `\prod`, `\lim`, `\graph`) treat one specific argument as a binding rather than an equality. See `## equality and =`.
+2. **RESOLVED — `=` overloaded across contexts.** Kept as a single token, disambiguated by position rather than adding a separate `==` (which was later itself removed as a declaration alias once the binding rule settled): statement-level bare-identifier `=` is declare-once-then-check (phase 0, revised by ticket #46); anywhere else in an expression `=` is plain boolean equality (subsuming what would otherwise be a separate comparison operator and `\solve`'s equation argument, which needs no special-casing); a small closed list of builtins (`\sum`, `\prod`, `\lim`, `\graph`) treat one specific argument as a binding rather than an equality. See `## equality and =`.
 
 3. **RESOLVED — string-literal contradiction.** Originally resolved as a narrow `out=` path/filename literal scoped to I/O-boundary argument positions. Superseded once the Python interop landed (call arguments and comment-like statements only), then revised again: strings are now full values — they bind, concatenate with `+`, and compose `\py` paths — with escapes (`\" \\ \n \t`) in literals; file export still goes through `\py`. See `## graphing` and docs/grammar.md.
 

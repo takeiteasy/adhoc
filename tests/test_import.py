@@ -33,7 +33,7 @@ def run_at(tmp_path, source, env=None, modules=None):
 
 
 def test_import_binds_all_top_level_names(tmp_path):
-    make_lib(tmp_path, text="r = 10; k ≡ 5; f(x) = x + r")
+    make_lib(tmp_path, text="r = 10; k = 5; f(x) = x + r")
     env: dict = {}
     assert run_at(tmp_path, '\\import("lib"); f(5)', env) == ["= 15"]
     assert run_at(tmp_path, "r", env) == ["= 10"]
@@ -188,7 +188,7 @@ def test_module_const_does_not_join_importer_protected_set(tmp_path):
     # Protection-on-import is future work (ROADMAP): an imported const lands as an
     # ordinary binding — rebinding it *compares* instead of erroring like a
     # protected name would.
-    make_lib(tmp_path, text="k ≡ 5; f(x) = x")
+    make_lib(tmp_path, text="k = 5; f(x) = x")
     env: dict = {}
     run_at(tmp_path, '\\import("lib")', env)
     assert run_at(tmp_path, "k = 6", env) == ["false"]
@@ -218,7 +218,7 @@ def test_pyimport_already_bound_name_rejects():
 
 
 def test_pyimport_prelude_collision_is_protection():
-    with pytest.raises(EvalError, match="`\\\\pi` is a constant"):
+    with pytest.raises(EvalError, match="`\\\\pi` is protected"):
         run_source('\\pyimport("math": \\pi)')
 
 

@@ -20,9 +20,10 @@ written against — it should stay in lockstep with the code.
   After the first character a name may continue with letters or underscores (`\rel_tol`,
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation.
-- Operators: `+ - * / ^ < > <= >= = ≡ == .. ( ) , ? :`. Statement separator: `;`.
-  `==` is an ASCII alias for `≡` — it declares a constant, it never compares (see
-  `## Constants and the prelude`). `?` opens a ternary conditional and `:` closes it
+- Operators: `+ - * / ^ < > <= >= = .. ( ) , ? :`. Statement separator: `;`.
+  `=` is the one binding/check operator (see `## Assignment semantics`); there is no
+  `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
+  conditional and `:` closes it
   in expression position (the only other use of `:` is the import member list).
 
 ## Grammar (EBNF)
@@ -30,17 +31,12 @@ written against — it should stay in lockstep with the code.
 ```
 program    ::= statement (";" statement)* ";"? ;
 statement  ::= func-def
-             | const-stmt
              | import-stmt
              | pyimport-stmt
              | spelling-directive
              | string
              | identifier "=" expr
              | expr ;
-const-stmt ::= identifier "≡" expr
-             | identifier "==" expr
-             | "\const" name "=" expr
-             | "\const" name "(" params? ")" "=" statement (";" statement)* ;
 import-stmt   ::= "\import" "(" string (":" member ("," member)*)? ")" ;
 pyimport-stmt ::= "\pyimport" "(" string ":" member ("," member)* ")" ;
 member        ::= identifier | "\"-name ;
@@ -89,7 +85,7 @@ Loosest to tightest:
 | Level | Operators | Associativity |
 |---|---|---|
 | 1 | `? :` (ternary) | right |
-| 2 | `=` `≡` `==` | statement level only, non-associative |
+| 2 | `=` (binding/check) | statement level only, non-associative |
 | 3 | `..` (range) | non-associative |
 | 4 | `<` `>` `<=` `>=` | non-associative |
 | 5 | `+` `-` (binary) | left |
@@ -160,7 +156,8 @@ s(1, 1.5, \abs_tol=1)                      ->  = 1
 Multi-character kwarg names take the `\` sigil like every other multi-character name
 (`\dpi=300`); a single-character name needs none (`s=10`). The value may be any expression
 or a string literal (`\mode="w"`). A kwarg never assigns — `name=value` inside an argument
-list is purely an argument-passing form; statement-level `=` is the only assign-or-check.
+list is purely an argument-passing form; statement-level `=` is the only binding/check
+operator.
 Positional arguments and kwargs collect separately, so
 their relative source order carries no meaning — Python's own binding rules decide what
 `f(2, \a=1)` binds to. A duplicate kwarg name is a parse error; kwargs reaching a
@@ -293,9 +290,9 @@ Strings are **values**. They bind (`s = "data"`), display quoted and round-tripp
   < = 2
   ```
 
-- Strings compare equal only to strings, and only through the re-assignment check
-  (`x = "a"; x = "a"` echoes `true`): the language has no `==` operator (`==` is the `≡`
-  alias, a constant declaration), so there is no string equality *expression*.
+- Strings compare equal only to strings, and only through the binding rule's check
+  (`s = "a"; s = "a"` echoes `true`): the language has no `==` operator at all —
+  `==` lexes as two `=` and cannot parse — so there is no string equality *expression*.
 
 When a Python function hands a `str` back across the boundary it is a plain ad string
 value: printable (`= "hello"`), bindable, concatenable. See docs/numerics.md for the full
@@ -359,7 +356,7 @@ there is no unicode form, the `\` spelling is the only one (`\sin`, `\lim`, `\so
 The names are chosen to match their LaTeX command where one exists, so `ad` source reads like
 the ASCII you'd already type to write the same expression in LaTeX — this is a naming
 convention, not a claim that `ad` parses TeX. The built-ins bound today are listed under
-`## Constants and the prelude`; `docs/language.md` has the fuller picture and `README.md` the
+`## The prelude`; `docs/language.md` has the fuller picture and `README.md` the
 framing.
 
 ## Name aliases
@@ -378,7 +375,7 @@ everywhere a name is consumed, seeded with:
 `\alias` extends the map for the rest of the session:
 
 ```
-\alias \sum, σ        -- σ now reads (and assign-or-checks) as \sum
+\alias \sum, σ        -- σ now reads (and checks against) as \sum
 \alias \alpha, α, ϵ   -- several short spellings may share one canonical name
 ```
 
@@ -395,7 +392,8 @@ Rules:
 - **Canonical first**: the first spelling is the canonical name (either name form);
   the rest are single-character aliases — one character that lexes as an identifier,
   i.e. a letter. Definitions bind the canonical name only, and the short spelling
-  reads, assigns, and assign-or-checks as the very same name from its declaration on.
+  reads (and checks against, via the statement `=` rule) as the very same name from
+  its declaration on.
 - **Parse-time, declare-before-use**: declarations take effect with the next
   statement in the same unit; a use parsed before the declaration reads the raw
   spelling, and no declaration renames it retroactively.
@@ -420,38 +418,37 @@ report their usage at evaluation, like `\py` and `\if`.
 
 ## Assignment semantics
 
-- `x = e`, `x` unbound → bind `x`, prints `x = v`
-- `x = e`, `x` bound → **compare** current value to `v`, prints `true` / `false`
-- `x ≡ e` / `x == e` / `\const x = e`, `x` fresh → declare permanently immutable, prints `x = v`
-- `x ≡ e` / `x == e` / `\const x = e`, `x` bound or protected → error (see `## Constants and the prelude`)
-- bare expression → prints `= v`
+One rule everywhere (`x = e`, any statement context):
 
-There is no force-reassignment operator — a global is bound once and thereafter only
-compared against (a paper page doesn't reassign either). To iterate on a value, bind a
-fresh name (`\x_2 = ...`) or compute inside a function, where every call starts from a
-fresh frame and body writes are plain frame writes. Note that inside an argument list,
-`name=value` is a keyword argument and never assigns — statement-level `=` is the only
-assign-or-check.
+- `x` protected (a prelude name) → error `` `pi` is protected ``
+- `x` unbound in the current frame → **bind** it, prints `x = v`
+- `x` bound in the current frame → **compare** current value to `v`, prints `true` / `false`
+
+The comparison is value-based on the numeric tower, not type-checked: `x = 1; x = 1.0`
+echoes `true`, `0.5` and `1/2` compare `true`, `"a" = 1` echoes `false` (mixed kinds
+simply are not equal). There is no reassignment operator and no declaration operator —
+a binding is made once by the first `=` and can never be overwritten, only compared
+against (a paper page doesn't reassign either). To iterate on a value, bind a fresh
+name or compute inside a function, where every call starts from a fresh frame.
+
+Frame locality: reads walk the chain (locals → enclosing → globals → prelude), but
+binds and compares are frame-local. Inside a body, `y = e` shadows a global `y` with a
+fresh local (it never touches the global), and a repeat `y = e` compares the local.
+Function definitions are the one exception to bind-or-check: `f(x) = body` on a bound
+or protected name is an error — definitions are declarations, and functions compare by
+identity, so a check would be meaningless. Note that inside an argument list,
+`name=value` is a keyword argument and never assigns.
 
 Statement groups flatten: a top-level `(a; b)` becomes plain top-level statements, each
-with its own echo line — the parentheses do not create a scope. Writes that survive are
-the expression-position ones: function bodies and `\if` branch groups write into the
-frame they evaluate in (branch locals when fresh, the enclosing frame otherwise).
+with its own echo line — the parentheses do not create a scope, so a group cannot
+overwrite a global either (its `=` compares). Expression-position groups (function
+bodies, `\if` branches) run the same rule in the frame they evaluate in.
 
-## Constants and the prelude
+## The prelude
 
-`x ≡ e` (ASCII `x == e`, keyword `\const x = e`) declares a global binding that can never
-be rebound — not by `=`, not by a local assignment, a parameter, or a binder
-name. `\const f(x) = ...` declares a function under the same rule (the `≡`/`==` spellings
-are bindings only). A declaration is not assign-or-check: the name must be fresh and
-top-level.
-
-`==` deliberately declares rather than compares: it is the fast-to-type spelling of `≡`,
-chosen precisely because statement-level `=` already covers assign-or-check and expression
-`=` is reserved for plain boolean equality — no `==` comparison operator exists or will.
-Read `x == 5` as "x is *identically* 5", never as a question.
-
-Built-in names live in a prelude scope protected by that same mechanism:
+There are no user-declared constants and no declaration spellings: every binding is
+immutable by the assignment rule itself, so `x = 5` and the old "constant" forms are
+equally final. Built-in names live in a prelude scope protected by the same mechanism:
 
 | spelling | value |
 |---|---|
@@ -462,15 +459,12 @@ Built-in names live in a prelude scope protected by that same mechanism:
 | `\sin` `\cos` `\tan` `\ln` `\sqrt` | the `math.*` float-tier callables |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
-`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is a constant ``
+`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is protected ``
 — diagnostics echo the canonical name, see `## Name aliases`), never shadows.
 Unicode and ASCII spellings are the same value — `π` and `\pi` are one
-constant, not two. The function aliases are the plain float-tier `math.*` callables
+name, not two. The function aliases are the plain float-tier `math.*` callables
 (`\sqrt(2)` is `1.4142135623730951`, not an exact symbolic value); the symbolic closed
 forms of the exact-arithmetic tower will replace those bindings in place.
-
-User constants (`c ≡ 5`) join the protected set for the rest of the session — across
-REPL inputs, exactly like ordinary bindings.
 
 ## Ranges
 
@@ -496,7 +490,9 @@ non-numeric values never compare equal unless identical — strings by content.
 
 Logical operators, collections, the
 exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
-User-declarable *operator* spellings (generalizing the lexer's one `==`→`≡` alias)
-ride the phase-4 custom infix operators — `\alias` covers names only. Name aliases
+An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
+rule's check is the only equality today, and ticket #41 tracks equality semantics for
+the symbolic engine. User-declarable *operator* spellings ride the phase-4 custom
+infix operators — `\alias` covers names only. Name aliases
 and `\dual` are built today (see `## Name aliases`).
 See `ROADMAP.md` and the tracker for the phase each lands in.

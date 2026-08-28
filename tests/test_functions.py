@@ -65,12 +65,13 @@ def test_escaped_names_support_multi_character_variables():
     assert run_source("\\foobar", env) == ["= 20000"]
 
 
-def test_function_locals_rebind_within_the_body():
-    # Body writes are plain frame writes: a local can be reassigned mid-body,
-    # and every call starts from a fresh frame.
-    env = define("f() = x = 1; x = x + 1; x")
-    assert run_source("f()", env) == ["= 2"]
-    assert run_source("f()", env) == ["= 2"]
+def test_function_locals_bind_once():
+    # The binding rule is frame-local but immutable: a repeat `=` on a bound local
+    # compares (silently inside a body), never rebinds — fresh names carry new values.
+    env = define("f() = x = 1; x = 1; x")
+    assert run_source("f()", env) == ["= 1"]
+    env = define("g() = x = 1; x = 2; x")
+    assert run_source("g()", env) == ["= 1"]  # the mismatch compares false, binds nothing
 
 
 def test_piecewise_function_and_lazy_branch():

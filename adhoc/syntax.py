@@ -141,14 +141,13 @@ class Call(Node):
 
 @dataclass(frozen=True)
 class FuncDef(Node):
-    """A function definition with a semicolon-sequenced body. `const` marks the
-    `\\const f(x) = ...` form: the name is declared permanently immutable. Redefining
-    a bound name is assign-or-check (`=` compares), like any other binding."""
+    """A function definition with a semicolon-sequenced body. Definitions are
+    declarations: a protected or already-visible name is an error — nothing ever
+    redefines, and identity comparison would make a check meaningless anyway."""
 
     name: str
     params: tuple[str, ...]
     body: Node
-    const: bool = False
 
 
 @dataclass(frozen=True)
@@ -159,21 +158,11 @@ class UnOp(Node):
 
 @dataclass(frozen=True)
 class Assign(Node):
-    """Statement-level `x = e`: bind a fresh name, or compare against a bound one
-    (prints `true`/`false`). There is no force-reassignment operator; an unconditional
-    rebind goes through a sequence group, whose writes go plainly into the frame it
-    executes in."""
-
-    name: str
-    value: Node
-
-
-@dataclass(frozen=True)
-class ConstAssign(Node):
-    """`x ≡ e` / `\\const x = e` — declare a global binding that can never be
-    reassigned, even through a sequence group's write. Unlike `=` this is a
-    declaration, not
-    assign-or-check: the name must be fresh. Statement-level only."""
+    """Statement-level `x = e` — declare-once-then-check. Binds a fresh name into
+    the current frame; a name already bound in that frame compares by value and
+    prints `true`/`false`; a protected prelude name is rejected. Reads walk the
+    chain, binds and compares stay frame-local — nothing ever rebinds an existing
+    binding, so `x = 1; x = 1` is `true`, never an overwrite."""
 
     name: str
     value: Node

@@ -65,7 +65,7 @@ def test_emit_py_flag_dumps_generated_source_to_stderr(tmp_path):
 
 
 def test_script_import_resolves_against_the_script_directory(tmp_path):
-    (tmp_path / "lib.ad").write_text("k ≡ 5; f(x) = x + k")
+    (tmp_path / "lib.ad").write_text("k = 5; f(x) = x + k")
     path = tmp_path / "main.ad"
     path.write_text('\\import("lib"); f(3)\n')
     r = run_cli(["run", str(path)])

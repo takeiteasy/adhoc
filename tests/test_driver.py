@@ -7,10 +7,10 @@ from adhoc.runtime import EvalError
 from adhoc.span import Span
 
 
-def last(src: str, env: dict | None = None, consts: set | None = None,
+def last(src: str, env: dict | None = None,
          aliases: dict | None = None) -> str:
     """Mirror interp.rs's run(...).format(): only the final statement's result."""
-    return run_source(src, env, consts, aliases=aliases)[-1]
+    return run_source(src, env, aliases=aliases)[-1]
 
 
 # --- ports of interp.rs's test suite ---
@@ -39,8 +39,8 @@ def test_globals_are_single_assignment():
     env: dict = {}
     assert last("x = 3", env) == "x = 3"
     assert last("x = 4", env) == "false"
-    assert last("x", env) == "= 3"
-    # Statement groups flatten into plain statements — same assign-or-check.
+    assert last("x = 3", env) == "true"
+    # Statement groups flatten into plain statements — same declare-once-then-check.
     assert run_source("(x = 4; x)", env) == ["false", "= 3"]
 
 
@@ -305,7 +305,7 @@ def test_fold_and_limit_lower_through_engine_calls():
     assert compiled.definitions  # both bodies compiled alongside
 
 
-# --- prelude scope, protected names, constants (≡ / \const), booleans ---
+# --- prelude scope, protected names, the binding rule, booleans ---
 
 
 def test_prelude_constants_are_bound():
@@ -318,7 +318,7 @@ def test_unicode_and_ascii_prelude_names_share_one_value():
     # The sharing is a parse-time alias (π normalizes to \pi), not two prelude
     # keys — both spellings read one value, and neither can be rebound.
     assert last("π") == last("\\pi") == "= 3.141592653589793"
-    with pytest.raises(EvalError, match="is a constant"):
+    with pytest.raises(EvalError, match="is protected"):
         run_source("π = 3")
 
 
@@ -347,7 +347,7 @@ def test_prelude_inf_and_nan_constants():
     with pytest.raises(EvalError, match="condition must be boolean"):
         run_source("\\if(\\nan, 1, 2)")             # no numeric truthiness
     for src in ["\\inf = 1", "\\nan = 1"]:
-        with pytest.raises(EvalError, match="is a constant"):
+        with pytest.raises(EvalError, match="is protected"):
             run_source(src)
 
 
@@ -355,14 +355,14 @@ def test_prelude_names_cannot_be_rebound():
     for src in ["π = 3", "\\pi = 3", "e = 5", "\\true = \\false"]:
         with pytest.raises(EvalError) as e:
             run_source(src)
-        assert "is a constant" in e.value.msg, f"for {src}"
+        assert "is protected" in e.value.msg, f"for {src}"
 
 
 def test_prelude_names_cannot_be_shadowed_by_parameters():
     for src in ["f(π) = 1", "f(e) = 1", "\\fact(π) = 1"]:
         with pytest.raises(EvalError) as e:
             run_source(src)
-        assert "is a constant" in e.value.msg, f"for {src}"
+        assert "is protected" in e.value.msg, f"for {src}"
 
 
 def test_prelude_names_cannot_be_shadowed_by_locals():
@@ -371,13 +371,13 @@ def test_prelude_names_cannot_be_shadowed_by_locals():
     with pytest.raises(EvalError) as e:
         run_source("f(5)", env)
     # The alias mechanism normalizes π to the canonical name; diagnostics echo it.
-    assert e.value.msg == "`pi` is a constant"
+    assert e.value.msg == "`pi` is protected"
 
 
 def test_prelude_names_cannot_be_binder_variables():
-    with pytest.raises(EvalError, match="`pi` is a constant"):
+    with pytest.raises(EvalError, match="`pi` is protected"):
         run_source("\\sum(π=1..2) π")
-    with pytest.raises(EvalError, match="`pi` is a constant"):
+    with pytest.raises(EvalError, match="`pi` is protected"):
         run_source("\\lim(π=0) π")
 
 
@@ -420,63 +420,56 @@ def test_lim_body_producing_a_boolean_reports_a_spanned_error():
     assert e.value.span == Span(0, 15)  # the whole \lim node
 
 
-def test_const_declaration_spellings_agree():
-    assert last("c ≡ 5") == "c = 5"
-    assert last("k == 3") == "k = 3"
-    assert last("\\const m = 10") == "m = 10"
+def test_declaration_operators_are_gone():
+    # ≡, the == alias, and \const no longer exist: everything is immutable by the
+    # binding rule, so there is nothing left to declare.
+    with pytest.raises(ParseError, match="unexpected character `≡`"):
+        run_source("c ≡ 5")
+    with pytest.raises(ParseError):
+        run_source("k == 3")
+    with pytest.raises(EvalError, match="not bound"):
+        run_source("\\const + 1")
 
 
-def test_double_eq_declares_a_constant():
-    # `==` never compares — it declares, and the name is permanently immutable.
+def test_binding_rule_is_the_tower_not_the_type():
+    # The comparison is value-based: across the exact/float tiers, equal values
+    # compare true; mixed kinds simply are not equal.
     env: dict = {}
-    consts: set = set()
-    assert last("k == 3", env, consts) == "k = 3"
-    with pytest.raises(EvalError, match="is a constant"):
-        run_source("k = 4", env, consts)
+    assert last("x = 1; x = 1.0", env) == "true"
+    assert last("y = 0.5; y = 1/2", env) == "true"
+    assert last('s = "a"; s = 1', env) == "false"
+    assert last("t = \\true; t = 1", env) == "true"  # bools compare as Python ints
 
 
-def test_const_bindings_are_permanently_immutable():
+def test_group_cannot_overwrite_a_global():
+    # A top-level group flattens into plain statements, so its `=` obeys the same
+    # rule: bound name → compare. There is no force-rebind path left anywhere.
     env: dict = {}
-    consts: set = set()
-    assert last("c ≡ 5", env, consts) == "c = 5"
-    for src in ["c = 6", "c ≡ 6", "\\const c = 6"]:
-        with pytest.raises(EvalError) as e:
-            run_source(src, env, consts)
-        assert "is a constant" in e.value.msg, f"for {src}"
+    last("x = 5", env)
+    assert run_source("(x = 6)", env) == ["false"]
+    assert last("x", env) == "= 5"
 
 
-def test_const_persists_across_executions():
-    # The consts set rides alongside env, so the REPL's immutability survives
-    # across independent statements.
+def test_body_writes_shadow_and_stay_local():
+    # Inside a body the same rule runs against the local frame: fresh `=` binds a
+    # local (shadowing a global), a repeat compares locally, globals are never hit.
     env: dict = {}
-    consts: set = set()
-    run_source("d ≡ 5", env, consts)
-    with pytest.raises(EvalError, match="`d` is a constant"):
-        run_source("d = 6", env, consts)
+    last("y = 10", env)
+    assert run_source("f() = (y = 4; y = 4; y)", env) == ["f = <fn f()>"]
+    assert last("f()", env) == "= 4"
+    assert last("y", env) == "= 10"
 
 
-def test_const_over_a_bound_name_errors():
+def test_function_redefinition_errors():
+    # Definitions are declarations: identity comparison would make a check
+    # meaningless, so a bound name is an error, not a comparison.
     env: dict = {}
-    run_source("q = 1", env)
-    with pytest.raises(EvalError, match="already bound"):
-        run_source("q ≡ 2", env)
-
-
-def test_const_function_definitions_are_callable_and_immutable():
-    env: dict = {}
-    consts: set = set()
-    assert run_source("\\const \\double(x) = 2x", env, consts) == \
-        ["\\double = <fn \\double(x)>"]
+    run_source("\\double(x) = 2x", env)
     assert last("\\double(21)", env) == "= 42"
-    with pytest.raises(EvalError, match="is a constant"):
-        run_source("\\double = 1", env, consts)
-
-
-def test_const_declarations_are_top_level_only():
-    env: dict = {}
-    run_source("f(x) = (r ≡ 5; r)", env)
-    with pytest.raises(EvalError, match="constants are global"):
-        run_source("f(1)", env)
+    with pytest.raises(EvalError, match="is already bound"):
+        run_source("\\double(x) = 3x", env)
+    with pytest.raises(EvalError, match="is protected"):
+        run_source("\\sin(x) = x", env)
 
 
 def test_multi_char_function_definitions_echo_single_sigil():
@@ -531,14 +524,14 @@ def test_dual_binds_one_name_under_two_spellings():
     assert out[-1] == "= 6.28"
 
 
-def test_dual_assign_or_check_goes_through_either_spelling():
+def test_dual_check_goes_through_either_spelling():
     from adhoc.parser import ALIAS_SEED
 
     env: dict = {}
     aliases = dict(ALIAS_SEED)
     run_source("\\dual \\alpha, α = 3.14", env, aliases=aliases)
     # The alias map is session state like env: thread it and both spellings
-    # assign-or-check against the one binding.
+    # compare against the one binding.
     assert last("α = 3.14", env, aliases=aliases) == "true"
     assert last("\\alpha = 2", env, aliases=aliases) == "false"
 

@@ -22,17 +22,15 @@ def compile_source(src: str, aliases: dict[str, str] | None = None) -> Compiled:
     return compile_program(parse_program(src, aliases))
 
 
-def execute(compiled: Compiled, env: dict, consts: set[str] | None = None,
-            modules: dict | None = None, base_dir: str | None = None) -> list[str]:
+def execute(compiled: Compiled, env: dict, modules: dict | None = None,
+            base_dir: str | None = None) -> list[str]:
     """Run a compiled unit against `env`, returning one formatted string per statement.
-    `consts` is the session's set of user-declared constant names — pass the same set
-    across calls (as the REPL does alongside `env`) so permanent immutability outlives
-    a single statement. `modules` is the session's import registry and `base_dir` the
-    directory relative to which `\\import` resolves files (the script's directory in
-    script mode; None means the working directory) — pass the same dict across calls
-    so each ad module evaluates once per session."""
+    `modules` is the session's import registry and `base_dir` the directory relative to
+    which `\\import` resolves files (the script's directory in script mode; None means
+    the working directory) — pass the same dict across calls so each ad module evaluates
+    once per session."""
     g: dict = {}
-    g["_e"] = Engine(env, compiled.spans, compiled.definitions, consts=consts,
+    g["_e"] = Engine(env, compiled.spans, compiled.definitions,
                      modules=modules, base_dir=base_dir)
     try:
         exec(compiled.code, g)  # noqa: S102 - generated from our own AST only
@@ -59,12 +57,12 @@ def _map_unexpected(e: Exception, compiled: Compiled) -> EvalError:
 
 
 def run_source(src: str, env: dict | None = None,
-               consts: set[str] | None = None, modules: dict | None = None,
+               modules: dict | None = None,
                base_dir: str | None = None,
                aliases: dict[str, str] | None = None) -> list[str]:
     """Convenience for callers that just want text in, strings out. `aliases` threads
     the session alias map across calls so `\\alias`/`\\dual` spellings persist, exactly
-    as the REPL keeps them alongside `env`/`consts`."""
+    as the REPL keeps them alongside `env`."""
     if env is None:
         env = {}
-    return execute(compile_source(src, aliases), env, consts, modules, base_dir)
+    return execute(compile_source(src, aliases), env, modules, base_dir)
