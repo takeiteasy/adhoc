@@ -25,6 +25,10 @@ written against — it should stay in lockstep with the code.
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
   conditional and `:` closes it
   in expression position (the only other use of `:` is the import member list).
+- A few `\`-names are **reserved markers the parser itself consumes**: the block
+  delimiters `\begin` / `\end` and the lambda heads `\λ` / `\fn` (special only when a
+  parameter-list paren follows). They cannot be bound or aliased; any other `\`-name
+  lexes cleanly and fails at evaluation if unbound.
 
 ## Grammar (EBNF)
 
@@ -63,8 +67,11 @@ arg        ::= expr | string | kwarg ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= identifier "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
-atom       ::= number | string | identifier | "\"-name | "(" sequence ")" ;
+atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
+             | block | lambda ;
 sequence   ::= statement (";" statement)* ;
+block      ::= "\begin" statement (";" statement)* "\end" ;
+lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 ```
 
 A trailing `;` after the last statement is tolerated (`1;` and `2;` both parse as a single
@@ -119,8 +126,8 @@ numbers" at evaluation — the same shape as any other string reaching a numeric
 ## Application: dynamic name-headed parens
 
 A `(…)` trailer attaches **only** to name-ish heads — a single-character identifier, a
-`\`-name, or another call. Number-headed parens never even parse as a call (`2(x+1)` is
-juxtaposition, always). What a call *does* is decided at evaluation by what the head holds:
+`\`-name, another call, or a parenthesized lambda (see `## Lambdas`). Number-headed
+parens never even parse as a call (`2(x+1)` is juxtaposition, always). What a call *does* is decided at evaluation by what the head holds:
 
 ```
 \py("math.sqrt")(2)   ->  head is callable — apply it
@@ -190,17 +197,19 @@ own name is installed in that frame before the body runs, enabling recursion. De
 are first-class and display as `<fn f(x)>` or `<fn \fact(n)>`.
 
 Because `;` also separates top-level statements and the source has no newline token, a
-function definition consumes the semicolon-separated body to the end of its input unit.
-In a script, put definitions after the top-level setup they need; call them from a later
-REPL input or source unit.
+function definition consumes the semicolon-separated body to the end of its input unit
+(a `\begin … \end` block may group the body's statements, but a `;` after it still
+belongs to the body — see `## Blocks`). In a script, put definitions after
+the top-level setup they need; call them from a later REPL input or source unit.
 
 `\if(condition, then)` and `\if(condition, then, otherwise)` are lazy, call-shaped
 conditionals. The selected branch alone is evaluated. The two-argument form is a
 statement-level no-op when its condition is false; in an expression requiring a value,
-that case reports an error. Parenthesized sequences provide multi-statement branches:
+that case reports an error. Parenthesized sequences and `\begin` blocks (next section)
+provide multi-statement branches:
 
 ```
-\if(x > 0, (y = x^2; y + 1), (y = -x; y * 2))
+\if(x > 0, (y = x^2; y + 1), \begin y = -x; y * 2 \end)
 ```
 
 The ternary `condition ? then : otherwise` is the same lazy conditional in operator
@@ -224,6 +233,93 @@ Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `fa
 Booleans are valid values and conditions but are not numeric operands. There is no
 numeric truthiness: a number is never a condition — `\if(0, 1, 2)` is a typed error,
 not a no-op, and the only conditions are comparisons and `\true`/`\false`.
+
+## Blocks: `\begin … \end`
+
+A block is a statement sequence with an explicit end:
+
+```
+block ::= "\begin" statement (";" statement)* "\end" ;
+```
+
+It parses through the same statement machinery as a parenthesized group and produces
+the same `Seq` node — **no scope of its own**, the ordinary flatten/echo/frame rules.
+A block is legal anywhere a group is: statement position (it flattens into the
+enclosing unit, each statement with its own echo line), def bodies, `\if` branches,
+lambda bodies, argument lists. Its value is its last statement's value.
+
+```
+\begin a = 1; a + 1 \end              ->  a = 1, then = 2   (top level: flattens)
+f(x) = \begin y = x^2; y + 1 \end     -- an explicit multi-statement def body
+\if(c, \begin a; b \end, \begin d \end)
+2 \begin 3 \end                       ->  = 6               (a block is a factor)
+```
+
+**Explicit extent.** The point of the form: `\end` terminates whatever expression is
+being parsed — it is never a juxtaposed factor, and it ends a range just like `,` `)`
+`;` and EOF (`\begin r = 1.. \end` is the infinite range). It does **not** shield
+against `;`: in a def body or at top level, a `;` after the closing `\end` simply
+continues the enclosing statement sequence (a block is one grouped statement of it —
+definitions still consume their unit). The form earns its keep in expression position,
+where `,` and `)` would otherwise end the sequence: lambda bodies, `\if` branches.
+
+A trailing `;` before `\end` is tolerated (top-level rule); `;;` is an error. Imports
+are rejected inside a block (statements, not expressions — the paren-group rule:
+write them outside), and `\alias`/`\dual` are rejected (top-level directives). An
+unclosed `\begin` is incomplete input — the REPL offers a continuation prompt, and a
+blank line cancels. `\begin` and `\end` are reserved names: they cannot be bound or
+aliased, and a stray `\end` with no open block is a parse error.
+
+Braces `{}` are deliberately **not** used for blocks — they are reserved for future
+set literals (see `## Deferred`).
+
+## Lambdas: anonymous functions
+
+```
+lambda ::= ("\λ" | "\fn") "(" params? ")" expr ;
+```
+
+A lambda is exactly a function definition without the name — `\λ(x) x + 1` (ASCII
+spelling `\fn(x) x + 1`; the sigil rule — every unicode form has an ASCII one). It is
+a first-class callable value: eager, fixed arity, and its body evaluates in a fresh
+frame over a closure of the defining scope. Reads fall through to the enclosing
+scopes; assignments stay call-local. There is no self-name to recurse through —
+recursion goes through named defs or a fixpoint combinator (the Z form works eagerly).
+Lambdas display as `<λ(x)>` and compare by identity like other callables; they take
+positional arguments only, and a parameter named like a prelude constant is rejected
+at evaluation, exactly as for defs.
+
+**Body extent** follows the fold/limit rule: the body extends greedily over the rest
+of the current expression, up to the enclosing delimiter (`,` `)` `;` `\end`, end of
+input). One-statement lambdas therefore nest right-associatively with no delimiters
+at all, and a `\begin … \end` block gives an explicit extent and multiple statements:
+
+```
+\fn(x) x^2                             -- a one-statement body needs no block
+\fn(n) \fn(f) \fn(x) f(n(f)(x))        -- greedy nesting: each body is the rest
+\fn(f) \begin g = \fn(x) f(f(x)); g \end   -- explicit extent, two statements
+```
+
+**Application**: a parenthesized lambda is a name-ish head, so a trailer applies it —
+`(\fn(x) x)(5)` is `5`. Unparenthesized, the greedy body has already consumed any
+trailer (`\fn(x) x(5)` is a lambda whose body is the call/product `x(5)`). Zero-
+argument lambdas are legal, matching `f()` legality; `\fn(a, b) a` takes two. A bare
+`\fn` without the parameter-list paren is an ordinary unbound name and reports a
+usage message at evaluation; `\fn(x) = 3` is a parse error (a lambda takes a body,
+not `=` — name it with `f(x) = body`).
+
+```
+\inc = \fn(x) x + 1                    ->  \inc = <λ(x)>
+\inc(4)                                ->  = 5
+(\fn(x) x)(5)                          ->  = 5
+\mk = \fn(n) \fn(x) x + n              -- closures capture the defining scope
+\five = \mk(5); \five(1)               ->  = 6
+
+\zero = \fn(f) \fn(x) x                -- Church numerals run as ordinary code
+\succ = \fn(n) \fn(f) \fn(x) f(n(f)(x))
+\two = \plus(\succ(\zero))(\succ(\zero))
+\two(\fn(v) v + 1)(0)                  ->  = 2
+```
 
 ## Special forms: folds and limits
 
@@ -488,7 +584,9 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators, collections, the
+Logical operators, collections (sets will take the `{}` spelling — deliberately not
+used for blocks; see `## Blocks`),
+the
 exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
 rule's check is the only equality today, and ticket #41 tracks equality semantics for

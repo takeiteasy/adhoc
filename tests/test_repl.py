@@ -106,3 +106,19 @@ def test_alias_survives_incomplete_then_completed_input(tmp_path):
     out = run_repl("\\alias \\sum,\nσ\nσ(i=1..2) i\n", tmp_path).stdout
     assert ". " in out  # the partial line offered a continuation
     assert "< = 3" in out
+
+
+def test_unclosed_block_continues_then_evaluates(tmp_path):
+    # An open `\begin` behaves like an open paren: the continuation prompt gathers
+    # lines until the matching `\end`, then the whole block evaluates. The REPL
+    # prints only the last output per input, so the `a = 1` echo stays hidden.
+    out = run_repl("\\begin a = 1;\na + 1\n\\end\n2\n", tmp_path).stdout
+    assert ". " in out
+    assert "ERROR" not in out
+    assert out.count("= 2") == 2  # the block's value and the later line
+
+
+def test_unclosed_block_blank_line_cancels(tmp_path):
+    out = run_repl("\\begin 1;\n\n2\n", tmp_path).stdout
+    assert "-- input cancelled" in out
+    assert "< = 2" in out

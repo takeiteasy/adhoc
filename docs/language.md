@@ -7,9 +7,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 
 - A REPL: `> ` prompts for input, `. ` prompts for a continuation when a statement is
   incomplete, `< ` prefixes output, Ctrl-D exits.
-- Multi-line input: an unterminated statement (`(1 + 2`, `1 +`, `2 ^`, `x =`, `"abc`) buffers
-  and continues on the next line rather than erroring immediately. A blank line cancels a
-  pending continuation.
+- Multi-line input: an unterminated statement (`(1 + 2`, `1 +`, `2 ^`, `x =`, `"abc`,
+  an unclosed `\begin`) buffers and continues on the next line rather than erroring
+  immediately. A blank line cancels a pending continuation.
 - Script mode: `adhoc run script.ad` runs a file through the same grammar, printing one
   `< ...` line per top-level statement. A file is one source and whitespace is
   insignificant, so statements are separated by `;` (the REPL parses line-by-line, which
@@ -42,6 +42,14 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   Python path to a callable (full trust — same power as running Python itself); arguments and
   results convert at the boundary (docs/numerics.md). Strings are values: they bind,
   concatenate with `+`, and compose `\py` paths (`\py(n + ".sqrt")`).
+- Anonymous functions (lambdas): `\fn(x) x + 1` or `\λ(x) x + 1` — a definition without
+  the name. First-class, eager, fixed arity, closures capture the defining scope; a
+  parenthesized lambda applies in head position (`(\fn(x) x)(5)` → `= 5`); bodies extend
+  greedily unless bounded by a block; display as `<λ(x)>` (docs/grammar.md, `## Lambdas`).
+- Blocks: `\begin statement; … \end` — a statement sequence with an explicit end, for
+  multi-statement def bodies, `\if` branches, and lambda bodies. Same flattening/scope
+  rules as a parenthesized group; braces stay reserved for future set literals
+  (docs/grammar.md, `## Blocks`).
 - Imports, statement-level and silent: `\import("lib")` binds the top-level names of `lib.ad`
   (all of them, or only the listed members: `\import("lib": f, \fact)`), each file evaluating
   once per session in a fresh root environment — imported functions keep the module's
@@ -108,7 +116,8 @@ and closed.
 The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
 same way, and meaning comes from three places — the parser's closed set of special forms
 (`\sum`/`\prod`/`\lim` binders, call-shaped `\if`, `\py`, statement-shaped
-`\import`/`\pyimport`), the session alias map that normalizes short spellings to canonical
+`\import`/`\pyimport`, the block markers `\begin`/`\end`, the lambda heads `\λ`/`\fn`),
+the session alias map that normalizes short spellings to canonical
 names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`), and
 the prelude scope of
 built-in constants and function aliases (see docs/grammar.md, `## Constants and the

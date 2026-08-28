@@ -37,6 +37,15 @@ delimiter — parenthesize to end it earlier. Recognition commits on the `(ident
 alone (bare `=` cannot occur inside a general expression); any other use of those heads
 goes through ordinary application parsing.
 
+Two further reserved shapes parse here rather than at evaluation. A **block**
+`\\begin statement (";" statement)* \\end` is an explicit-end statement sequence producing
+the same Seq node as a parenthesized group (no scope of its own); it is the
+multi-statement form for def bodies, `\\if` branches, and lambda bodies, and an unclosed
+`\\begin` raises IncompleteInput so the REPL offers a continuation prompt. A **lambda**
+`\\λ(params) body` (ASCII `\\fn(params) body`) parses into `Lambda`; its body follows the
+same greedy rule as fold/limit bodies, and a parenthesized lambda is a name-ish head so
+`(\fn(x) x)(5)` applies.
+
 Spans are tagged at each node's *construction* site, not on the way out of each parse
 call: the `(expr)` branch of atoms returns the inner node unchanged, and tagging on unwind
 would clobber that inner node's own (narrower) span with the paren-inclusive one.
@@ -85,6 +94,7 @@ from .syntax import (
     IfExpr,
     Import,
     KwArg,
+    Lambda,
     Limit,
     Node,
     NoOp,
@@ -113,6 +123,11 @@ class IncompleteInput(ParseError):
 
 
 _ATOM_STARTERS = (Number, Ident, Backslash, LParen, Str)
+
+# Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
+# a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
+# without the paren the head is an ordinary unbound name (the `\py` usage-error pattern).
+_LAMBDA_HEADS = ("λ", "fn")
 
 # Seed of the session alias map (short spelling → canonical name): the unicode
 # fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
@@ -227,6 +242,19 @@ class _Parser:
             and isinstance(self.peek2(), (Ident, Backslash))
         ):
             return self._spelling_statement(tok.name)
+        if isinstance(tok, Backslash):
+            # Reserved block markers and lambda heads, before the `=`/def-shape
+            # speculation below: `\begin` opens a block in any statement or
+            # expression position, a stray `\end` is a parse error, and
+            # `\fn(params)` is a lambda — never a definition named `fn` (`\fn(x) = …`
+            # dies inside the lambda parse on the stray `=`).
+            if tok.name == "end":
+                raise ParseError(
+                    "`\\end` closes a `\\begin` block: no block is open here", tok.span)
+            if tok.name == "begin":
+                return self.expr()
+            if tok.name in _LAMBDA_HEADS and isinstance(self.peek2(), LParen):
+                return self.expr()
         if isinstance(tok, (Ident, Backslash)):
             if isinstance(self.peek2(), Eq):
                 ident_tok = self.advance()
@@ -430,6 +458,62 @@ class _Parser:
                 else ident_tok.name)
         return FuncDef(name=name, params=tuple(params), body=body, span=span)
 
+    # block ::= "\begin" statement (";" statement)* "\end" ;
+    # A statement sequence with an explicit end — the multi-statement form for def
+    # bodies, `\if` branches, and lambda bodies, anywhere a group is legal. It parses
+    # through the same statement machinery as a parenthesized group and produces the
+    # same Seq: no scope of its own, the ordinary flatten/echo/frame rules. Imports
+    # stay out (statements, not expressions — the paren-group rule) and
+    # `\alias`/`\dual` stay top-level (the depth guard). A trailing `;` before
+    # `\end` is tolerated like at top level.
+    def _block_body(self, begin: Backslash) -> Node:
+        self.advance()  # the `\begin` token — caller did not consume it
+        self.depth += 1
+        try:
+            items = [self.statement()]
+            while isinstance(self.peek(), Semi):
+                self.advance()
+                if self._at_block_end():
+                    break
+                items.append(self.statement())
+        finally:
+            self.depth -= 1
+        end_tok = self.peek()
+        if not self._at_block_end():
+            # EOF raises IncompleteInput here — the REPL offers a continuation
+            # prompt, exactly like an unclosed parenthesis.
+            raise self.error_at_current(
+                f"expected `\\end`, found {end_tok.describe}")
+        self.advance()
+        for item in items:
+            if isinstance(item, Import | PyImport):
+                raise ParseError(
+                    "`\\import` and `\\pyimport` are statements, not expressions",
+                    item.span)
+        if len(items) == 1:
+            return items[0]
+        return Seq(statements=tuple(items), span=begin.span.to(end_tok.span))
+
+    def _at_block_end(self) -> bool:
+        tok = self.peek()
+        return isinstance(tok, Backslash) and tok.name == "end"
+
+    # lambda ::= ("\λ" | "\fn") "(" params? ")" expr ;
+    # The body extends greedily over the rest of the current expression — the
+    # fold/limit rule: it ends at the enclosing delimiter (`,` `)` `;` `\end`, end
+    # of input), so one-statement lambdas nest right-associatively without any
+    # delimiter (`\fn(n) \fn(f) \fn(x) f(n(f)(x))`) and `\begin … \end` gives an
+    # explicit extent. Zero-argument form allowed, matching `f()` legality.
+    def _lambda(self, head: Backslash) -> Node:
+        self.expect(LParen, "`(`")
+        params = self._func_params()
+        if isinstance(self.peek(), Eq):
+            raise ParseError(
+                "a lambda takes a body, not `=`: \\fn(x) x^2 — name it with f(x) = body",
+                head.span.to(self.peek().span))
+        body = self.expr()
+        return Lambda(params=params, body=body, span=head.span.to(body.span))
+
     def expr(self) -> Node:
         return self.ternary()
 
@@ -467,7 +551,10 @@ class _Parser:
         if not isinstance(self.peek(), DotDot):
             return start
         dotdot = self.advance()
-        end = None if isinstance(self.peek(), (Comma, RParen, Semi, Eof)) else self.comparison()
+        # A closing `\end` terminates the range just like `,` `)` `;` and EOF —
+        # `\begin r = 1.. \end` is the infinite range, not a broken one.
+        end = None if (isinstance(self.peek(), (Comma, RParen, Semi, Eof))
+                       or self._at_block_end()) else self.comparison()
         return Range(start=start, second=second, end=end,
                      span=start.span.to((end or dotdot).span))
 
@@ -512,10 +599,12 @@ class _Parser:
         return lhs
 
     # juxtaposed ::= unary unary* ; — `-` is deliberately excluded from the starter set,
-    # so `a - b` always parses as subtraction, never as `a * (-b)`.
+    # so `a - b` always parses as subtraction, never as `a * (-b)`. A closing `\end`
+    # stops the loop: it is a block terminator, never a factor (`\begin` may be one —
+    # a block is an expression, so `2 \begin x; y \end` multiplies through).
     def juxtaposed(self) -> Node:
         lhs = self.unary()
-        while self._is_atom_starter():
+        while self._is_atom_starter() and not self._at_block_end():
             rhs = self.unary()
             lhs = BinOp(op=BinOperator.MUL, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
         return lhs
@@ -539,8 +628,11 @@ class _Parser:
 
     # postfix ::= atom ("(" args ")")* ;
     # Static application: a trailer attaches only to name-ish heads (Var/BackslashRef/
-    # Call), so `f(x)` applies while `2(x+1)` falls through to juxtaposition.
-    _NAMEISH = (Var, BackslashRef, Call)
+    # Call/Lambda), so `f(x)` applies while `2(x+1)` falls through to juxtaposition.
+    # A parenthesized lambda in head position applies: `(\fn(x) x)(5)`. Unparenthesized,
+    # the greedy body has already consumed any trailer (`\fn(x) x(5)` is a lambda whose
+    # body is the call/product `x(5)`).
+    _NAMEISH = (Var, BackslashRef, Call, Lambda)
 
     # Special forms recognized in postfix position (DESIGN.md "equality and =", case 3):
     # a closed list of builtins whose first argument is a binding, not a general
@@ -695,6 +787,15 @@ class _Parser:
                 self.advance()
                 return self._name_node(tok.ch, tok.span)
             case Backslash():
+                if tok.name == "begin":
+                    return self._block_body(tok)
+                if tok.name == "end":
+                    raise ParseError(
+                        "`\\end` closes a `\\begin` block: no block is open here",
+                        tok.span)
+                if tok.name in _LAMBDA_HEADS and isinstance(self.peek2(), LParen):
+                    self.advance()
+                    return self._lambda(tok)
                 self.advance()
                 return BackslashRef(name=tok.name, span=tok.span)
             case LParen():

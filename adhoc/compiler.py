@@ -49,6 +49,7 @@ from .syntax import (
     FuncDef,
     IfExpr,
     Import,
+    Lambda,
     Limit,
     Node,
     NoOp,
@@ -206,7 +207,15 @@ class _Lowerer:
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(body)
                 return _call("limit", [pyast.Constant(var), self.expr(point),
-                    pyast.Constant(sid)])
+                                       pyast.Constant(sid)])
+            case Lambda(params=params, body=body, span=span):
+                # Same shape as FuncDef/Fold: the body compiles once into
+                # `definitions[sid]`; the engine materializes an anonymous
+                # AdFunction closed over the defining frame. The `_e.lambda_`
+                # call carries the span id, so body errors stay narrow.
+                sid = self._push(span)
+                self.definitions[sid] = _compile_body(body)
+                return _call("lambda_", [pyast.Constant(params), pyast.Constant(sid)])
             case Assign(name=name, value=value, span=span):
                 # Assign is legal in expression position (a parenthesized sequence's
                 # statements compile through here); the engine's one binding rule

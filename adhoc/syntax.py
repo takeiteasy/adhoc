@@ -157,6 +157,18 @@ class UnOp(Node):
 
 
 @dataclass(frozen=True)
+class Lambda(Node):
+    """An anonymous function literal, `\\λ(params) body` (ASCII spelling `\\fn`).
+    Exactly a definition without the name: eager, fixed arity, the body evaluates in
+    a fresh frame over a closure of the defining scope, and there is no self-name to
+    recurse through. The body extends greedily over the rest of the current
+    expression — `\\begin … \\end` gives it an explicit extent (docs/grammar.md)."""
+
+    params: tuple[str, ...]
+    body: Node
+
+
+@dataclass(frozen=True)
 class Assign(Node):
     """Statement-level `x = e` — declare-once-then-check. Binds a fresh name into
     the current frame; a name already bound in that frame compares by value and

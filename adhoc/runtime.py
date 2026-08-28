@@ -332,6 +332,8 @@ def nshow(v: AdValue | str) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, AdFunction):
+        if not v.name:
+            return f"<λ({', '.join(v.params)})>"
         label = f"\\{v.name}" if len(v.name) > 1 else v.name
         return f"<fn {label}({', '.join(v.params)})>"
     if isinstance(v, str):
@@ -439,9 +441,12 @@ class AdFunction:
 
     def __call__(self, *args):
         if len(args) != len(self.params):
-            raise EvalError(f"{self.name} takes {len(self.params)} arguments, got {len(args)}")
+            # Anonymous functions (name "") report the λ spelling.
+            raise EvalError(f"{self.name or 'λ'} takes {len(self.params)} arguments, "
+                            f"got {len(args)}")
         frame = dict(zip(self.params, args))
-        frame[self.name] = self
+        if self.name:
+            frame[self.name] = self
         child = Engine(frame, self.body.spans, self.body.definitions, self.closure,
                        self.closure.modules,
                        self.closure.base_dir, self.closure.import_chain)
@@ -569,6 +574,9 @@ class Engine:
             self._fail("`\\alias` declares short spellings at top level: \\alias \\sum, σ", sid)
         if name == "dual":
             self._fail("`\\dual` defines a name under two spellings: \\dual \\alpha, α = 3.14", sid)
+        if name in ("fn", "λ"):
+            self._fail("a lambda takes a parenthesized parameter list: \\λ(x) body "
+                       "(ASCII spelling \\fn(x) body)", sid)
         value = self._lookup(name)
         if value is _MISSING:
             self._fail(f"`\\{name}` is not bound", sid)
@@ -593,6 +601,17 @@ class Engine:
         result = f"{_name_text(name)} = {nshow(fn)}"
         self.outputs.append(result)
         return result
+
+    def lambda_(self, params, sid):
+        """`\\λ(params) body` / `\\fn(params) body` — an anonymous AdFunction closed
+        over the defining frame. Parameters reject protected names exactly like
+        `define`; there is no self-name to install (recursion goes through named
+        defs or a fixpoint combinator), and the empty name is what nshow renders
+        as `<λ(x)>`."""
+        for p in params:
+            if self._protected(p):
+                self._fail(f"`{p}` is protected", sid)
+        return AdFunction("", params, self.definitions[sid], self)
 
     def assign(self, name: str, value: AdValue, sid: int,
                echo: bool = False) -> AdValue | bool:
