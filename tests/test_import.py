@@ -186,11 +186,12 @@ def test_imports_are_scoped_to_their_session_registry(tmp_path):
 
 def test_module_const_does_not_join_importer_protected_set(tmp_path):
     # Protection-on-import is future work (ROADMAP): an imported const lands as an
-    # ordinary binding, rebindable with `:=`.
+    # ordinary binding — rebinding it *compares* instead of erroring like a
+    # protected name would.
     make_lib(tmp_path, text="k ≡ 5; f(x) = x")
     env: dict = {}
     run_at(tmp_path, '\\import("lib")', env)
-    assert run_at(tmp_path, "k := 6; k", env) == ["k = 6", "= 6"]
+    assert run_at(tmp_path, "k = 6", env) == ["false"]
 
 
 # --- \pyimport: Python module members ---
@@ -262,7 +263,8 @@ def test_pyimport_requires_members_at_parse_time():
 def test_pyimport_imported_names_are_ordinary_bindings():
     env: dict = {}
     run_source('\\pyimport("math": \\tau)', env)
-    assert run_source("\\tau := 3; \\tau", env) == ["\\tau = 3", "= 3"]
+    # Not protected: rebinding *compares* instead of reporting a protected-name error.
+    assert run_source("\\tau = 3", env) == ["false"]
 
 
 # --- registry plumbing ---

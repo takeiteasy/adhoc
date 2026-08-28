@@ -25,7 +25,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   (`2x` = `2 * x`, `ab` = `a * b`).
 - Bare identifiers are exactly one character (ASCII or unicode); multi-character names,
   including user-defined function names, use the backslash sigil (`\fact`).
-- Assignment (`x = 1`), equality-check-if-bound (`x = 1` again), force-reassign (`x := 1`).
+- Assignment (`x = 1` binds a fresh name) with assign-or-check semantics: `x = 1` again
+  *compares*, printing `true`/`false` — globals are bound once, never reassigned
+  (docs/grammar.md, `## Assignment semantics`).
 - Multi-character variables use the same backslash sigil as multi-character functions:
   `\bar = 100; \foo = 200; \foobar = \foo\bar`.
 - `--` line comments, plus bare string literals as comment-like statements (`"a note"` is
@@ -61,7 +63,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   `(a = 1; a + 1)` support multi-statement branches.
 - Constant declarations: `c ≡ 5`, `c == 5` (ASCII alias — declares, never compares), or
   `\const c = 5` declare permanently-immutable globals —
-  no `=`, `:=`, local assignment, parameter, or binder can ever rebind the name, and
+  no `=`, local assignment, parameter, or binder can ever rebind the name, and
   `\const f(x) = ...` declares an immutable function the same way.
 - A protected prelude scope: `π`/`\pi`, `e`, `\true`/`\false`, and the `\sin`, `\cos`,
   `\tan`, `\ln`, `\sqrt` function aliases (the plain `math.*` callables, float tier).

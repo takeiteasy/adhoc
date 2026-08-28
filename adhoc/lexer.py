@@ -122,15 +122,8 @@ class Eq(Token):
 
 
 @dataclass(frozen=True)
-class ColonEq(Token):
-    @property
-    def describe(self) -> str:
-        return "`:=`"
-
-
-@dataclass(frozen=True)
 class IdenticalTo(Token):
-    """The permanently-immutable binding operator, statement-level only like `=`/`:=`:
+    """The permanently-immutable binding operator, statement-level only like `=`:
     `≡` (unicode) or `==` (ASCII alias). The spelling rides along purely so
     diagnostics echo the source; both spellings mean exactly the same declaration."""
 
@@ -200,7 +193,8 @@ class Comma(Token):
 @dataclass(frozen=True)
 class Colon(Token):
     """The member-list separator in import statements: `\\import("lib": f, \\g)`.
-    `:=` still lexes as one ColonEq token; a `:` that does not precede `=` is this."""
+    The only use of `:` — statement-level binding is `=`, force-reassignment does
+    not exist."""
 
     @property
     def describe(self) -> str:
@@ -323,12 +317,8 @@ def tokenize(src: str) -> list[Token]:
             continue
 
         if c == ":":
-            if i + 1 < n and entries[i + 1][1] == "=":
-                end = entries[i + 1][0] + 1
-                tokens.append(ColonEq(span=Span(pos, end)))
-                i += 2
-                continue
-            # A `:` not followed by `=` is the import member-list separator.
+            # The only use of `:` is the import member-list separator; statement-level
+            # binding is plain `=`.
             end = pos + len(c.encode("utf-8"))
             tokens.append(Colon(span=Span(pos, end)))
             i += 1

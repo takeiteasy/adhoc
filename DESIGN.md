@@ -12,10 +12,6 @@ ADhoc Higher Order Calculator — a cli based calculator and language like `bc` 
 < x = 3
 > x = 4 -- variables are immutable, checks equality because `x` already exists
 < false
-> x := 4 -- force reassign
-< x = 4
-> y := 5 -- error, y doesn't exist in this scope yet
-< ERROR! `y` does not exist! ...
 ```
 
 - Whitespace is ignored
@@ -49,7 +45,7 @@ Loosest to tightest binding:
 
 | level | operators | associativity |
 |---|---|---|
-| 1 | `=` `:=` | statement level only, non-associative |
+| 1 | `=` `≡`/`==` | statement level only, non-associative |
 | 2 | `..` (range) | non-associative |
 | 3 | `+` `-` (binary) | left |
 | 4 | `*` `/` | left |
@@ -145,12 +141,12 @@ literals:
 < π = 3.14159265358979
 > \const π = 3.14159265358979 -- ASCII keyword sugar for the same thing
 < π = 3.14159265358979
-> π := 4 -- error, ≡/\const bindings can never be reassigned, even with :=
+> π = 4 -- error, ≡/\const bindings can never be reassigned
 < ERROR! `π` is a constant
 ```
 
-- `≡` ("identically equal to") declares a global, permanently-immutable binding — stronger than plain `=` (which permits `:=` to force-reassign later). `\const` is the ASCII keyword sugar, and both spellings cover function definitions too (`\const f(x) = ...` declares an immutable callable).
-- Regular globals (via `=`) still follow existing rules: immutable by default, force-reassignable with `:=`.
+- `≡` ("identically equal to") declares a global, permanently-immutable binding — the same immutability plain `=` already gives (globals are single-assignment; there is no force-reassign operator). `\const` is the ASCII keyword sugar, and both spellings cover function definitions too (`\const f(x) = ...` declares an immutable callable).
+- Regular globals (via `=`) are immutable once bound: rebinding *compares* instead of overwriting.
 - A `≡`/`\const` declaration is not assign-or-check: the name must be fresh (and top-level); rebinding an existing name is an error, not a conversion to constant.
 - `==` is the fast-to-type ASCII alias for `≡` — three spellings, one declaration. It is deliberately *not* an equality operator: statement-level `=` already covers assign-or-check, expression `=` is reserved for plain boolean equality, and `==` never compares (the `≡`/`==` spellings are bindings only; function definitions go through `\const`).
 - Built-in constants/functions (`π`/`\pi`, `e`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`) live in a prelude scope declared through this same mechanism. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same constant, not two different ones. The function aliases are the plain float-tier `math.*` callables; the symbolic closed forms of phase 2 replace those bindings in place.

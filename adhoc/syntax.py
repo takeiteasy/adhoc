@@ -142,11 +142,11 @@ class Call(Node):
 @dataclass(frozen=True)
 class FuncDef(Node):
     """A function definition with a semicolon-sequenced body. `const` marks the
-    `\\const f(x) = ...` form: the name is declared permanently immutable."""
+    `\\const f(x) = ...` form: the name is declared permanently immutable. Redefining
+    a bound name is assign-or-check (`=` compares), like any other binding."""
 
     name: str
     params: tuple[str, ...]
-    force: bool
     body: Node
     const: bool = False
 
@@ -159,15 +159,20 @@ class UnOp(Node):
 
 @dataclass(frozen=True)
 class Assign(Node):
+    """Statement-level `x = e`: bind a fresh name, or compare against a bound one
+    (prints `true`/`false`). There is no force-reassignment operator; an unconditional
+    rebind goes through a sequence group, whose writes go plainly into the frame it
+    executes in."""
+
     name: str
-    force: bool
     value: Node
 
 
 @dataclass(frozen=True)
 class ConstAssign(Node):
     """`x ≡ e` / `\\const x = e` — declare a global binding that can never be
-    reassigned, even with `:=`. Unlike `=` this is a declaration, not
+    reassigned, even through a sequence group's write. Unlike `=` this is a
+    declaration, not
     assign-or-check: the name must be fresh. Statement-level only."""
 
     name: str

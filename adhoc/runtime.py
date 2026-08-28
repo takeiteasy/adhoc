@@ -521,7 +521,7 @@ class Engine:
 
     def _protected(self, name: str) -> bool:
         """Prelude names are protected everywhere; session constants join them once
-        declared (`const_assign`). Covers rebinding by `=`, `:=`, local `set`,
+        declared (`const_assign`). Covers rebinding by `=`, local `set`,
         function definition, and — at the definition/binder sites — parameters and
         loop variables, so a protected name can never be shadowed."""
         return name in _PRELUDE_PROTECTED or name in self.consts
@@ -564,7 +564,7 @@ class Engine:
         """The parsed-but-unimplemented definition shape `f(x) = body` lowers here."""
         self._fail("function definitions are not implemented yet (reserved for phase 1)", sid)
 
-    def define(self, name, params, force, const, sid):
+    def define(self, name, params, const, sid):
         # Parameters bind into the call frame exactly like assignments, so a protected
         # parameter would shadow a prelude/constant name — rejected at definition.
         for p in params:
@@ -574,8 +574,10 @@ class Engine:
         if const:
             self.const_assign(name, fn, sid)
         else:
-            (self.reassign if force else self.assign)(name, fn, sid)
-        # assign/reassign/const_assign already sigilate multi-character names via
+            # Redefining a bound name is assign-or-check, like any other binding —
+            # there is no force-reassignment spelling.
+            self.assign(name, fn, sid)
+        # assign/const_assign already sigilate multi-character names via
         # _name_text, so the echoed line needs no further rebranding.
         return self.outputs[-1]
 
@@ -590,8 +592,8 @@ class Engine:
         """`x ≡ e` / `\\const x = e` — declare a permanently-immutable global binding.
         A declaration, not assign-or-check: the name must be fresh, top-level, and
         unprotected. Afterwards no path can rebind it — `=` re-binds are protected,
-        `:=` is protected, and locals/parameters/binders named `x` are redefinition
-        errors (see `_protected`)."""
+        sequence-group writes are protected, and locals/parameters/binders named `x`
+        are redefinition errors (see `_protected`)."""
         self._check_assignable(value, sid)
         if self.parent is not None:
             self._fail("constants are global; declare them at the top level", sid)
@@ -977,16 +979,5 @@ class Engine:
         else:
             self.env[name] = value
             result = f"{_name_text(name)} = {nshow(value)}"
-        self.outputs.append(result)
-        return result
-
-    def reassign(self, name: str, value: AdValue, sid: int) -> str:
-        self._check_assignable(value, sid)
-        if self._protected(name):
-            self._fail(f"`{name}` is a constant", sid)
-        if name not in self.env:
-            self._fail(f"`{name}` does not exist!", sid)
-        self.env[name] = value
-        result = f"{_name_text(name)} = {nshow(value)}"
         self.outputs.append(result)
         return result

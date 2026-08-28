@@ -65,6 +65,14 @@ def test_escaped_names_support_multi_character_variables():
     assert run_source("\\foobar", env) == ["= 20000"]
 
 
+def test_function_locals_rebind_within_the_body():
+    # Body writes are plain frame writes: a local can be reassigned mid-body,
+    # and every call starts from a fresh frame.
+    env = define("f() = x = 1; x = x + 1; x")
+    assert run_source("f()", env) == ["= 2"]
+    assert run_source("f()", env) == ["= 2"]
+
+
 def test_piecewise_function_and_lazy_branch():
     env = define("m(x) = \\if(x >= 0, x, -x)")
     assert run_source("m(-5)", env) == ["= 5"]
@@ -81,7 +89,7 @@ def test_if_sequence_group_is_lazy_and_returns_last_value():
     env = {}
     assert run_source("\\if(1 < 2, (x = 4; x + 1), 99)", env) == ["= 5"]
     assert run_source("x", env) == ["= 4"]
-    assert run_source("\\if(1 > 2, (x := 9; x), 11)", env) == ["= 11"]
+    assert run_source("\\if(1 > 2, (x = 9; x), 11)", env) == ["= 11"]
     assert run_source("x", env) == ["= 4"]
 
 

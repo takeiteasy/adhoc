@@ -13,7 +13,7 @@ def test_no_gutter_on_single_line():
 
 
 def test_gutter_on_multiline_source():
-    out = render("a=1; y:=2\nnext", "ERROR!", "boom", Span(5, 9))
+    out = render("a=1; y=2\nnext", "ERROR!", "boom", Span(5, 9))
     assert "1: " in out
 
 

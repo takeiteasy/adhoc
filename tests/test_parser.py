@@ -125,12 +125,18 @@ def test_juxtaposition_is_left_associative():
 
 
 def test_assign_node_fields():
-    node = parse_program("x := 2")
+    node = parse_program("x = 2")
     assert isinstance(node, Assign)
     assert node.name == "x"
-    assert node.force is True
-    assert node.value == NumLit(text="2", span=Span(5, 6))
-    assert node.span == Span(0, 6)
+    assert node.value == NumLit(text="2", span=Span(4, 5))
+    assert node.span == Span(0, 5)
+
+
+def test_force_reassign_spelling_is_gone():
+    # `:=` was removed from the language: `:` is only the import member separator,
+    # so a stray `:=` dies at the colon.
+    with pytest.raises(ParseError, match="unexpected token `:`"):
+        parse_program("x := 2")
 
 
 def test_seq_splits_and_joins_spans():
@@ -316,15 +322,13 @@ def test_def_shape_parses_into_funcdef():
     assert isinstance(node, FuncDef)
     assert node.name == "f"
     assert node.params == ("x", "y")
-    assert node.force is False
     assert isinstance(node.body, BinOp)
     assert node.span == Span(0, 13)
 
 
-def test_def_force_spelling():
-    node = parse_program("f(x) := x")
-    assert isinstance(node, FuncDef)
-    assert node.force is True
+def test_def_force_spelling_is_gone():
+    with pytest.raises(ParseError, match="unexpected token `:`"):
+        parse_program("f(x) := x")
 
 
 def test_def_attempt_with_non_ident_param_reparses_as_application():
@@ -373,16 +377,16 @@ def test_const_function_definition():
     assert isinstance(node, FuncDef)
     assert node.name == "f"
     assert node.const is True
-    assert node.force is False
     node = parse_program("\\const \\double(x) = 2x")
     assert isinstance(node, FuncDef)
     assert node.name == "double"
     assert node.const is True
 
 
-def test_const_rejects_force_reassignment_spelling():
+def test_const_with_stray_colon_errors_at_the_colon():
+    # `:=` no longer exists; `\const` demands `=` immediately.
     for src in ["\\const x := 5", "\\const f(x) := 5"]:
-        with pytest.raises(ParseError, match="force-reassigned"):
+        with pytest.raises(ParseError, match="expected `=`"):
             parse_program(src)
 
 

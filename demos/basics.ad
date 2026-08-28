@@ -16,11 +16,11 @@
 αβ;
 2α;
 
--- `=` binds an unbound name, then compares when bound
+-- `=` binds an unbound name, then compares when bound — a bound global
+-- can never be reassigned (iteration means a fresh name)
 x = 10;
 x = 10;
 x = 11;
-x := 12;
 
 -- the prelude: built-in constants and function aliases, protected everywhere
 π;
@@ -30,8 +30,8 @@ r = 2;
 \sqrt(2);
 \sin(0);
 
--- ≡ (ASCII alias ==, keyword \const) declares a name that can never be rebound —
--- not even with := ; note that == declares, it never compares
+-- ≡ (ASCII alias ==, keyword \const) declares a name that can never be rebound;
+-- note that == declares, it never compares
 -- (function definitions consume the rest of a script as their body, so defs
 -- belong in REPL input; bindings are fine here)
 φ ≡ 1.6180339887498948;

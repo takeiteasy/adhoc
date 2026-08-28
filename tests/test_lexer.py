@@ -3,7 +3,7 @@ import pytest
 from adhoc.lexer import (
     Backslash,
     Caret,
-    ColonEq,
+    Colon,
     Comma,
     DotDot,
     Eq,
@@ -88,14 +88,14 @@ def test_comments_are_discarded():
 
 
 def test_all_operator_kinds():
-    assert kinds("+-*/^=:=();") == [
+    assert kinds("+-*/^=:();") == [
         Plus,
         Minus,
         Star,
         Slash,
         Caret,
         Eq,
-        ColonEq,
+        Colon,
         LParen,
         RParen,
         Semi,

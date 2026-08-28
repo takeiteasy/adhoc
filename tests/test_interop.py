@@ -138,11 +138,13 @@ def test_string_cannot_be_assigned():
     assert "strings cannot be assigned" in e.value.msg
 
 
-def test_string_cannot_be_force_reassigned():
+def test_string_cannot_be_bound_in_a_body():
+    # The write path inside function bodies is unconditional, but strings are
+    # rejected there too — strings never enter the environment.
     env: dict = {}
-    run_source("x = 1", env)
+    run_source('f() = x = \\py("os.getcwd")(); x', env)
     with pytest.raises(EvalError) as e:
-        run_source('x := \\py("os.getcwd")()', env)
+        run_source("f()", env)
     assert "strings cannot be assigned" in e.value.msg
 
 

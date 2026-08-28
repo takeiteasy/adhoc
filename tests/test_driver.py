@@ -2,7 +2,7 @@ import pytest
 
 from adhoc.compiler import compile_program
 from adhoc.driver import compile_source, execute, run_source
-from adhoc.parser import parse_program
+from adhoc.parser import ParseError, parse_program
 from adhoc.runtime import EvalError
 from adhoc.span import Span
 
@@ -25,10 +25,22 @@ def test_unbound_var_error_message():
     assert e.value.msg == "`x` is not bound"
 
 
-def test_force_reassign_on_unbound_errors():
-    with pytest.raises(EvalError) as e:
+def test_force_reassign_spelling_is_gone():
+    # `:=` was removed: a stray `:` dies at the lexer/parser boundary, not with the
+    # old "`y` does not exist!" evaluation error.
+    with pytest.raises(ParseError, match="unexpected token `:`"):
         run_source("y := 2")
-    assert e.value.msg == "`y` does not exist!"
+
+
+def test_globals_are_single_assignment():
+    # With the force spelling gone, a bound global can only be compared against —
+    # a paper page doesn't reassign either. Iteration means fresh names.
+    env: dict = {}
+    assert last("x = 3", env) == "x = 3"
+    assert last("x = 4", env) == "false"
+    assert last("x", env) == "= 3"
+    # Statement groups flatten into plain statements — same assign-or-check.
+    assert run_source("(x = 4; x)", env) == ["false", "= 3"]
 
 
 def test_assign_binds_then_checks():
@@ -36,12 +48,6 @@ def test_assign_binds_then_checks():
     assert last("x = 3", env) == "x = 3"
     assert last("x = 4", env) == "false"
     assert last("x = 3", env) == "true"
-
-
-def test_force_reassign_rebinds():
-    env: dict = {}
-    last("x = 3", env)
-    assert last("x := 4", env) == "x = 4"
 
 
 def test_seq_threads_env_and_returns_last():
@@ -77,8 +83,8 @@ def test_span_narrowing_backslash_ref_is_sigil_inclusive():
 
 def test_span_narrowing_second_statement_only():
     with pytest.raises(EvalError) as e:
-        run_source("a=1; y:=2")
-    assert e.value.span == Span(5, 9)
+        run_source("a=1; y")
+    assert e.value.span == Span(5, 6)
 
 
 def test_division_by_zero_keeps_repl_alive_via_typed_error():
@@ -118,10 +124,8 @@ def test_assignment_semantics_table():
     assert last("x = 3", env) == "x = 3"  # unbound -> bind
     assert last("x = 4", env) == "false"  # bound, mismatched -> check
     assert last("x = 3", env) == "true"  # bound, matches -> check
-    assert last("x := 4", env) == "x = 4"  # bound -> force rebind
-    with pytest.raises(EvalError) as e:
-        last("y := 5", env)
-    assert e.value.msg == "`y` does not exist!"  # unbound -> error
+    with pytest.raises(ParseError):
+        run_source("y := 5", env)  # the force spelling does not exist
 
 
 def test_grammar_unicode_identifier():
@@ -328,8 +332,7 @@ def test_prelude_py_function_aliases():
 
 
 def test_prelude_names_cannot_be_rebound():
-    for src in ["π = 3", "π := 3", "\\pi = 3", "e = 5", "e := 5",
-                "\\true = \\false", "\\true := 1"]:
+    for src in ["π = 3", "\\pi = 3", "e = 5", "\\true = \\false"]:
         with pytest.raises(EvalError) as e:
             run_source(src)
         assert "is a constant" in e.value.msg, f"for {src}"
@@ -408,14 +411,14 @@ def test_double_eq_declares_a_constant():
     consts: set = set()
     assert last("k == 3", env, consts) == "k = 3"
     with pytest.raises(EvalError, match="is a constant"):
-        run_source("k := 4", env, consts)
+        run_source("k = 4", env, consts)
 
 
 def test_const_bindings_are_permanently_immutable():
     env: dict = {}
     consts: set = set()
     assert last("c ≡ 5", env, consts) == "c = 5"
-    for src in ["c = 6", "c := 6", "c ≡ 6", "\\const c = 6"]:
+    for src in ["c = 6", "c ≡ 6", "\\const c = 6"]:
         with pytest.raises(EvalError) as e:
             run_source(src, env, consts)
         assert "is a constant" in e.value.msg, f"for {src}"
@@ -428,7 +431,7 @@ def test_const_persists_across_executions():
     consts: set = set()
     run_source("d ≡ 5", env, consts)
     with pytest.raises(EvalError, match="`d` is a constant"):
-        run_source("d := 6", env, consts)
+        run_source("d = 6", env, consts)
 
 
 def test_const_over_a_bound_name_errors():
@@ -445,7 +448,7 @@ def test_const_function_definitions_are_callable_and_immutable():
         ["\\double = <fn \\double(x)>"]
     assert last("\\double(21)", env) == "= 42"
     with pytest.raises(EvalError, match="is a constant"):
-        run_source("\\double := 1", env, consts)
+        run_source("\\double = 1", env, consts)
 
 
 def test_const_declarations_are_top_level_only():

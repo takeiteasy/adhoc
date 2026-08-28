@@ -2,7 +2,7 @@
 precedence table in docs/grammar.md:
 
     program     ::= statement (";" statement)* ;
-    statement   ::= func-def | string | identifier ("=" | ":=") expr | expr ;
+    statement   ::= func-def | string | identifier "=" expr | expr ;
     expr        ::= additive ;
     additive    ::= multiplicative (("+" | "-") multiplicative)* ;
     multiplicative ::= juxtaposed (("*" | "/") juxtaposed)* ;
@@ -43,7 +43,6 @@ would clobber that inner node's own (narrower) span with the paren-inclusive one
 from .lexer import (
     Backslash,
     Colon,
-    ColonEq,
     Comma,
     Caret,
     Eq,
@@ -166,7 +165,7 @@ class _Parser:
         return Seq(statements=tuple(statements), span=span)
 
     # statement ::= func-def | const-stmt | string
-    #             | identifier ("=" | ":=") expr | expr ;
+    #             | identifier "=" expr | expr ;
     def statement(self) -> Node:
         tok = self.peek()
         if isinstance(tok, Str):
@@ -189,13 +188,13 @@ class _Parser:
                 name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
                 return ConstAssign(name=name, value=value,
                                    span=ident_tok.span.to(value.span))
-            if isinstance(self.peek2(), (Eq, ColonEq)):
+            if isinstance(self.peek2(), Eq):
                 ident_tok = self.advance()
-                force = isinstance(self.advance(), ColonEq)
+                self.advance()  # `=` — bind-or-check, there is no force spelling
                 value = self.expr()
                 span = ident_tok.span.to(value.span)
                 name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
-                return Assign(name=name, force=force, value=value, span=span)
+                return Assign(name=name, value=value, span=span)
             if isinstance(self.peek2(), LParen):
                 saved = self.pos
                 defn = self._func_def_or_none()
@@ -214,16 +213,12 @@ class _Parser:
             raise self.error_at_current("expected a name after `\\const`")
         ident_tok = self.advance()
         name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
-        if isinstance(self.peek(), ColonEq):
-            raise ParseError("constants cannot be force-reassigned", self.peek().span)
         if isinstance(self.peek(), LParen):
             self.advance()
             params = self._func_params()
-            if isinstance(self.peek(), ColonEq):
-                raise ParseError("constants cannot be force-reassigned", self.peek().span)
             self.expect(Eq, "`=`")
             body = self._func_body()
-            return FuncDef(name=name, params=params, force=False, body=body, const=True,
+            return FuncDef(name=name, params=params, body=body, const=True,
                            span=const_tok.span.to(body.span))
         self.expect(Eq, "`=`")
         value = self.expr()
@@ -300,8 +295,8 @@ class _Parser:
         return Seq(statements=tuple(body_stmts),
                    span=body_stmts[0].span.to(body_stmts[-1].span))
 
-    # func-def ::= identifier "(" params? ")" ("=" | ":=") expr ;
-    # Speculative: parse the head shape, and only commit when an `=`/`:=` follows the
+    # func-def ::= identifier "(" params? ")" "=" statement (";" statement)* ;
+    # Speculative: parse the head shape, and only commit when an `=` follows the
     # closing paren; anything else restores the position so `f(x)` reparses as an
     # application. Parameter validity is enforced only once committed.
     def _func_def_or_none(self) -> FuncDef | None:
@@ -324,13 +319,13 @@ class _Parser:
         if not isinstance(self.peek(), RParen):
             return None
         close = self.advance()
-        if not isinstance(self.peek(), (Eq, ColonEq)):
+        if not isinstance(self.peek(), Eq):
             return None
-        force = isinstance(self.advance(), ColonEq)
+        self.advance()  # `=`
         body = self._func_body()
         span = ident_tok.span.to(body.span)
         name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
-        return FuncDef(name=name, params=tuple(params), force=force, body=body, span=span)
+        return FuncDef(name=name, params=tuple(params), body=body, span=span)
 
     def expr(self) -> Node:
         return self.range_expr()

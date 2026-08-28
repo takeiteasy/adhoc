@@ -18,7 +18,7 @@ they don't replace it. The interaction-net engine and parallel rewriting recorde
 - Lexer: whitespace-insensitive, single-char ascii/unicode identifiers, `--` comments,
   case-sensitivity, byte-offset spans on every token.
 - Parser: core grammar — literals, arithmetic (`+ - * / ^`, parens), assignment/equality-check
-  `=`, force-reassign `:=`. AST as frozen dataclasses, spans on every node.
+  `=` (bind-or-check; globals are single-assignment). AST as frozen dataclasses, spans on every node.
 - Diagnostics: caret-pointing error rendering with source spans, per-node span narrowing.
 - REPL: multi-line continuation, history, line editing.
 - Script mode: `adhoc run script.ad` — the same grammar fed a whole file instead of
@@ -37,7 +37,7 @@ they don't replace it. The interaction-net engine and parallel rewriting recorde
 - Ranges: `a..b`, `a..` (lazy infinite), `a,c..b` / `a,c..` (step-inferred).
 - `Σ`/`\sum`, `Π`/`\prod`, `\lim` — fold over a range; infinite-range `Σ`/`Π` as limit of partial
   sums.
-- Globals/constants: `=`/`:=` rules, `≡`/`\const` for permanent immutability.
+- Globals/constants: `=` assign-or-check rules, `≡`/`\const` for permanent immutability.
   - Prelude constants (`π`, `e`, `\sin`, ...) are protected everywhere, not shadowable
     (decided).
 - Non-converging infinite `Σ`/`Π`: error after a tolerance/iteration cap, reusing the phase-2

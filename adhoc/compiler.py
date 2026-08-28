@@ -14,7 +14,8 @@ Lowering rules:
 - A bare-string *statement* lowers to `pass`: one generated line per statement keeps the
   lineno ↔ span table aligned while producing no output.
 - Variables are never bare Python name loads or stores — reads go through `_e.var`,
-  writes through `_e.assign`/`_e.reassign` implementing bind-or-compare, and constant
+  writes through `_e.assign` (bind-or-compare; there is no force-reassignment spelling —
+  an unconditional rebind goes through a sequence group's `_e.set`), and constant
   declarations (`x ≡ e` / `\\const x = e`) through `_e.const_assign`. The user env is
   a plain dict the engine holds; it never mixes with the exec globals.
 - `\name` lowers to `_e.bref("name", sid)`; application lowers to `_e.app(head, args,
@@ -125,8 +126,8 @@ class _Lowerer:
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(stmt.body)
                 return pyast.unparse(_call("define", [pyast.Constant(stmt.name),
-                    pyast.Constant(stmt.params), pyast.Constant(stmt.force),
-                    pyast.Constant(stmt.const), pyast.Constant(sid)]))
+                    pyast.Constant(stmt.params), pyast.Constant(stmt.const),
+                    pyast.Constant(sid)]))
             case ConstAssign(name=name, value=value, span=span):
                 sid = self._push(span)
                 return pyast.unparse(_call("const_assign",
@@ -149,11 +150,11 @@ class _Lowerer:
                     kwonlyargs=[], kw_defaults=[], defaults=[]), body=self.expr(then_branch))
                 return pyast.unparse(_call("if_stmt", [self.expr(condition), thunk,
                     pyast.Constant(sid)]))
-            case Assign(name=name, force=force, value=value, span=span):
+            case Assign(name=name, value=value, span=span):
                 sid = self._push(span)
                 inner = self.expr(value)
-                method = "reassign" if force else "assign"
-                return pyast.unparse(_call(method, [pyast.Constant(name), inner, pyast.Constant(sid)]))
+                return pyast.unparse(_call("assign",
+                    [pyast.Constant(name), inner, pyast.Constant(sid)]))
             case _:
                 sid = self._push(stmt.span)
                 inner = self.expr(stmt)

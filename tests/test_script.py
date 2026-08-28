@@ -30,14 +30,14 @@ def test_script_runs_statement_by_statement_with_repl_style_output(tmp_path):
 
 def test_script_error_renders_with_line_gutter_and_exits_nonzero(tmp_path):
     path = tmp_path / "err.ad"
-    path.write_text("x = 1;\ny := 2\n")
+    path.write_text("x = 1;\ny\n")
     r = run_cli(["run", str(path)])
     assert r.returncode != 0
     # Multi-line source -> the `N: ` gutter is present, and the error stops the run after
     # the first (successful) statement rather than continuing past it.
     assert "< x = 1" in r.stdout
-    assert "2: y := 2" in r.stdout
-    assert "< y =" not in r.stdout
+    assert "2: y" in r.stdout
+    assert "< = " not in r.stdout
 
 
 def test_script_parse_error_is_hard_no_continuation(tmp_path):

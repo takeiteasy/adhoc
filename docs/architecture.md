@@ -67,7 +67,7 @@ difference between them is *when* each calls it, not how the output looks.
   string statement lowers to `pass` — it produces no output but keeps the one-line-per-
   statement invariant the table depends on.
 - Variables never become Python name loads or stores — reads go through `_e.var`, writes
-  through `_e.assign`/`_e.reassign` (bind-or-compare semantics). Function calls create a
+  through `_e.assign` (bind-or-compare; globals are single-assignment). Function calls create a
   local frame with global read-through; body writes use `_e.set` and never escape. The user
   environment is a plain dict kept separate from exec globals. Callables bind like any
   value; strings never enter it.

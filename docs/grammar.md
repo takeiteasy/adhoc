@@ -19,7 +19,7 @@ written against — it should stay in lockstep with the code.
   After the first character a name may continue with letters or underscores (`\rel_tol`,
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation.
-- Operators: `+ - * / ^ < > <= >= = := ≡ == .. ( ) ,`. Statement separator: `;`.
+- Operators: `+ - * / ^ < > <= >= = ≡ == .. ( ) ,`. Statement separator: `;`.
   `==` is an ASCII alias for `≡` — it declares a constant, it never compares (see
   `## Constants and the prelude`).
 
@@ -32,7 +32,7 @@ statement  ::= func-def
              | import-stmt
              | pyimport-stmt
              | string
-             | identifier ("=" | ":=") expr
+             | identifier "=" expr
              | expr ;
 const-stmt ::= identifier "≡" expr
              | identifier "==" expr
@@ -56,7 +56,7 @@ trailer    ::= "(" args? ")" ;
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
-func-def   ::= identifier "(" params? ")" ("=" | ":=") statement (";" statement)* ;
+func-def   ::= identifier "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | identifier | "\"-name | "(" sequence ")" ;
 sequence   ::= statement (";" statement)* ;
@@ -79,7 +79,7 @@ Loosest to tightest:
 
 | Level | Operators | Associativity |
 |---|---|---|
-| 1 | `=` `:=` `≡` `==` | statement level only, non-associative |
+| 1 | `=` `≡` `==` | statement level only, non-associative |
 | 2 | `..` (range) | non-associative |
 | 3 | `<` `>` `<=` `>=` | non-associative |
 | 4 | `+` `-` (binary) | left |
@@ -148,7 +148,9 @@ s(1, 1.5, \abs_tol=1)                      ->  = 1
 
 Multi-character kwarg names take the `\` sigil like every other multi-character name
 (`\dpi=300`); a single-character name needs none (`s=10`). The value may be any expression
-or a string literal (`\mode="w"`). Positional arguments and kwargs collect separately, so
+or a string literal (`\mode="w"`). A kwarg never assigns — `name=value` inside an argument
+list is purely an argument-passing form; statement-level `=` is the only assign-or-check.
+Positional arguments and kwargs collect separately, so
 their relative source order carries no meaning — Python's own binding rules decide what
 `f(2, \a=1)` binds to. A duplicate kwarg name is a parse error; kwargs reaching a
 user-defined function are a typed error (parameters are positional); a non-callable head
@@ -324,19 +326,29 @@ framing.
 
 - `x = e`, `x` unbound → bind `x`, prints `x = v`
 - `x = e`, `x` bound → **compare** current value to `v`, prints `true` / `false`
-- `x := e`, `x` bound → rebind, prints `x = v`
-- `x := e`, `x` unbound → error: `` `x` does not exist! ``
 - `x ≡ e` / `x == e` / `\const x = e`, `x` fresh → declare permanently immutable, prints `x = v`
 - `x ≡ e` / `x == e` / `\const x = e`, `x` bound or protected → error (see `## Constants and the prelude`)
 - bare expression → prints `= v`
 
+There is no force-reassignment operator — a global is bound once and thereafter only
+compared against (a paper page doesn't reassign either). To iterate on a value, bind a
+fresh name (`\x_2 = ...`) or compute inside a function, where every call starts from a
+fresh frame and body writes are plain frame writes. Note that inside an argument list,
+`name=value` is a keyword argument and never assigns — statement-level `=` is the only
+assign-or-check.
+
+Statement groups flatten: a top-level `(a; b)` becomes plain top-level statements, each
+with its own echo line — the parentheses do not create a scope. Writes that survive are
+the expression-position ones: function bodies and `\if` branch groups write into the
+frame they evaluate in (branch locals when fresh, the enclosing frame otherwise).
+
 ## Constants and the prelude
 
 `x ≡ e` (ASCII `x == e`, keyword `\const x = e`) declares a global binding that can never
-be rebound — not by `=`, not by `:=`, not by a local assignment, a parameter, or a binder
+be rebound — not by `=`, not by a local assignment, a parameter, or a binder
 name. `\const f(x) = ...` declares a function under the same rule (the `≡`/`==` spellings
 are bindings only). A declaration is not assign-or-check: the name must be fresh and
-top-level, and `:=` after `\const` is a parse error.
+top-level.
 
 `==` deliberately declares rather than compares: it is the fast-to-type spelling of `≡`,
 chosen precisely because statement-level `=` already covers assign-or-check and expression
