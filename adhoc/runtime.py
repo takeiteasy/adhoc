@@ -565,7 +565,8 @@ class Engine:
         if name == "py":
             self._fail(r'`\py` must be applied to a path: \py("dotted.path")', sid)
         if name == "if":
-            self._fail("`\\if` must be applied: \\if(condition, then[, otherwise])", sid)
+            self._fail("`\\if` is a block: \\if condition NL branch NL [\\elseif … NL] "
+                       "[\\else … NL] \\end", sid)
         if name == "import":
             self._fail(r'`\import` reads an ad file: \import("lib") or \import("lib": f)', sid)
         if name == "pyimport":
@@ -789,11 +790,15 @@ class Engine:
             self._fail("\\if condition was false and has no otherwise branch", sid)
         return _to_ad(otherwise())
 
-    def if_stmt(self, condition, then, sid):
+    def if_stmt(self, condition, then, otherwise, sid):
+        """Statement-position `\\if` block: always silent — the selected branch's
+        thunks run for their effects (bindings, comparisons), no value is echoed."""
         if not isinstance(condition, bool):
             self._fail("\\if condition must be boolean", sid)
         if condition:
             then()
+        elif otherwise is not None:
+            otherwise()
 
     def py(self, path: Any, sid: int) -> Any:
         """`\\py("dotted.path")` — resolve a Python dotted path to a callable. The

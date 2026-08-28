@@ -47,12 +47,12 @@ def test_function_arity_is_checked():
 
 
 def test_recursive_factorial():
-    env = define("f(n) = \\if(n <= 1, 1, n * f(n - 1))")
+    env = define("f(n) = n <= 1 ? 1 : n * f(n - 1)")
     assert run_source("f(5)", env) == ["= 120"]
 
 
 def test_escaped_names_support_multi_character_functions():
-    env = define("\\fact(n) = \\if(n <= 1, 1, n * \\fact(n - 1))")
+    env = define("\\fact(n) = n <= 1 ? 1 : n * \\fact(n - 1)")
     assert run_source("\\fact(5)", env) == ["= 120"]
     assert run_source("\\fact", env) == ["= <fn \\fact(n)>"]
 
@@ -75,22 +75,24 @@ def test_function_locals_bind_once():
 
 
 def test_piecewise_function_and_lazy_branch():
-    env = define("m(x) = \\if(x >= 0, x, -x)")
+    env = define("m(x) = x >= 0 ? x : -x")
     assert run_source("m(-5)", env) == ["= 5"]
     assert run_source("m(5)", env) == ["= 5"]
 
 
-def test_if_without_otherwise_is_statement_noop():
+def test_if_block_statement_is_lazy_and_silent():
+    # Only the selected branch evaluates; the statement-level block is silent and
+    # the untaken branch's unbound name never fails.
     env = {}
-    assert run_source("x = 3; \\if(x > 4, 99); x", env) == ["x = 3", "= 3"]
-    assert run_source("\\if(1 < 2, 7)", env) == []
+    assert run_source("\\if 1 > 2\n\\nope\n\\else\n7\n\\end", env) == []
+    assert run_source("\\if 1 > 2\n7\n\\end", env) == []
 
 
 def test_if_sequence_group_is_lazy_and_returns_last_value():
     env = {}
-    assert run_source("\\if(1 < 2, (x = 4; x + 1), 99)", env) == ["= 5"]
+    assert run_source("\\if 1 < 2\nx = 4\nx + 1\n\\else\n99\n\\end", env) == []
     assert run_source("x", env) == ["= 4"]
-    assert run_source("\\if(1 > 2, (x = 9; x), 11)", env) == ["= 11"]
+    assert run_source("\\if 1 > 2\nx = 9\nx\n\\else\n11\n\\end", env) == []
     assert run_source("x", env) == ["= 4"]
 
 

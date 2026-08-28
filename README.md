@@ -25,7 +25,8 @@ compatibility. See [`docs/language.md`](docs/language.md) for what's real today,
 Core phase 0 plus phase-1 language: a REPL and script runner that evaluate arithmetic exactly
 (`1/3 + 1/3 + 1/3` is `1`, not `0.999...`), with assignment, caret-pointing
 error diagnostics, postfix application (`f(x)`), functions with local scoping, lazy conditionals
-(`\if`, plus the ternary spelling `c ? a : b`), real booleans with `\true`/`\false`,
+(`\if … \end` blocks with `\elseif`/`\else` branches, plus the ternary spelling `c ? a : b`),
+line-structured blocks (`\begin … \end`), real booleans with `\true`/`\false`,
 immutable bindings (`x = 1` binds once and compares thereafter — there is no
 reassignment or declaration spelling), name aliases (`Σ` is `\sum`; declare your
 own with `\alias`, or define both spellings at once with `\dual \alpha, α = 3.14`),

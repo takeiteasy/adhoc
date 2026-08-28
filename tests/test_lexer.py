@@ -12,6 +12,7 @@ from adhoc.lexer import (
     LexError,
     LParen,
     Minus,
+    Newline,
     Number,
     Plus,
     Question,
@@ -84,7 +85,19 @@ def test_bare_backslash_errors():
 
 
 def test_comments_are_discarded():
-    assert kinds("-- hi\n1") == [Number, Eof]
+    # The comment eats to end of line; the newline itself is still a token.
+    assert kinds("-- hi\n1") == [Newline, Number, Eof]
+
+
+def test_newlines_outside_parens_are_tokens():
+    assert kinds("1\n2") == [Number, Newline, Number, Eof]
+    assert kinds("1\n\n\n2") == [Number, Newline, Newline, Newline, Number, Eof]
+
+
+def test_newlines_inside_parens_are_suppressed():
+    # Parenthesized groups and argument lists span lines freely, as always.
+    assert kinds("(1\n+\n2)") == [LParen, Number, Plus, Number, RParen, Eof]
+    assert kinds("f(1,\n2)") == [Ident, LParen, Number, Comma, Number, RParen, Eof]
 
 
 def test_all_operator_kinds():

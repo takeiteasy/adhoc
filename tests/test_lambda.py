@@ -147,7 +147,7 @@ def test_z_combinator_gives_eager_recursion():
 def test_lambda_body_can_be_a_block():
     # `\begin … \end` gives the body an explicit extent and multiple statements;
     # after `\end` the unit may continue.
-    env = define("\\twice = \\fn(f) \\begin g = \\fn(x) f(f(x)); g \\end")
+    env = define("\\twice = \\fn(f) \\begin\ng = \\fn(x) f(f(x))\ng\n\\end")
     assert run_source("\\twice(\\fn(v) v * 3)(7)", env) == ["= 63"]
 
 

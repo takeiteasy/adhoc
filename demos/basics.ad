@@ -36,14 +36,15 @@ r = 2;
 -\inf;
 \nan;
 
--- the ternary `c ? a : b` is the lazy `\if` in operator spelling
+-- the ternary `c ? a : b` is the lazy conditional in operator spelling; blocks
+-- (`\begin … \end`, `\if cond … \end`) are its multi-line, multi-statement form
 r > 0 ? r : -r;
 \sum(i=1..10) i > 5 ? i : 0;
 
 -- a binding is immutable: `x = e` binds a fresh name, and repeating it compares
 -- (`x = 1` again echoes true) — there is no reassignment spelling at all
--- (function definitions consume the rest of a script as their body, so defs
--- belong in REPL input; bindings are fine here)
+-- (a function definition swallows the semicolon-separated statements after it
+-- on its own line into its body, so one def per line keeps scripts sane)
 φ = 1.6180339887498948;
 φ;
 

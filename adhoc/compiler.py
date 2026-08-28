@@ -22,8 +22,9 @@ Lowering rules:
   kwargs, sid)` with the kwargs as a dict literal; `\\py(path)` is the one backslash name
   with semantics of its own and lowers to `_e.py(path, sid)`. `FuncDef` registers a
   separately compiled body and lowers to `_e.define(...)`; `\\if` lowers to lazy thunk
-  calls. `Import`/`PyImport` lower to `_e.import_(path, members, sid)`/`_e.pyimport(...)`
-  — one line, no output, legal wherever statements are (top level, function bodies).
+  calls — an `\\if` *block* in statement position lowers to a silent `if_stmt` chain,
+  the ternary spelling keeps the echoing expression path. `Import`/`PyImport` lower to
+  `_e.import_(path, members, sid)`/`_e.pyimport(...)`
   `Fold`/`Limit` likewise register their bodies via `_compile_body` and lower to
   `_e.fold(...)`/`_e.limit(...)`, which evaluate the body once per term/probe in a child
   engine frame.
@@ -140,12 +141,11 @@ class _Lowerer:
                 # A lone string is a comment-like no-op; `pass` keeps the one-line-per-
                 # statement invariant that the lineno ↔ span table depends on.
                 return "pass"
-            case IfExpr(condition=condition, then_branch=then_branch, otherwise=None, span=span):
-                sid = self._push(span)
-                thunk = pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],
-                    kwonlyargs=[], kw_defaults=[], defaults=[]), body=self.expr(then_branch))
-                return pyast.unparse(_call("if_stmt", [self.expr(condition), thunk,
-                    pyast.Constant(sid)]))
+            case IfExpr(block_form=True):
+                # Statement-position `\if` block: always silent, no echo, no value —
+                # the chain of branches lowers to nested `if_stmt` calls with lazy
+                # thunks, the `\else` branch (if any) as the innermost fallback.
+                return pyast.unparse(self._if_stmt_chain(stmt))
             case Assign(name=name, value=value, span=span):
                 sid = self._push(span)
                 inner = self.expr(value)
@@ -158,6 +158,30 @@ class _Lowerer:
                 sid = self._push(stmt.span)
                 inner = self.expr(stmt)
                 return pyast.unparse(_call("out", [inner, pyast.Constant(sid)]))
+
+    def _thunk(self, node: Node) -> pyast.expr:
+        return pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],
+            kwonlyargs=[], kw_defaults=[], defaults=[]), body=self.expr(node))
+
+    def _if_stmt_chain(self, node: IfExpr) -> pyast.expr:
+        """A block-formed IfExpr chain (the `\\if` block desugar) as nested silent
+        `if_stmt` calls. The desugar guarantees `otherwise` is either None, the next
+        block-formed IfExpr in the chain, or the `\else` body itself."""
+        sid = self._push(node.span)
+        then = self._thunk(node.then_branch)
+        if node.otherwise is None:
+            return _call("if_stmt", [self.expr(node.condition), then,
+                                     pyast.Constant(None), pyast.Constant(sid)])
+        if isinstance(node.otherwise, IfExpr) and node.otherwise.block_form:
+            inner = self._if_stmt_chain(node.otherwise)
+            return _call("if_stmt", [self.expr(node.condition), then,
+                                     self._wrap_thunk(inner), pyast.Constant(sid)])
+        return _call("if_stmt", [self.expr(node.condition), then,
+                                 self._thunk(node.otherwise), pyast.Constant(sid)])
+
+    def _wrap_thunk(self, expr: pyast.expr) -> pyast.expr:
+        return pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],
+            kwonlyargs=[], kw_defaults=[], defaults=[]), body=expr)
 
     def expr(self, node: Node) -> pyast.expr:
         match node:
@@ -191,10 +215,8 @@ class _Lowerer:
                     pyast.Constant(sid)])
             case IfExpr(condition=condition, then_branch=then_branch, otherwise=otherwise, span=span):
                 sid = self._push(span)
-                thunk = lambda n: pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],
-                    kwonlyargs=[], kw_defaults=[], defaults=[]), body=self.expr(n))
-                return _call("if_expr", [self.expr(condition), thunk(then_branch),
-                    thunk(otherwise) if otherwise is not None else pyast.Constant(None),
+                return _call("if_expr", [self.expr(condition), self._thunk(then_branch),
+                    self._thunk(otherwise) if otherwise is not None else pyast.Constant(None),
                     pyast.Constant(sid)])
             case Fold(op=op, var=var, rng=rng, body=body, span=span):
                 # Same shape as FuncDef: the folded body is compiled once into
@@ -280,22 +302,17 @@ def _compile_body(node: Node) -> CompiledBody:
     statements = _flatten(node)
     lines = ["_result = None"]
     for stmt in statements:
-        sid = lowerer._push(stmt.span)
         if isinstance(stmt, StrLit):
             expr = pyast.Constant(None)
-        elif isinstance(stmt, IfExpr) and stmt.otherwise is None:
-            thunk = pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],
-                kwonlyargs=[], kw_defaults=[], defaults=[]), body=lowerer.expr(stmt.then_branch))
-            lines.append(pyast.unparse(_call("if_stmt", [lowerer.expr(stmt.condition), thunk,
-                pyast.Constant(sid)])))
-            continue
         elif isinstance(stmt, Import | PyImport):
             # One line, no `_result` — an import binds names and produces no output.
+            sid = lowerer._push(stmt.span)
             method = "import_" if isinstance(stmt, Import) else "pyimport"
             lines.append(pyast.unparse(_call(method, [pyast.Constant(stmt.path),
                 pyast.Constant(stmt.members), pyast.Constant(sid)])))
             continue
         else:
+            sid = lowerer._push(stmt.span)
             expr = lowerer.expr(stmt)
         assignment = pyast.Assign(
             targets=[pyast.Name(id="_result", ctx=pyast.Store())], value=expr)

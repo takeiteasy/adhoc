@@ -29,9 +29,14 @@
 \lim(x=0) x/x;
 
 -- jump discontinuities report a missing limit instead of picking a side:
--- \lim(x=0) \if(x < 0, -1, 1);
+-- \lim(x=0) \if x < 0
+-- -1
+-- \else
+-- 1
+-- \end;
 --    < ERROR! limit does not exist: left and right estimates disagree
 
--- note: like every function definition, `f(x) = ...` would swallow the
--- semicolon-separated statements after it into its body, so standalone
--- expressions can't follow one in the same source unit (docs/grammar.md)
+-- note: like every function definition, `f(x) = ...` swallows the
+-- semicolon-separated statements after it on the same line into its body, so
+-- keep one definition per line and standalone expressions on their own lines
+-- (docs/grammar.md)

@@ -321,9 +321,11 @@ def test_py_rejects_kwargs():
         parse_program('\\py("math.sqrt", \\k=1)')
 
 
-def test_if_rejects_kwargs():
-    with pytest.raises(ParseError, match="`\\\\if` takes two or three arguments"):
-        parse_program("\\if(1 < 2, 1, 0, \\k=1)")
+def test_if_block_takes_no_call_arguments():
+    # `\if` is a block form now: the old call spelling dies as an ordinary
+    # parse error inside the condition's paren group.
+    with pytest.raises(ParseError):
+        parse_program("\\if(1 < 2, 1, 0)")
 
 
 def test_def_shape_parses_into_funcdef():

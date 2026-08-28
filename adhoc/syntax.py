@@ -86,9 +86,16 @@ class Range(Node):
 
 @dataclass(frozen=True)
 class IfExpr(Node):
+    """A lazy conditional: only the selected branch evaluates. The ternary
+    `c ? a : b` and the `\\if` block both produce this node — a `\\if` block with
+    `\\elseif` chains desugars to right-nested IfExprs exactly like nested ternaries.
+    `block_form` marks the block spelling; it decides statement-level lowering only
+    (block form is always silent; a statement-position ternary echoes its value)."""
+
     condition: Node
     then_branch: Node
     otherwise: Node | None
+    block_form: bool = False
 
 
 @dataclass(frozen=True)

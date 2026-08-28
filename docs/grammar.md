@@ -5,8 +5,15 @@ written against — it should stay in lockstep with the code.
 
 ## Lexical rules
 
-- Whitespace is insignificant, except as a token separator.
-- `--` starts a line comment, running to end of line.
+- Whitespace is insignificant, except as a token separator — and except that a **newline
+  outside parentheses is a token** (`Newline`). The parser skips newline runs wherever an
+  *operand* is expected, so a statement or expression continues onto the next line
+  mid-expression (`1 +` NL `2` is one sum); but at statement boundaries the newline acts
+  as a separator, and block syntax (next section, `## Blocks`) gives it structural
+  meaning. Inside `(...)` newlines are suppressed entirely: parenthesized groups and
+  argument lists span lines freely, as they always have.
+- `--` starts a line comment, running to end of line; the newline that ends it is an
+  ordinary newline token.
 - A **number literal** is a decimal integer or float: `3`, `0.5`, `12.34`. A `.` is only
   consumed as part of a number when a digit follows it — `1.` lexes as `1`, then fails on the
   lone `.`.
@@ -26,14 +33,16 @@ written against — it should stay in lockstep with the code.
   conditional and `:` closes it
   in expression position (the only other use of `:` is the import member list).
 - A few `\`-names are **reserved markers the parser itself consumes**: the block
-  delimiters `\begin` / `\end` and the lambda heads `\λ` / `\fn` (special only when a
-  parameter-list paren follows). They cannot be bound or aliased; any other `\`-name
-  lexes cleanly and fails at evaluation if unbound.
+  delimiters `\begin` / `\end`, the `\if` conditional block and its `\elseif` / `\else`
+  branch markers, and the lambda heads `\λ` / `\fn` (special only when a
+  parameter-list paren follows). They cannot be bound, defined, or aliased; any other
+  `\`-name lexes cleanly and fails at evaluation if unbound.
 
 ## Grammar (EBNF)
 
 ```
-program    ::= statement (";" statement)* ";"? ;
+program    ::= statement (sep statement)* sep? ;
+sep        ::= newline-run | ";" ;    -- a ";" after a newline run is one separator too
 statement  ::= func-def
              | import-stmt
              | pyimport-stmt
@@ -68,14 +77,20 @@ kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= identifier "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-             | block | lambda ;
+             | block | if-block | lambda ;
 sequence   ::= statement (";" statement)* ;
-block      ::= "\begin" statement (";" statement)* "\end" ;
+block      ::= "\begin" NL stmt-list "\end" ;
+if-block   ::= "\if" expr NL stmt-list
+               ("\elseif" expr NL stmt-list)*
+               ("\else" NL stmt-list)? "\end" ;
+stmt-list  ::= statement (sep statement)* sep? ;   (* the block-level statement list *)
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 ```
 
-A trailing `;` after the last statement is tolerated (`1;` and `2;` both parse as a single
-statement, not as a statement followed by an empty one).
+`sep` inside a block's `stmt-list` is a newline run or a single `;` — blank lines are
+free, `;;` is an error. A trailing `;` after the last statement is tolerated (`1;` and
+`2;` both parse as a single statement, not as a statement followed by an empty one),
+at top level and before a block's closing marker alike.
 
 Special forms sit in postfix position but are not applications — their first parenthesized
 argument is a binding, not a general expression (see `## Special forms`):
@@ -188,29 +203,61 @@ f(x) = x^2 + 1
 f(3)                         ->  = 10
 f(a,b) = c = ab; cc          -- c and the parameters are call-local
 f(3,4)                       ->  = 144
-\fact(n) = \if(n <= 1, 1, n*\fact(n-1))
+\fact(n) = n <= 1 ? 1 : n*\fact(n-1)
 ```
 
-Function bodies are semicolon-separated statements. A call gets a fresh local frame;
+Function bodies are semicolon-separated statements; a `\begin` block (next section)
+gives a def a multi-line body. A call gets a fresh local frame;
 reads fall through to globals, while assignments never escape the call. The function's
 own name is installed in that frame before the body runs, enabling recursion. Definitions
 are first-class and display as `<fn f(x)>` or `<fn \fact(n)>`.
 
-Because `;` also separates top-level statements and the source has no newline token, a
-function definition consumes the semicolon-separated body to the end of its input unit
-(a `\begin … \end` block may group the body's statements, but a `;` after it still
-belongs to the body — see `## Blocks`). In a script, put definitions after
-the top-level setup they need; call them from a later REPL input or source unit.
+Because `;` also separates top-level statements, a function definition consumes the
+semicolon-separated statements after its `=` **on its own line** as its body — write one
+definition per line, or group a multi-statement body in a `\begin … \end` block (a `;`
+after that block's `\end` still belongs to the body — see `## Blocks`).
 
-`\if(condition, then)` and `\if(condition, then, otherwise)` are lazy, call-shaped
-conditionals. The selected branch alone is evaluated. The two-argument form is a
-statement-level no-op when its condition is false; in an expression requiring a value,
-that case reports an error. Parenthesized sequences and `\begin` blocks (next section)
-provide multi-statement branches:
+## Conditional blocks: `\if … \end`
+
+`\if` is a block form — the multi-line, multi-statement conditional:
 
 ```
-\if(x > 0, (y = x^2; y + 1), \begin y = -x; y * 2 \end)
+if-block ::= "\if" expr NL stmt-list
+             ("\elseif" expr NL stmt-list)*
+             ("\else" NL stmt-list)? "\end" ;
 ```
+
+```
+\if x > 0
+y = x^2
+y + 1
+\elseif x < 0
+y = -x
+2y
+\else
+0
+\end
+```
+
+The condition is an expression ending at the line break; the branch body starts on the
+next line. (The known sharp edge of that rule: a branch body written on the *same* line
+as the condition can fold into it as a juxtaposed factor when the condition ends in a
+bare number — `\if x < 10 2` reads as `x < 20`. Put the branch on its own line.)
+`\elseif cond` adds a branch tried only when every earlier condition was
+false; `\else` catches the all-false case; `\end` closes. Every branch body is a
+statement sequence through the same machinery as a `\begin` block (a `;` may pack two
+statements onto one line), and — like a block — has **no scope of its own**. Branches
+evaluate lazily: only the selected branch runs, and the block's value is that branch's
+last statement's value. `\elseif` chains desugar to right-nested conditionals — the
+same shape nested ternaries produce — so there is one conditional node underneath.
+
+**Statement vs expression.** In statement position an `\if` block is always **silent**:
+no echo, no value — its bindings land in the enclosing frame. Without an `\else` and
+with every condition false, the statement form is a no-op. In expression position
+(`r = \if c \n … \n \end`) the block is an ordinary sub-expression: its value is the
+selected branch's last statement's value, and a false condition with no `\else` is a
+typed error (an expression that needs a value has none to give). In a function or fold
+body the block supplies the body's result value silently.
 
 The ternary `condition ? then : otherwise` is the same lazy conditional in operator
 spelling — it desugars to the same node, so only the selected branch evaluates and
@@ -218,7 +265,7 @@ the condition must be a boolean. It binds looser than every other expression
 operator (precedence table, level 1) and nests right-associatively through its
 branches; a nested middle closes at the first free `:`. A missing `:` at end of
 input offers the REPL continuation prompt. There is no two-branch ternary — the
-false-no-op form is `\if`'s statement-level behavior, and a ternary is an
+false-no-op form is the `\if` block's statement-level behavior, and a ternary is an
 expression that always needs its else. Branches may be any expression, including
 parenthesized sequences and ranges:
 
@@ -231,44 +278,65 @@ a > 0 ? 1 : b > 0 ? 2 : 3       -- a ? 1 : (b ? 2 : 3)
 
 Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
 Booleans are valid values and conditions but are not numeric operands. There is no
-numeric truthiness: a number is never a condition — `\if(0, 1, 2)` is a typed error,
-not a no-op, and the only conditions are comparisons and `\true`/`\false`.
+numeric truthiness: a number is never a condition — `\if 0 \n 1 \n \else \n 2 \n \end`
+is a typed error, not a no-op, and the only conditions are comparisons and
+`\true`/`\false`.
 
 ## Blocks: `\begin … \end`
 
-A block is a statement sequence with an explicit end:
+A block is a statement sequence with an explicit end — and a visible one: block
+syntax is **line-structured**:
 
 ```
-block ::= "\begin" statement (";" statement)* "\end" ;
+block ::= "\begin" NL stmt-list "\end" ;
 ```
+
+```
+\begin
+a = 1
+a + 1
+\end
+```
+
+`\begin` must be followed by a newline (the body starts on the next line), statements
+are separated by newline runs or a single `;` (blank lines are free, `;;` is an
+error), and `\end` sits on a line of its own. There is no single-line block — the
+shape on the page mirrors the grouping, which is the point of the form beside `;`.
 
 It parses through the same statement machinery as a parenthesized group and produces
 the same `Seq` node — **no scope of its own**, the ordinary flatten/echo/frame rules.
 A block is legal anywhere a group is: statement position (it flattens into the
-enclosing unit, each statement with its own echo line), def bodies, `\if` branches,
-lambda bodies, argument lists. Its value is its last statement's value.
+enclosing unit, each statement with its own echo line), def bodies, `\if` branch
+bodies, lambda bodies. Its value is its last statement's value.
 
 ```
-\begin a = 1; a + 1 \end              ->  a = 1, then = 2   (top level: flattens)
-f(x) = \begin y = x^2; y + 1 \end     -- an explicit multi-statement def body
-\if(c, \begin a; b \end, \begin d \end)
-2 \begin 3 \end                       ->  = 6               (a block is a factor)
+f(x) = \begin
+y = x^2
+y + 1
+\end                   -- an explicit multi-statement def body
+
+2 \begin
+3
+\end                   ->  = 6     (a block is a factor, like a paren group)
 ```
 
 **Explicit extent.** The point of the form: `\end` terminates whatever expression is
 being parsed — it is never a juxtaposed factor, and it ends a range just like `,` `)`
-`;` and EOF (`\begin r = 1.. \end` is the infinite range). It does **not** shield
+`;` and EOF (`r = \begin \n 1.. \n \end` is the infinite range). It does **not** shield
 against `;`: in a def body or at top level, a `;` after the closing `\end` simply
 continues the enclosing statement sequence (a block is one grouped statement of it —
-definitions still consume their unit). The form earns its keep in expression position,
-where `,` and `)` would otherwise end the sequence: lambda bodies, `\if` branches.
+definitions still consume their line). The form earns its keep in expression position,
+where `,` and `)` would otherwise end the sequence: lambda bodies.
 
-A trailing `;` before `\end` is tolerated (top-level rule); `;;` is an error. Imports
+A trailing `;` before `\end` is tolerated (top-level rule); `;;` is an error. An
+expression may continue across a block's line breaks when it ends mid-expression
+(`x = 1 +` NL `2`) — but an operator that *starts* a line belongs to a new statement,
+so `x = 1` NL `+ 2` is two statements (the second an error). Imports
 are rejected inside a block (statements, not expressions — the paren-group rule:
 write them outside), and `\alias`/`\dual` are rejected (top-level directives). An
 unclosed `\begin` is incomplete input — the REPL offers a continuation prompt, and a
-blank line cancels. `\begin` and `\end` are reserved names: they cannot be bound or
-aliased, and a stray `\end` with no open block is a parse error.
+blank line cancels. `\begin` and `\end` are reserved names: they cannot be bound,
+defined, or aliased, and a stray `\end` with no open block is a parse error.
 
 Braces `{}` are deliberately **not** used for blocks — they are reserved for future
 set literals (see `## Deferred`).
@@ -291,13 +359,17 @@ at evaluation, exactly as for defs.
 
 **Body extent** follows the fold/limit rule: the body extends greedily over the rest
 of the current expression, up to the enclosing delimiter (`,` `)` `;` `\end`, end of
-input). One-statement lambdas therefore nest right-associatively with no delimiters
+input — a line break inside the expression continues it). One-statement lambdas
+therefore nest right-associatively with no delimiters
 at all, and a `\begin … \end` block gives an explicit extent and multiple statements:
 
 ```
 \fn(x) x^2                             -- a one-statement body needs no block
 \fn(n) \fn(f) \fn(x) f(n(f)(x))        -- greedy nesting: each body is the rest
-\fn(f) \begin g = \fn(x) f(f(x)); g \end   -- explicit extent, two statements
+\fn(f) \begin
+g = \fn(x) f(f(x))
+g
+\end                                   -- explicit extent, two statements
 ```
 
 **Application**: a parenthesized lambda is a name-ish head, so a trailer applies it —
@@ -538,7 +610,7 @@ identity, so a check would be meaningless. Note that inside an argument list,
 Statement groups flatten: a top-level `(a; b)` becomes plain top-level statements, each
 with its own echo line — the parentheses do not create a scope, so a group cannot
 overwrite a global either (its `=` compares). Expression-position groups (function
-bodies, `\if` branches) run the same rule in the frame they evaluate in.
+bodies, `\if` branch bodies) run the same rule in the frame they evaluate in.
 
 ## The prelude
 

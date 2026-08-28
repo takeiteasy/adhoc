@@ -1,6 +1,8 @@
-"""Tokenizer. Whitespace-insensitive, single-character (ASCII or unicode) identifiers,
-`--` line comments, and the `\\`-name convention: every language-defined name longer than
-one character takes a `\\` sigil.
+"""Tokenizer. Whitespace-insensitive except that a newline outside parentheses is a
+`Newline` token (the strict line structure of `\\begin`/`\\if` blocks rides on it);
+single-character (ASCII or unicode) identifiers, `--` line comments, and the
+`\\`-name convention: every language-defined name longer than one character takes a
+`\\` sigil.
 
 A `\\`-name is also the spelling for a user-defined multi-character identifier. Unknown
 names therefore lex cleanly and fail at evaluation if they are not bound, just like a
@@ -183,6 +185,18 @@ class Semi(Token):
 
 
 @dataclass(frozen=True)
+class Newline(Token):
+    """A newline outside parentheses: the block-level statement separator and the
+    strict line structure of `\\begin`/`\\if` blocks (docs/grammar.md). Suppressed
+    inside `(...)` so parenthesized groups and argument lists span lines freely, as
+    they always have."""
+
+    @property
+    def describe(self) -> str:
+        return "end of line"
+
+
+@dataclass(frozen=True)
 class Comma(Token):
     @property
     def describe(self) -> str:
@@ -243,9 +257,21 @@ def tokenize(src: str) -> list[Token]:
     eof_off = len(src.encode("utf-8"))
     tokens: list[Token] = []
     i = 0
+    parens = 0  # nesting depth of `(...)`: newlines are suppressed while > 0
 
     while i < n:
         pos, c = entries[i]
+
+        if c == "\n":
+            if parens == 0:
+                tokens.append(Newline(span=Span(pos, pos + 1)))
+            i += 1
+            continue
+
+        if c == "(":
+            parens += 1
+        elif c == ")":
+            parens = max(0, parens - 1)
 
         if c.isspace():
             i += 1

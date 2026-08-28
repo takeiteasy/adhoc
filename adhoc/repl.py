@@ -1,11 +1,12 @@
 """REPL driver. Binary-side glue over the library: prompt, history, multi-line
 continuation, error recovery.
 
-Multi-line continuation: `> ` when nothing is pending, `. ` while continuing. An
-`IncompleteInput` parse buffers the line for the next round (joined with `\\n`); ad's
-whitespace is insignificant, so nothing else could ever close an unclosed continuation —
-hence a **blank line cancels** the pending statement rather than being swallowed as
-whitespace.
+Multi-line continuation: `> ` when nothing is pending, `... ` while a block, parenthesized
+group, or string is still open (an `IncompleteInput` parse buffers the line for the next
+round, joined with `\\n`). Block syntax itself is line-structured — `\\begin`/`\\if`
+bodies live on the lines after their openers — so the `... ` gutter is the visible
+"inside a block" signal. A **blank line cancels** the pending statement rather than
+being swallowed as a block's separator.
 
 History lives at `$ADHOC_HISTORY` (default `~/.adhoc_history`) and is only touched on an
 interactive terminal; piped stdin (scripts feeding the REPL, tests) goes through plain
@@ -17,7 +18,7 @@ import sys
 
 from .compiler import compile_program
 from .driver import execute
-from .lexer import Eof, LexError, tokenize
+from .lexer import Eof, LexError, Newline, tokenize
 from .output import print_eval_error, print_parse_error
 from .parser import ALIAS_SEED, IncompleteInput, ParseError, parse_program
 from .runtime import EvalError
@@ -34,13 +35,13 @@ def _history_path() -> str:
 
 
 def _is_empty_source(source: str) -> bool:
-    """A blank line, or a line that lexes down to nothing but `--comment` text — i.e.
-    only the EOF token comes out of tokenizing it."""
+    """A blank line, or a line that lexes down to nothing but newline tokens and
+    `--comment` text — i.e. only Newline/EOF tokens come out of tokenizing it."""
     try:
         toks = tokenize(source)
     except LexError:
         return False
-    return len(toks) == 1 and isinstance(toks[0], Eof)
+    return all(isinstance(t, Eof | Newline) for t in toks)
 
 
 def _read(prompt: str):
@@ -77,7 +78,7 @@ def run_repl(emit_py: bool = False) -> int:
     pending = ""
 
     while True:
-        prompt = ". " if pending else "> "
+        prompt = "... " if pending else "> "
         got = _read(prompt)
 
         if got is _EOF:

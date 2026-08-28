@@ -37,14 +37,22 @@ delimiter — parenthesize to end it earlier. Recognition commits on the `(ident
 alone (bare `=` cannot occur inside a general expression); any other use of those heads
 goes through ordinary application parsing.
 
-Two further reserved shapes parse here rather than at evaluation. A **block**
-`\\begin statement (";" statement)* \\end` is an explicit-end statement sequence producing
-the same Seq node as a parenthesized group (no scope of its own); it is the
-multi-statement form for def bodies, `\\if` branches, and lambda bodies, and an unclosed
-`\\begin` raises IncompleteInput so the REPL offers a continuation prompt. A **lambda**
-`\\λ(params) body` (ASCII `\\fn(params) body`) parses into `Lambda`; its body follows the
-same greedy rule as fold/limit bodies, and a parenthesized lambda is a name-ish head so
-`(\fn(x) x)(5)` applies.
+**Newlines are significant at block level.** Outside parentheses the lexer emits a
+Newline token per line break (inside `(...)` they are suppressed, so parenthesized
+groups and argument lists span lines freely, as they always have). The parser skips
+newline runs wherever an *operand* is expected — a statement or expression may continue
+onto the next line mid-expression — but at statement boundaries a newline is a
+separator or a required structural break: `\\begin … \\end` blocks and `\\if` blocks
+have strict line structure (the body starts on the line after the opener, and
+`\\elseif`/`\\else`/`\\end` sit on lines of their own). A **block**
+`\\begin NL statement (sep statement)* \\end` produces the same Seq node as a
+parenthesized group (no scope of its own). An **if block** desugars to right-nested
+`IfExpr`s — the same shape nested ternaries produce — with `block_form=True` so the
+compiler lowers statement-position blocks silently. A stray `\\end`/`\\elseif`/`\\else`
+is a parse error; an unclosed block raises IncompleteInput so the REPL offers its
+continuation prompt. A **lambda** `\\λ(params) body` (ASCII `\\fn(params) body`) parses
+into `Lambda`; its body follows the same greedy rule as fold/limit bodies, and a
+parenthesized lambda is a name-ish head so `(\fn(x) x)(5)` applies.
 
 Spans are tagged at each node's *construction* site, not on the way out of each parse
 call: the `(expr)` branch of atoms returns the inner node unchanged, and tagging on unwind
@@ -64,6 +72,7 @@ from .lexer import (
     Less,
     LessEq,
     Minus,
+    Newline,
     Number,
     Plus,
     Question,
@@ -129,6 +138,11 @@ _ATOM_STARTERS = (Number, Ident, Backslash, LParen, Str)
 # without the paren the head is an ordinary unbound name (the `\py` usage-error pattern).
 _LAMBDA_HEADS = ("λ", "fn")
 
+# Reserved markers the parser itself consumes (docs/grammar.md, `## Lexical rules`):
+# the block delimiters `\begin`/`\end`, the `\if` block and its `\elseif`/`\else`
+# branch markers. They cannot be bound, defined, or aliased — the grammar owns them.
+_RESERVED = frozenset({"begin", "end", "if", "elseif", "else"})
+
 # Seed of the session alias map (short spelling → canonical name): the unicode
 # fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
 # hardcoded parser/prelude special cases (docs/grammar.md, `## Name aliases`).
@@ -153,6 +167,9 @@ class _Parser:
         # declaring one inside a function body or group would take effect at
         # parse time whether or not the body ever runs.
         self.depth = 0
+        # Set by `_skip_newlines`, reset by block statement lists around each
+        # statement: "a line break was consumed since the last statement ended".
+        self._nl = False
 
     def peek(self) -> Token:
         return self.tokens[self.pos]
@@ -170,6 +187,25 @@ class _Parser:
             self.pos += 1
         return tok
 
+    def _skip_newlines(self) -> None:
+        """Consume a run of Newline tokens. Called where an *operand* is expected —
+        a statement or expression continues onto the next line mid-expression — and
+        at statement boundaries that treat a newline run as one separator. Operator
+        positions deliberately do NOT skip: at a statement boundary the newline wins,
+        so `x = 1` NL `+ 2` is two statements (the second an error), never a join.
+        Sets `_nl` so block statement lists can tell that the statement's own tail
+        consumed the line break (a committed range `1..` ends at the newline)."""
+        while isinstance(self.peek(), Newline):
+            self._nl = True
+            self.advance()
+
+    def _marker_ahead(self, names: tuple[str, ...]) -> bool:
+        tok = self.peek()
+        return isinstance(tok, Backslash) and tok.name in names
+
+    def _at_block_end(self) -> bool:
+        return self._marker_ahead(("end",))
+
     def error_at_current(self, msg: str) -> ParseError:
         tok = self.peek()
         if isinstance(tok, Eof):
@@ -177,6 +213,10 @@ class _Parser:
         return ParseError(msg, tok.span)
 
     def expect(self, cls: type, what: str) -> Token:
+        # Lenient across line breaks: a delimiter may sit on the next line
+        # (`c ? a NL : b`). Inside parentheses newlines are suppressed anyway, so
+        # this only ever skips block-level breaks.
+        self._skip_newlines()
         if isinstance(self.peek(), cls):
             return self.advance()
         found = self.peek().describe
@@ -204,12 +244,23 @@ class _Parser:
             return Var(ch=canonical, span=span)
         return BackslashRef(name=canonical, span=span)
 
-    # program ::= statement (";" statement)* ;
+    # program ::= statement (sep statement)* ;
+    # sep ::= newline run | ";" — newlines are whitespace-carved statement boundaries
+    # at top level exactly like semicolons (a source may separate statements with
+    # either); two adjacent `;` stay an error, blank lines are free.
     def program(self) -> Node:
+        self._skip_newlines()
         statements = [self.statement()]
-        while isinstance(self.peek(), Semi):
-            self.advance()
-            if isinstance(self.peek(), Eof):
+        while True:
+            sep = False
+            while isinstance(self.peek(), Newline):
+                self.advance()
+                sep = True
+            if isinstance(self.peek(), Semi):
+                sep = True
+                self.advance()
+                self._skip_newlines()
+            if not sep or isinstance(self.peek(), Eof):
                 break
             statements.append(self.statement())
         if not isinstance(self.peek(), Eof):
@@ -222,9 +273,12 @@ class _Parser:
 
     # statement ::= func-def | string
     #             | identifier "=" expr | expr ;
+    # Statement heads are line-bound: the two-token looks aheads (peek2) see the
+    # token immediately after the head, so a statement head and its syntax belong
+    # on one line. Mid-statement, expression parsing continues across lines.
     def statement(self) -> Node:
         tok = self.peek()
-        if isinstance(tok, Str) and isinstance(self.peek2(), Semi | Eof):
+        if isinstance(tok, Str) and isinstance(self.peek2(), Semi | Eof | Newline):
             # A string alone is a statement — ignored like a comment (docs/grammar.md).
             # A string followed by anything else (`"a" + "b"`) is an ordinary
             # expression whose atom happens to be a string.
@@ -243,16 +297,22 @@ class _Parser:
         ):
             return self._spelling_statement(tok.name)
         if isinstance(tok, Backslash):
-            # Reserved block markers and lambda heads, before the `=`/def-shape
-            # speculation below: `\begin` opens a block in any statement or
-            # expression position, a stray `\end` is a parse error, and
+            # Reserved markers before the `=`/def-shape speculation below: `\begin`
+            # opens a block in any statement or expression position, `\if` opens an
+            # if block, a stray closer/branch marker is a parse error, and
             # `\fn(params)` is a lambda — never a definition named `fn` (`\fn(x) = …`
             # dies inside the lambda parse on the stray `=`).
             if tok.name == "end":
                 raise ParseError(
                     "`\\end` closes a `\\begin` block: no block is open here", tok.span)
+            if tok.name in ("elseif", "else"):
+                raise ParseError(
+                    f"`\\{tok.name}` continues an `\\if` block: no `\\if` is open here",
+                    tok.span)
             if tok.name == "begin":
                 return self.expr()
+            if tok.name == "if":
+                return self._if_block(tok)
             if tok.name in _LAMBDA_HEADS and isinstance(self.peek2(), LParen):
                 return self.expr()
         if isinstance(tok, (Ident, Backslash)):
@@ -339,6 +399,10 @@ class _Parser:
                 "`\\dual` pairs a canonical name with exactly one short spelling: "
                 "\\dual \\alpha, α = 3.14")
         canonical_tok, canonical = names[0]
+        if canonical in _RESERVED:
+            raise ParseError(
+                f"`\\{canonical}` is reserved: the parser consumes it as block "
+                "syntax, it cannot be aliased", canonical_tok.span)
         canonical_display = f"\\{canonical}" if len(canonical) > 1 else canonical
         for short_tok, short in names[1:]:
             if not isinstance(short_tok, Ident):
@@ -376,9 +440,11 @@ class _Parser:
 
     def _collect_name_list(self) -> list[tuple[Token, str]]:
         """Comma-separated name spellings (Ident or Backslash tokens) with their
-        canonical-resolved names left raw — alias validation works on spellings."""
+        canonical-resolved names left raw — alias validation works on spellings.
+        A trailing comma may end the line; the list continues across the break."""
         names: list[tuple[Token, str]] = []
         while True:
+            self._skip_newlines()
             tok = self.peek()
             if not isinstance(tok, (Ident, Backslash)):
                 raise self.error_at_current(f"expected a name, found {tok.describe}")
@@ -415,6 +481,7 @@ class _Parser:
             body_stmts = [self.statement()]
             while isinstance(self.peek(), Semi):
                 self.advance()
+                self._skip_newlines()
                 if isinstance(self.peek(), Eof):
                     break
                 body_stmts.append(self.statement())
@@ -456,35 +523,146 @@ class _Parser:
         span = ident_tok.span.to(body.span)
         name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
                 else ident_tok.name)
+        if name in _RESERVED:
+            raise ParseError(
+                f"`\\{name}` is reserved: the parser consumes it as block syntax, "
+                "it cannot name a function", ident_tok.span)
         return FuncDef(name=name, params=tuple(params), body=body, span=span)
 
-    # block ::= "\begin" statement (";" statement)* "\end" ;
-    # A statement sequence with an explicit end — the multi-statement form for def
-    # bodies, `\if` branches, and lambda bodies, anywhere a group is legal. It parses
-    # through the same statement machinery as a parenthesized group and produces the
-    # same Seq: no scope of its own, the ordinary flatten/echo/frame rules. Imports
-    # stay out (statements, not expressions — the paren-group rule) and
-    # `\alias`/`\dual` stay top-level (the depth guard). A trailing `;` before
-    # `\end` is tolerated like at top level.
+    # block ::= "\begin" NL statement (sep statement)* NL? "\end" ;
+    # if    ::= "\if" expr NL statement (sep statement)* NL?
+    #           ("\elseif" expr NL statement (sep statement)* NL?)*
+    #           ("\else" NL statement (sep statement)* NL?)? "\end" ;
+    # sep   ::= newline run | ";" ;
+    # Strict line structure: the body starts on the line after the opener, and the
+    # branch/closing markers sit on lines of their own (a separator run before one
+    # is tolerated; `;;` is not). Both forms parse through the same statement
+    # machinery as a parenthesized group and produce the same Seq: no scope of its
+    # own, the ordinary flatten/echo/frame rules. Imports stay out (statements, not
+    # expressions — the paren-group rule) and `\alias`/`\dual` stay top-level (the
+    # depth guard). Blocks are legal anywhere a group is; an if block desugars to
+    # right-nested IfExprs (the nested-ternary shape) with `block_form=True`.
+    def _stmt_seq(self, at_term, what: str) -> list[Node]:
+        """The statement list of a block body. The opener's newline was consumed by
+        the caller; statements are separated by a newline run or a single `;`
+        (blank lines are free, `;;` an error), and the closing marker must start a
+        fresh line — unless the last statement's own expression consumed that line
+        break (a committed range `1..` ends at the newline, a `+` continues)."""
+        if at_term():
+            raise self.error_at_current(
+                f"expected a statement, found {self.peek().describe}")
+        self._nl = False
+        items = [self.statement()]
+        while True:
+            sep = self._nl or isinstance(self.peek(), Newline)
+            self._skip_newlines()
+            if isinstance(self.peek(), Semi):
+                sep = True
+                self.advance()
+                self._skip_newlines()
+            if at_term():
+                if not sep:
+                    raise self.error_at_current(
+                        f"put {self.peek().describe} on its own line: the block's "
+                        "last statement ends the line")
+                break
+            if not sep:
+                raise self.error_at_current(
+                    f"statements in {what} are separated by a newline or `;`, "
+                    f"found {self.peek().describe}")
+            self._nl = False
+            items.append(self.statement())
+        return items
+
     def _block_body(self, begin: Backslash) -> Node:
-        self.advance()  # the `\begin` token — caller did not consume it
+        self.advance()  # the `\begin` token — caller peeked it but did not consume it
+        # Strict: the block body starts on the line after `\begin`. EOF here is
+        # IncompleteInput — the REPL offers a continuation prompt.
+        if not isinstance(self.peek(), Newline):
+            raise self.error_at_current(
+                "`\\begin` must be followed by a newline: the body starts on the "
+                "next line")
+        self.advance()
         self.depth += 1
         try:
-            items = [self.statement()]
-            while isinstance(self.peek(), Semi):
-                self.advance()
-                if self._at_block_end():
-                    break
-                items.append(self.statement())
+            self._skip_newlines()
+            items = self._stmt_seq(self._at_block_end, "a `\\begin` block")
+            end_tok = self.advance()  # `\end` — `_stmt_seq` verified the line break
         finally:
             self.depth -= 1
-        end_tok = self.peek()
-        if not self._at_block_end():
-            # EOF raises IncompleteInput here — the REPL offers a continuation
-            # prompt, exactly like an unclosed parenthesis.
-            raise self.error_at_current(
-                f"expected `\\end`, found {end_tok.describe}")
-        self.advance()
+        for item in items:
+            if isinstance(item, Import | PyImport):
+                raise ParseError(
+                    "`\\import` and `\\pyimport` are statements, not expressions",
+                    item.span)
+        if len(items) == 1:
+            node: Node = items[0]
+        else:
+            node = Seq(statements=tuple(items), span=begin.span.to(end_tok.span))
+        # The block statement ends at its `\end`: line breaks consumed inside the
+        # block were its structure, not separators of the enclosing statement list.
+        self._nl = False
+        return node
+
+    def _if_block(self, head: Backslash) -> Node:
+        """`\\if` block → right-nested IfExpr. The condition ends at the newline
+        (the structural break is what separates it from the branch body); each
+        branch body is a statement sequence through the block machinery."""
+        self.advance()  # the `\if` token — caller peeked it
+        branches: list[tuple[Node, list[Node]]] = []
+        otherwise: list[Node] | None = None
+        self.depth += 1
+        try:
+            cond = self.expr()
+            if not isinstance(self.peek(), Newline):
+                raise self.error_at_current(
+                    "the `\\if` condition ends the line: the branch body starts "
+                    "on the next line")
+            self.advance()
+            self._skip_newlines()
+            branches.append((cond, self._branch_body()))
+            while self._marker_ahead(("elseif",)):
+                self.advance()
+                cond = self.expr()
+                if not isinstance(self.peek(), Newline):
+                    raise self.error_at_current(
+                        "the `\\elseif` condition ends the line: the branch body "
+                        "starts on the next line")
+                self.advance()
+                self._skip_newlines()
+                branches.append((cond, self._branch_body()))
+            if self._marker_ahead(("else",)):
+                self.advance()
+                if not isinstance(self.peek(), Newline):
+                    raise self.error_at_current(
+                        "`\\else` ends the line: the branch body starts on the "
+                        "next line")
+                self.advance()
+                self._skip_newlines()
+                otherwise = self._branch_body()
+            if not self._at_block_end():
+                raise self.error_at_current(
+                    f"expected `\\end`, found {self.peek().describe}")
+            end_tok = self.advance()
+        finally:
+            self.depth -= 1
+        node: Node | None = None
+        if otherwise is not None:
+            node = self._branch_seq(otherwise)
+        for cond, items in reversed(branches):
+            body = self._branch_seq(items)
+            node = IfExpr(condition=cond, then_branch=body, otherwise=node,
+                          span=cond.span.to(end_tok.span), block_form=True)
+        # The if-block statement ends at its `\end`: line breaks consumed inside
+        # were its structure, not separators of the enclosing statement list.
+        self._nl = False
+        return node
+
+    def _branch_body(self) -> list[Node]:
+        return self._stmt_seq(
+            lambda: self._marker_ahead(("end", "elseif", "else")), "an `\\if` block")
+
+    def _branch_seq(self, items: list[Node]) -> Node:
         for item in items:
             if isinstance(item, Import | PyImport):
                 raise ParseError(
@@ -492,11 +670,8 @@ class _Parser:
                     item.span)
         if len(items) == 1:
             return items[0]
-        return Seq(statements=tuple(items), span=begin.span.to(end_tok.span))
-
-    def _at_block_end(self) -> bool:
-        tok = self.peek()
-        return isinstance(tok, Backslash) and tok.name == "end"
+        return Seq(statements=tuple(items),
+                   span=items[0].span.to(items[-1].span))
 
     # lambda ::= ("\λ" | "\fn") "(" params? ")" expr ;
     # The body extends greedily over the rest of the current expression — the
@@ -536,13 +711,17 @@ class _Parser:
                       span=cond.span.to(otherwise.span))
 
     # Range commas are only consumed when they introduce a following `..`, preserving
-    # ordinary call argument commas such as `f(1, 2)`.
+    # ordinary call argument commas such as `f(1, 2)`. Once a range delimiter is
+    # committed (`..`, or the `,` of a stepped form) the expression continues across
+    # line breaks — `1..` NL `5` is one range — but a bare newline before any range
+    # delimiter is a statement boundary, never a continuation.
     def range_expr(self) -> Node:
         start = self.comparison()
         second = None
         if isinstance(self.peek(), Comma):
             saved = self.pos
             self.advance()
+            self._skip_newlines()
             candidate = self.comparison()
             if not isinstance(self.peek(), DotDot):
                 self.pos = saved
@@ -551,8 +730,9 @@ class _Parser:
         if not isinstance(self.peek(), DotDot):
             return start
         dotdot = self.advance()
+        self._skip_newlines()
         # A closing `\end` terminates the range just like `,` `)` `;` and EOF —
-        # `\begin r = 1.. \end` is the infinite range, not a broken one.
+        # `\begin NL r = 1.. NL \end` is the infinite range, not a broken one.
         end = None if (isinstance(self.peek(), (Comma, RParen, Semi, Eof))
                        or self._at_block_end()) else self.comparison()
         return Range(start=start, second=second, end=end,
@@ -600,11 +780,15 @@ class _Parser:
 
     # juxtaposed ::= unary unary* ; — `-` is deliberately excluded from the starter set,
     # so `a - b` always parses as subtraction, never as `a * (-b)`. A closing `\end`
-    # stops the loop: it is a block terminator, never a factor (`\begin` may be one —
-    # a block is an expression, so `2 \begin x; y \end` multiplies through).
+    # — or an `\if`/`\elseif`/`\else` block head — stops the loop: block syntax is
+    # never a juxtaposed continuation (`\begin` may be a factor — a block is an
+    # expression, so `2 NL \begin NL 3 NL \end` still multiplies through).
     def juxtaposed(self) -> Node:
         lhs = self.unary()
-        while self._is_atom_starter() and not self._at_block_end():
+        while (
+            self._is_atom_starter()
+            and not self._marker_ahead(("end", "elseif", "else", "if"))
+        ):
             rhs = self.unary()
             lhs = BinOp(op=BinOperator.MUL, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
         return lhs
@@ -693,11 +877,6 @@ class _Parser:
                 and (len(node.args) != 1 or node.kwargs)
             ):
                 raise ParseError("`\\py` takes exactly one argument", node.span)
-            if isinstance(node.head, BackslashRef) and node.head.name == "if":
-                if node.kwargs or len(node.args) not in (2, 3):
-                    raise ParseError("`\\if` takes two or three arguments", node.span)
-                node = IfExpr(node.span, node.args[0], node.args[1],
-                              node.args[2] if len(node.args) == 3 else None)
         return node
 
     def _fold_head(self, node: Node) -> BinOperator | None:
@@ -773,8 +952,12 @@ class _Parser:
             return StrLit(text=tok.text, span=tok.span)
         return self.expr()
 
-    # atom ::= number | string | identifier | "\"-name | "(" expr ")" ;
+    # atom ::= number | string | identifier | "\"-name | "(" sequence ")"
+    #          | block | if-block | lambda ;
     def atom(self) -> Node:
+        # An operand may start on the line after the operator that demands it
+        # (`1 +` NL `2`): mid-expression, a newline never separates statements.
+        self._skip_newlines()
         tok = self.peek()
         match tok:
             case Number():
@@ -793,6 +976,12 @@ class _Parser:
                     raise ParseError(
                         "`\\end` closes a `\\begin` block: no block is open here",
                         tok.span)
+                if tok.name in ("elseif", "else"):
+                    raise ParseError(
+                        f"`\\{tok.name}` continues an `\\if` block: no `\\if` is "
+                        "open here", tok.span)
+                if tok.name == "if":
+                    return self._if_block(tok)
                 if tok.name in _LAMBDA_HEADS and isinstance(self.peek2(), LParen):
                     self.advance()
                     return self._lambda(tok)

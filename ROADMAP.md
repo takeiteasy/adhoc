@@ -31,13 +31,15 @@ they don't replace it. The interaction-net engine and parallel rewriting recorde
 - Functions: `f(a, b) = ...` definition, application, local scoping, and `;`-sequenced bodies.
   Definitions lower into the same callable world as interop values.
 - Recursion: function's own name is bound within its own body scope.
-- Conditionals: lazy `\if(condition, then[, otherwise])`; parenthesized sequence groups
-  support multi-statement branches. A false no-otherwise conditional is a statement no-op.
+- Conditionals: the `\if … \end` block with `\elseif`/`\else` branches (strict line
+  structure, like `\begin` blocks) and the ternary `c ? a : b` — one lazy conditional
+  node underneath. A false branchless block is a statement no-op.
 - Comparisons: `<`, `>`, `<=`, `>=`; logical operators remain future work.
 - Ranges: `a..b`, `a..` (lazy infinite), `a,c..b` / `a,c..` (step-inferred).
 - `Σ`/`\sum`, `Π`/`\prod`, `\lim` — fold over a range; infinite-range `Σ`/`Π` as limit of partial
   sums.
-- Globals/constants: `=` assign-or-check rules, `≡`/`\const` for permanent immutability.
+- Globals/constants: `=` assign-or-check rules; every binding is immutable (there is no
+  reassignment or declaration spelling).
   - Prelude constants (`π`, `e`, `\sin`, ...) are protected everywhere, not shadowable
     (decided).
 - Non-converging infinite `Σ`/`Π`: error after a tolerance/iteration cap, reusing the phase-2
