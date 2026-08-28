@@ -31,8 +31,9 @@ own with `\alias`, or define both spellings at once with `\dual \alpha, α = 3.1
 a protected prelude scope (`π`, `\sqrt`, `\sin`, ...), and the `\py("math.sqrt")(2)` escape
 hatch into Python — full trust, native conversion
 both ways, with keyword arguments at any application site (`\py("int")("ff", \base=16)`)
-(docs/numerics.md). Strings are literals, not values: they name Python paths and act
-as comment-like statements, nothing more (docs/grammar.md). Imports are statement-level:
+(docs/numerics.md). Strings are values: they bind, concatenate with `+` (`"data" + ".csv"`),
+name Python paths, and double as comment-like statements; any other string operator is a
+typed error (docs/grammar.md). Imports are statement-level:
 `\import("lib")` shares ad source files and `\pyimport("math": \hypot)` binds Python
 module members (docs/grammar.md). The implementation is pure Python:
 `ad` lowers to Python's own AST and runs on CPython. Ranges are lazy and support finite/infinite

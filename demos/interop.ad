@@ -20,9 +20,14 @@ F(1, 3) + F(1, 6);
 -- decimals come back exact too
 \py("decimal.Decimal")("0.1");
 
--- strings are literals passed through to Python, never ad values
+-- strings are full ad values: they bind, concatenate with +, and pass through
+-- to Python as native str; every other operator rejects them (typed error)
+t = "result" + ":";
+t;
 l = \py("len");
-l("adhoc");
+l(t);
+h = "the \"exact\" tier";
+h;
 
 -- keyword arguments pass through to Python natively (multi-char names take the \ sigil)
 \py("int")("ff", \base=16);

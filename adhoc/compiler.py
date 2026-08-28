@@ -9,8 +9,8 @@ runtime-error spans narrow — a sub-expression's failure points at the sub-expr
 Lowering rules:
 
 - `NumLit` → `Constant` via `parse_literal` (int without `.`, float with). `StrLit` →
-  `Constant` likewise — but only ever as a call argument or a whole statement; a string
-  is never an operand (the parser rejects that before lowering sees it).
+  `Constant` likewise — a string is an ordinary atom, so this shape serves call
+  arguments, operands, and everything else.
 - A bare-string *statement* lowers to `pass`: one generated line per statement keeps the
   lineno ↔ span table aligned while producing no output.
 - Variables are never bare Python name loads or stores — reads go through `_e.var`,

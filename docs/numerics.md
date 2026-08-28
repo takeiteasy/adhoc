@@ -122,7 +122,7 @@ trailing `.0`. Non-finite values print `NaN`, `Inf`, `-Inf`.
 
 The seam is also where the `\py` escape hatch converts (docs/grammar.md). Values crossing
 *into* Python need no conversion — ad numbers already are native `int`/`Fraction`/`float`,
-and a string argument arrives as the literal's native `str`. Values coming *back* go
+and a string argument arrives as the native `str` it already is. Values coming *back* go
 through `_to_ad`:
 
 | Python value | ad result |
@@ -133,7 +133,7 @@ through `_to_ad`:
 | `decimal.Decimal` | exact `Fraction`/`int` via its string-exact value |
 | any other `numbers.Rational` | normalized `Fraction`/`int` (constructed from numerator/denominator explicitly — py3.12+'s single-Rational-arg constructor copies them unnormalized) |
 | any other `numbers.Real` (incl. numpy floats) | widened to `float` |
-| `str` | **display-only** — prints quoted, rejected by assignment and arithmetic; strings are literals, not values |
+| `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
 | `complex` | rejected — no complex tier yet |
 | anything else (list, dict, ndarray, ...) | rejected — names the type, never truncates silently |
 

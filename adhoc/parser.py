@@ -12,7 +12,7 @@ precedence table in docs/grammar.md:
     power       ::= postfix ("^" unary)? ;  -- right-associative
     postfix     ::= atom ("(" args ")")* ;  -- trailers attach only to name-ish heads
     args        ::= (expr | string | kwarg) ("," ...)* ;   kwarg ::= name "=" value ;
-    atom        ::= number | identifier | "\\"-name | "(" expr ")" ;
+    atom        ::= number | string | identifier | "\\"-name | "(" expr ")" ;
 
 `power`'s exponent recurses into `unary`, not `power` — that's what makes `2^-1` parse
 (unary minus binds inside the exponent) and `2^3^2` right-associate. The base of `^` is a
@@ -22,9 +22,10 @@ Postfix application is *syntactically* name-headed: a `(…)` trailer attaches o
 head so far is a name-ish node (`Var`, `BackslashRef`, or another `Call`). Number-headed
 parens never apply — `2(x+1)` still parses as juxtaposed multiplication. Whether a parsed
 call applies or falls back to multiplication is decided at evaluation (dynamic
-juxtaposition, docs/grammar.md). Strings are literals, not values:
-one alone may be a statement (ignored, comment-like) and one may be a whole call argument,
-but anywhere else in an expression it is a parse error at the opening quote. The function
+juxtaposition, docs/grammar.md). Strings are values: one alone may still be a statement
+(echoed to nobody, comment-like) and one is a whole call argument; inside expressions they
+are ordinary atoms — `"a" + "b"` concatenates, and a string reaching any other operator
+fails as the usual typed "strings are not numbers" at evaluation. The function
 definition shape `f(x) = body` is recognized at statement level and parsed into `FuncDef`;
 function bodies may contain semicolon-separated statements.
 
@@ -113,7 +114,7 @@ class IncompleteInput(ParseError):
     "parsing failed" can catch ParseError and get the same msg/span fields."""
 
 
-_ATOM_STARTERS = (Number, Ident, Backslash, LParen)
+_ATOM_STARTERS = (Number, Ident, Backslash, LParen, Str)
 
 # Seed of the session alias map (short spelling → canonical name): the unicode
 # fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
@@ -210,8 +211,10 @@ class _Parser:
     #             | identifier "=" expr | expr ;
     def statement(self) -> Node:
         tok = self.peek()
-        if isinstance(tok, Str):
+        if isinstance(tok, Str) and isinstance(self.peek2(), Semi | Eof):
             # A string alone is a statement — ignored like a comment (docs/grammar.md).
+            # A string followed by anything else (`"a" + "b"`) is an ordinary
+            # expression whose atom happens to be a string.
             self.advance()
             return StrLit(text=tok.text, span=tok.span)
         if isinstance(tok, Backslash) and tok.name == "const":
@@ -688,11 +691,12 @@ class _Parser:
             case _:
                 return "?"
 
-    # args ::= (expr | string | kwarg) ("," ...)* — a string may be a whole argument
-    # (the `\py` case) but never an operand inside one: `"a" + 1` stays a parse error
-    # at the quote. A kwarg is `name=value`; the `=` seen directly after a name token
-    # commits it, and bare `=` cannot occur inside a general expression, so nothing
-    # else can want that shape. Multi-character names take the `\` sigil (`\dpi=300`).
+    # args ::= (expr | string | kwarg) ("," ...)* — a string is an ordinary atom now,
+    # so `call_value` need only special-case it before the general expression (where it
+    # would parse the same way). A kwarg is `name=value`; the `=` seen directly after a
+    # name token commits it, and bare `=` cannot occur inside a general expression, so
+    # nothing else can want that shape. Multi-character names take the `\` sigil
+    # (`\dpi=300`).
     def call_arg(self) -> Node:
         tok = self.peek()
         if isinstance(tok, (Ident, Backslash)) and isinstance(self.look(1), Eq):
@@ -710,13 +714,16 @@ class _Parser:
             return StrLit(text=tok.text, span=tok.span)
         return self.expr()
 
-    # atom ::= number | identifier | "\"-name | "(" expr ")" ;
+    # atom ::= number | string | identifier | "\"-name | "(" expr ")" ;
     def atom(self) -> Node:
         tok = self.peek()
         match tok:
             case Number():
                 self.advance()
                 return NumLit(text=tok.text, span=tok.span)
+            case Str():
+                self.advance()
+                return StrLit(text=tok.text, span=tok.span)
             case Ident():
                 self.advance()
                 return self._name_node(tok.ch, tok.span)

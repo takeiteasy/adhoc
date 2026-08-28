@@ -43,10 +43,10 @@ class NumLit(Node):
 
 @dataclass(frozen=True)
 class StrLit(Node):
-    """A string literal. Strings are not values (docs/grammar.md): a StrLit only ever
-    appears as a whole statement (ignored, comment-like) or as an argument of a call,
-    where it converts to a native Python str at the boundary and never becomes an ad
-    value."""
+    """A string literal: a full ad value (docs/grammar.md). Appears as a whole
+    statement (echoes nothing, comment-like), as a call argument, or anywhere an
+    expression is — `+` concatenates, every other operator rejects it as the usual
+    typed "strings are not numbers"."""
 
     text: str
 

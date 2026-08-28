@@ -12,8 +12,8 @@ written against — it should stay in lockstep with the code.
   lone `.`.
 - A **string literal** is `"…"`: characters up to the closing `"`, possibly spanning lines.
   Inside a literal exactly four escapes decode — `\"` (quote), `\\` (backslash), `\n`
-  (newline), `\t` (tab) — and any other backslash pair is a lex error. Strings are
-  *literals, not values*: see `## String literals` for where they may appear.
+  (newline), `\t` (tab) — and any other backslash pair is a lex error. Strings are full
+  values: see `## String literals` for their operators.
 - An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
   This is what makes `ab` unambiguous as `a * b` — see below.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
@@ -67,7 +67,7 @@ arg        ::= expr | string | kwarg ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= identifier "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
-atom       ::= number | identifier | "\"-name | "(" sequence ")" ;
+atom       ::= number | string | identifier | "\"-name | "(" sequence ")" ;
 sequence   ::= statement (";" statement)* ;
 ```
 
@@ -115,9 +115,10 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 ```
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `identifier`, `\`-name, and `(` — deliberately **not** `-`, so `a - b` always parses
-as subtraction, never as `a * (-b)` — and **not** `"`, so a stray string in an expression is
-an error at the quote rather than an invisible factor.
+`number`, `string`, `identifier`, `\`-name, and `(` — deliberately **not** `-`, so `a - b` always
+parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
+parses as the multiplication it spells and dies as the usual typed "strings are not
+numbers" at evaluation — the same shape as any other string reaching a numeric operator.
 
 ## Application: dynamic name-headed parens
 
@@ -274,25 +275,31 @@ shrink and may fail to stabilize — write them simplified.
 
 ## String literals
 
-Strings are **literals, not values**. There is no string type in the value model; a string
-never enters the environment, cannot be bound, stored, concatenated, or computed on. They
-appear in exactly two places:
+Strings are **values**. They bind (`s = "data"`), display quoted and round-trippable
+(`= "a\"b"` — the `\"`/`\\` the lexer decodes is exactly what display emits), pass through
+`\py` boundaries as native `str`, and appear anywhere an expression does:
 
-1. **As a whole argument of a call** — the `\py("dotted.path")` case, positional or as a
-   kwarg value (`\py("open")("f.ad", \mode="r")`). The literal converts directly to a
-   native Python `str` at the boundary; no ad string value ever exists.
-2. **As a whole statement** — ignored, exactly like a comment:
-   ```
-   > "chapter 3: convergence"
-   > 1 + 1
-   < = 2
-   ```
-   A string anywhere else inside an expression is a parse error with the caret at the
-   opening quote (`1 + "a"` errors; `"a" + 1` also errors, at the `+`).
+- `+` **concatenates** two strings: `"data" + ".csv"`. It is the *only* string operator —
+  there is no mixed arithmetic: `"a" + 1` fails with the usual typed "strings are not
+  numbers", as do `- * / ^`, unary `-`, and the ordering comparisons `< <= > >=`.
+- A string is an ordinary atom, so it may be a whole call argument (the `\py("dotted.path")`
+  case, positional or as a kwarg value `\mode="r"`) — or an operand: `\py(n + ".sqrt")`
+  composes a path from a bound name.
+- A string **alone as a statement** still echoes nothing — the comment-like literate note:
 
-When a Python function hands a `str` back across the boundary, it is **display-only**: it
-prints quoted (`= "hello"`), and any attempt to assign it fails (`strings cannot be assigned
-— they are literals, not values`). See docs/numerics.md for the full conversion matrix.
+  ```
+  > "chapter 3: convergence"
+  > 1 + 1
+  < = 2
+  ```
+
+- Strings compare equal only to strings, and only through the re-assignment check
+  (`x = "a"; x = "a"` echoes `true`): the language has no `==` operator (`==` is the `≡`
+  alias, a constant declaration), so there is no string equality *expression*.
+
+When a Python function hands a `str` back across the boundary it is a plain ad string
+value: printable (`= "hello"`), bindable, concatenable. See docs/numerics.md for the full
+conversion matrix.
 
 ## Modules and imports
 
@@ -482,8 +489,8 @@ Ranges can be assigned and passed through the runtime; folds bind them directly
 (`\sum(i=1..10) …`, `Σ(i=1..) …` — see `## Special forms`).
 
 A callable binds like any other value (`s = \py("math.sqrt")` prints `s = <py math.sqrt>`);
-a call returning a string is rejected instead of bound (strings are literals, see
-`## String literals`). Two non-numeric values never compare equal unless identical.
+a call returning a string binds like any value too (see `## String literals`). Two
+non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 

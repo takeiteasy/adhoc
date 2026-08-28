@@ -10,11 +10,11 @@ Token spans are byte offsets (see span.py); token text is carried where meaningf
 number literal's source text, a backslash name with its sigil stripped, a string
 literal's raw contents).
 
-Strings are literals, not values (docs/grammar.md): they appear as `\\py` arguments or as
-standalone statements (ignored, comment-like). Inside a literal exactly four escapes
-decode — `\\"`, `\\\\`, `\\n`, `\\t` — and any other backslash pair is an error; a literal
-may still span lines. An unterminated one raises `UnterminatedString`, which the parser
-maps to `IncompleteInput` so the REPL offers a continuation prompt exactly like an
+Strings are full ad values (docs/grammar.md): they bind, concatenate with `+`, and appear
+as call arguments or standalone comment-like statements. Inside a literal exactly four
+escapes decode — `\"`, `\\`, `\n`, `\t` — and any other backslash pair is an error; a
+literal may still span lines. An unterminated one raises `UnterminatedString`, which the
+parser maps to `IncompleteInput` so the REPL offers a continuation prompt exactly like an
 unclosed parenthesis.
 """
 

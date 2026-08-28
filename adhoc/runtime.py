@@ -28,14 +28,15 @@ tolerance meaningless — while finite folds accumulate exactly like any other e
 
 ## Strings and the `\\py` boundary
 
-Strings are literals, not ad values (docs/grammar.md). They never enter the environment;
-the only place one exists at runtime is transiently, as a native `str` produced by a call.
-The conversion matrix (`_to_ad`) is therefore deliberately small:
+Strings are ad values (docs/grammar.md): they bind, display, concatenate with `+`, and
+compare equal only to other strings. The conversion matrix (`_to_ad`) is deliberately
+small:
 
 - bool → int (true becomes 1), int/float/Fraction pass through, `numbers.Rational`
   collapses to Fraction/int, other `numbers.Real` widens to float, Decimal converts
   exactly via Fraction.
-- `str` is display-only: printable by `out`, rejected by assignment and arithmetic.
+- `str` passes through as the value it already is — printable by `out`, bindable,
+  concatenable; rejected by every other arithmetic operator.
 - complex, None, and everything else (lists, dicts, ...) are span-pointed rejections —
   no silent truncation.
 
@@ -104,7 +105,7 @@ from typing import Any, NoReturn
 
 from .span import Span
 
-AdValue = int | Fraction | float | bool
+AdValue = int | Fraction | float | bool | str
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -191,8 +192,9 @@ def _normalize(x: Fraction) -> int | Fraction:
 
 def _reject_non_numeric(*vals: AdValue) -> None:
     """Guard the arithmetic seam against everything that is not an ad number — a
-    transient string (literals, not values) or a bound callable reaching an operator.
-    The failure must stay a spanned NumError, never a TypeError escaping the engine."""
+    string value (a full value, but never a numeric operand; `+` concats before this
+    guard runs) or a bound callable reaching an operator. The failure must stay a
+    spanned NumError, never a TypeError escaping the engine."""
     for v in vals:
         if isinstance(v, bool):
             raise NumError("booleans are not numbers")
@@ -203,6 +205,8 @@ def _reject_non_numeric(*vals: AdValue) -> None:
 
 
 def nadd(a: AdValue, b: AdValue) -> AdValue:
+    if isinstance(a, str) and isinstance(b, str):
+        return a + b  # string + string concatenates; mixed never coerces
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _to_float(a) + _to_float(b)
@@ -306,9 +310,10 @@ def nneg(a: AdValue) -> AdValue:
 
 def neq(a: AdValue, b: AdValue) -> bool:
     if isinstance(a, str) or isinstance(b, str):
-        # Unreachable through assignment (strings are rejected before compare); kept
-        # defensive: a string only ever equals itself.
-        return a is b if isinstance(a, str) and isinstance(b, str) else False
+        # Value equality for string×string (the re-assignment check binds no names, so
+        # this is its only equality surface — the language has no == operator); a
+        # string is never equal to a non-string.
+        return a == b if isinstance(a, str) and isinstance(b, str) else False
     if not isinstance(a, _NUMERIC_TYPES) or not isinstance(b, _NUMERIC_TYPES):
         return a is b  # callables and other exotics compare by identity
     if _is_float(a) or _is_float(b):
@@ -338,8 +343,8 @@ def nshow(v: AdValue | str) -> str:
 
 
 def _show_str(s: str) -> str:
-    """Display-only strings print quoted and round-trippable — they can never be bound,
-    so this is purely a transcript rendering."""
+    """Strings print quoted and round-trippable: the `\"`/`\\\\` escaping the lexer
+    decodes is exactly what this emits, so a displayed string can be read back."""
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
@@ -482,7 +487,7 @@ def _to_ad(value: Any) -> Any:
         # numerator/denominator verbatim on py3.12+.
         return _normalize(Fraction(int(value.numerator), int(value.denominator)))
     if isinstance(value, str):
-        # Display-only: printable by out(), rejected by assign and arithmetic.
+        # Already an ad value: bindable, concatenable, printable.
         return value
     if isinstance(value, complex):
         raise NumError("complex results are not supported")
@@ -590,7 +595,6 @@ class Engine:
         return self.outputs[-1]
 
     def set(self, name, value, sid):
-        self._check_assignable(value, sid)
         if self._protected(name):
             self._fail(f"`{name}` is a constant", sid)
         self.env[name] = value
@@ -602,7 +606,6 @@ class Engine:
         unprotected. Afterwards no path can rebind it — `=` re-binds are protected,
         sequence-group writes are protected, and locals/parameters/binders named `x`
         are redefinition errors (see `_protected`)."""
-        self._check_assignable(value, sid)
         if self.parent is not None:
             self._fail("constants are global; declare them at the top level", sid)
         if self._protected(name):
@@ -778,10 +781,10 @@ class Engine:
 
     def py(self, path: Any, sid: int) -> Any:
         """`\\py("dotted.path")` — resolve a Python dotted path to a callable. The
-        argument must be a string literal; strings cannot be bound, so no other arg
-        shape can ever name a path."""
+        argument must evaluate to a string (a literal or any string-valued
+        expression); no other value names a path."""
         if not isinstance(path, str):
-            self._fail("`\\py` takes one string literal naming a dotted Python path", sid)
+            self._fail("`\\py` takes one string naming a dotted Python path", sid)
         obj = _resolve_dotted(path)
         if obj is _MISSING:
             self._fail(f"`\\py` cannot resolve `{path}`", sid)
@@ -982,13 +985,7 @@ class Engine:
         self.outputs.append(result)
         return result
 
-    def _check_assignable(self, value: AdValue | str, sid: int) -> None:
-        # Strings are literals, not values: they print (display-only) but never bind.
-        if isinstance(value, str):
-            self._fail("strings cannot be assigned — they are literals, not values", sid)
-
     def assign(self, name: str, value: AdValue, sid: int) -> str:
-        self._check_assignable(value, sid)
         if self._protected(name):
             self._fail(f"`{name}` is a constant", sid)
         if name in self.env:

@@ -1,9 +1,10 @@
-"""Stage-5 interop surface: the `\\py` escape hatch, postfix application, literal
-strings, and the Python↔ad conversion matrix.
+"""Stage-5 interop surface: the `\\py` escape hatch, postfix application, string
+values, and the Python↔ad conversion matrix.
 
-Strings are literals, not values (docs/grammar.md): they pass through call boundaries,
-print display-only when a call returns one, and are rejected everywhere a value would be
-expected. The rewrite plan's exit criterion lives here as test_exit_criterion.
+Strings are values (docs/grammar.md): they bind, concatenate with `+`, pass through
+call boundaries natively, and are rejected by every operator outside `+` with the
+usual typed "strings are not numbers". The rewrite plan's exit criterion lives here
+as test_exit_criterion.
 """
 
 import pytest
@@ -115,7 +116,7 @@ def test_non_callable_path_errors():
 def test_non_string_argument_errors():
     with pytest.raises(EvalError) as e:
         run_source("\\py(2)")
-    assert "takes one string literal" in e.value.msg
+    assert "takes one string" in e.value.msg
 
 
 def test_bare_py_hints_at_application():
@@ -124,7 +125,7 @@ def test_bare_py_hints_at_application():
     assert "must be applied" in e.value.msg
 
 
-# --- strings are literals, not values ---
+# --- strings are values ---
 
 
 def test_bare_string_statement_produces_no_output():
@@ -132,20 +133,54 @@ def test_bare_string_statement_produces_no_output():
     assert run_source('"a"; 1 + 1') == ["= 2"]
 
 
-def test_string_cannot_be_assigned():
-    with pytest.raises(EvalError) as e:
-        run_source('x = \\py("os.getcwd")()')
-    assert "strings cannot be assigned" in e.value.msg
-
-
-def test_string_cannot_be_bound_in_a_body():
-    # The write path inside function bodies is unconditional, but strings are
-    # rejected there too — strings never enter the environment.
+def test_string_binds_and_displays():
     env: dict = {}
-    run_source('f() = x = \\py("os.getcwd")(); x', env)
+    assert run_source('s = \\py("str")("q")', env) == ['s = "q"']
+    assert run_source("s", env) == ['= "q"']
+
+
+def test_string_binds_in_a_body():
+    env: dict = {}
+    run_source('f() = x = \\py("str")("q"); x', env)
+    assert run_source("f()", env) == ['= "q"']
+
+
+def test_string_concatenation():
+    assert run_source('"foo" + "bar"') == ['= "foobar"']
+    assert run_source('s = "data"; s + ".csv"') == ['s = "data"', '= "data.csv"']
+
+
+def test_string_binds_through_py_path_expression():
+    # A `\py` argument may be any string-valued expression, so paths compose.
+    env: dict = {}
+    assert run_source('n = "math"; f = \\py(n + ".sqrt")', env) == [
+        'n = "math"',
+        "f = <py math.sqrt>",
+    ]
+
+
+def test_string_reassignment_is_assign_or_check():
+    # Plain `=` on a bound name compares (no force-reassignment spelling); strings
+    # compare by value, so equal content is "true" without rebinding.
+    env: dict = {}
+    assert run_source('x = "a"; x = "a"', env) == ['x = "a"', "true"]
+    assert run_source('x = "b"', env) == ["false"]
+
+
+def test_string_through_if_branches():
+    assert run_source('\\if(1 < 2, "yes", "no")') == ['= "yes"']
+
+
+def test_string_ordering_is_typed_error():
     with pytest.raises(EvalError) as e:
-        run_source("f()", env)
-    assert "strings cannot be assigned" in e.value.msg
+        run_source('"a" < "b"')
+    assert e.value.msg == "strings are not numbers"
+
+
+def test_string_display_round_trips_through_lexer():
+    # #28 + #30 together: what binds is what a later literal spells the same way.
+    env: dict = {}
+    assert run_source('x = "a\\"b\\\\c"', env) == ['x = "a\\"b\\\\c"']
 
 
 def test_transient_string_in_arithmetic_is_typed_error():

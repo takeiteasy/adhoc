@@ -30,8 +30,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   (docs/grammar.md, `## Assignment semantics`).
 - Multi-character variables use the same backslash sigil as multi-character functions:
   `\bar = 100; \foo = 200; \foobar = \foo\bar`.
-- `--` line comments, plus bare string literals as comment-like statements (`"a note"` is
-  parsed and ignored — strings are literals, not values; docs/grammar.md).
+- `--` line comments, plus bare string literals as comment-like statements (`"a note"` alone
+  on a statement is parsed and echoes nothing; docs/grammar.md).
 - Postfix application `f(x)`: name-headed parens parse as calls; at evaluation a callable
   head applies, and a non-callable head with exactly one argument falls back to the paper
   product (`x(y+1)` = `x*(y+1)`). Number-headed parens (`2(x+1)`) are always
@@ -40,8 +40,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   take the `\` sigil; user-defined functions take positional arguments only).
 - The `\py` escape hatch: `\py("math.sqrt")(2)` → `= 1.4142135623730951`. Resolves any dotted
   Python path to a callable (full trust — same power as running Python itself); arguments and
-  results convert at the boundary (docs/numerics.md). Returned strings print display-only and
-  cannot be bound.
+  results convert at the boundary (docs/numerics.md). Strings are values: they bind,
+  concatenate with `+`, and compose `\py` paths (`\py(n + ".sqrt")`).
 - Imports, statement-level and silent: `\import("lib")` binds the top-level names of `lib.ad`
   (all of them, or only the listed members: `\import("lib": f, \fact)`), each file evaluating
   once per session in a fresh root environment — imported functions keep the module's

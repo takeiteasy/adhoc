@@ -186,16 +186,24 @@ def test_bare_string_statement_is_a_node():
     assert node.span == Span(0, 6)
 
 
-def test_string_in_expression_is_parse_error_at_opening_quote():
-    with pytest.raises(ParseError) as e:
-        parse_program('1 + "a"')
-    assert e.value.span == Span(4, 7)  # the whole literal, quote to quote
+def test_string_is_an_atom_in_expression_position():
+    node = parse_program('1 + "a"')
+    match node:
+        case BinOp(op=B.ADD, lhs=NumLit(), rhs=StrLit(text="a")):
+            assert node.rhs.span == Span(4, 7)  # the whole literal, quote to quote
+        case _:
+            pytest.fail(f"expected string operand, got {node!r}")
 
 
-def test_string_inside_arithmetic_arg_still_errors():
-    # A string may be a whole call argument, never an operand within one.
-    with pytest.raises(ParseError):
-        parse_program('\\py("f" + "g")')
+def test_string_concatenation_parses_as_addition():
+    node = parse_program('"f" + "g"')
+    match node:
+        case BinOp(
+            op=B.ADD, lhs=StrLit(text="f"), rhs=StrLit(text="g")
+        ):
+            pass
+        case _:
+            pytest.fail(f"expected string concatenation, got {node!r}")
 
 
 def test_application_with_var_head():

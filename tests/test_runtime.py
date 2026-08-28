@@ -228,8 +228,13 @@ def test_string_display_round_trips():
     assert nshow('a"b\\c') == '"a\\"b\\\\c"'
 
 
+def test_nadd_concatenates_two_strings():
+    assert nadd("foo", "bar") == "foobar"
+    assert nadd("", "x") == "x"
+
+
 def test_seam_rejects_strings_as_typed_errors():
-    for op in (nadd, nsub, nmul, ndiv, npow):
+    for op in (nsub, nmul, ndiv, npow):
         with pytest.raises(NumError) as e:
             op("s", 1)
         assert e.value.args[0] == STRINGS_NOT_NUMBERS
@@ -237,6 +242,12 @@ def test_seam_rejects_strings_as_typed_errors():
             op(1, "s")
     with pytest.raises(NumError):
         nneg("s")
+    # `+` concatenates only string×string: either side numeric is a typed error.
+    with pytest.raises(NumError) as e:
+        nadd("s", 1)
+    assert e.value.args[0] == STRINGS_NOT_NUMBERS
+    with pytest.raises(NumError):
+        nadd(1, "s")
 
 
 def test_seam_rejects_callables_with_number_message():
@@ -246,7 +257,10 @@ def test_seam_rejects_callables_with_number_message():
         assert e.value.args[0] == NOT_A_NUMBER
 
 
-def test_neq_identity_fallback_for_non_values():
+def test_neq_value_equality_for_strings_and_identity_fallback_for_others():
+    assert neq("ab", "ab") is True
+    assert neq("ab", "cd") is False
+    assert neq("ab", 1) is False
     f = lambda: 0
     assert neq(f, f) is True
     assert neq(f, lambda: 0) is False
