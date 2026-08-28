@@ -73,6 +73,7 @@ def run_repl(emit_py: bool = False) -> int:
 
     env: dict = {}
     consts: set = set()  # user-declared constant names, protected for the session
+    modules: dict = {}  # session import registry: `\import` evaluates each file once
     pending = ""
 
     while True:
@@ -122,7 +123,7 @@ def run_repl(emit_py: bool = False) -> int:
         if emit_py:
             print(compiled.source, file=sys.stderr)
         try:
-            outs = execute(compiled, env, consts)
+            outs = execute(compiled, env, consts, modules)
         except EvalError as e:
             print_eval_error(source, e)
             continue

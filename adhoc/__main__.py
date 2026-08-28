@@ -9,6 +9,7 @@ stderr before running it — the lowering's debug window.
 """
 
 import argparse
+import os
 import sys
 
 from . import __version__
@@ -48,8 +49,11 @@ def _run_script(path: str, emit_py: bool) -> int:
         print(compiled.source, file=sys.stderr)
 
     env: dict = {}
+    modules: dict = {}  # session import registry: each ad file evaluates once per run
+    # `\import` resolves relative to the script's own directory first, then the CWD.
+    base_dir = os.path.dirname(os.path.abspath(path))
     try:
-        outs = execute(compiled, env)
+        outs = execute(compiled, env, modules=modules, base_dir=base_dir)
     except EvalError as e:
         for line in getattr(e, "partial", []):
             print(f"< {line}")

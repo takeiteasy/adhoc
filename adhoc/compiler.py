@@ -21,7 +21,9 @@ Lowering rules:
   kwargs, sid)` with the kwargs as a dict literal; `\\py(path)` is the one backslash name
   with semantics of its own and lowers to `_e.py(path, sid)`. `FuncDef` registers a
   separately compiled body and lowers to `_e.define(...)`; `\\if` lowers to lazy thunk
-  calls. `Fold`/`Limit` likewise register their bodies via `_compile_body` and lower to
+  calls. `Import`/`PyImport` lower to `_e.import_(path, members, sid)`/`_e.pyimport(...)`
+  — one line, no output, legal wherever statements are (top level, function bodies).
+  `Fold`/`Limit` likewise register their bodies via `_compile_body` and lower to
   `_e.fold(...)`/`_e.limit(...)`, which evaluate the body once per term/probe in a child
   engine frame.
 - `Seq` flattens; each statement becomes one line, matching script mode's per-statement
@@ -46,9 +48,11 @@ from .syntax import (
     Fold,
     FuncDef,
     IfExpr,
+    Import,
     Limit,
     Node,
     NumLit,
+    PyImport,
     Range,
     Seq,
     StrLit,
@@ -127,6 +131,14 @@ class _Lowerer:
                 sid = self._push(span)
                 return pyast.unparse(_call("const_assign",
                     [pyast.Constant(name), self.expr(value), pyast.Constant(sid)]))
+            case Import(path=path, members=members, span=span):
+                sid = self._push(span)
+                return pyast.unparse(_call("import_",
+                    [pyast.Constant(path), pyast.Constant(members), pyast.Constant(sid)]))
+            case PyImport(path=path, members=members, span=span):
+                sid = self._push(span)
+                return pyast.unparse(_call("pyimport",
+                    [pyast.Constant(path), pyast.Constant(members), pyast.Constant(sid)]))
             case StrLit():
                 # A lone string is a comment-like no-op; `pass` keeps the one-line-per-
                 # statement invariant that the lineno ↔ span table depends on.
@@ -273,6 +285,12 @@ def _compile_body(node: Node) -> CompiledBody:
                 kwonlyargs=[], kw_defaults=[], defaults=[]), body=lowerer.expr(stmt.then_branch))
             lines.append(pyast.unparse(_call("if_stmt", [lowerer.expr(stmt.condition), thunk,
                 pyast.Constant(sid)])))
+            continue
+        elif isinstance(stmt, Import | PyImport):
+            # One line, no `_result` — an import binds names and produces no output.
+            method = "import_" if isinstance(stmt, Import) else "pyimport"
+            lines.append(pyast.unparse(_call(method, [pyast.Constant(stmt.path),
+                pyast.Constant(stmt.members), pyast.Constant(sid)])))
             continue
         else:
             expr = lowerer.expr(stmt)

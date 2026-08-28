@@ -28,8 +28,11 @@ error diagnostics, postfix application (`f(x)`), functions with local scoping, l
 (`\if`), real booleans with `\true`/`\false`, permanently-immutable constants (`φ ≡ 1.618...`),
 a protected prelude scope (`π`, `\sqrt`, `\sin`, ...), and the `\py("math.sqrt")(2)` escape
 hatch into Python — full trust, native conversion
-both ways (docs/numerics.md). Strings are literals, not values: they name Python paths and act
-as comment-like statements, nothing more (docs/grammar.md). The implementation is pure Python:
+both ways, with keyword arguments at any application site (`\py("int")("ff", \base=16)`)
+(docs/numerics.md). Strings are literals, not values: they name Python paths and act
+as comment-like statements, nothing more (docs/grammar.md). Imports are statement-level:
+`\import("lib")` shares ad source files and `\pyimport("math": \hypot)` binds Python
+module members (docs/grammar.md). The implementation is pure Python:
 `ad` lowers to Python's own AST and runs on CPython. Ranges are lazy and support finite/infinite
 and inferred-step forms, and folds consume them: `\sum(i=1..10) i^2` → `385`, infinite ranges as
 limits of partial sums (`\sum(i=1..) 1/i^2`), and numeric `\lim(x=a)` — all sharing one

@@ -1,0 +1,15 @@
+-- modules.ad — sharing definitions across files, and binding Python members
+-- run with: adhoc run demos/modules.ad
+-- `\import` resolves relative to this script's directory first
+
+\import("geom");
+
+-- imported functions keep the module's environment as their closure
+\hyp(3, 4);
+
+-- imported names are ordinary bindings; φ was declared with ≡ inside the module
+φ;
+
+-- selective import of a Python-module member
+\pyimport("math": \tau);
+\tau

@@ -42,6 +42,7 @@ would clobber that inner node's own (narrower) span with the paren-inclusive one
 
 from .lexer import (
     Backslash,
+    Colon,
     ColonEq,
     Comma,
     Caret,
@@ -81,10 +82,12 @@ from .syntax import (
     Fold,
     FuncDef,
     IfExpr,
+    Import,
     KwArg,
     Limit,
     Node,
     NumLit,
+    PyImport,
     Range,
     Seq,
     StrLit,
@@ -172,6 +175,12 @@ class _Parser:
             return StrLit(text=tok.text, span=tok.span)
         if isinstance(tok, Backslash) and tok.name == "const":
             return self._const_statement()
+        if (
+            isinstance(tok, Backslash)
+            and tok.name in ("import", "pyimport")
+            and isinstance(self.peek2(), LParen)
+        ):
+            return self._import_statement(tok)
         if isinstance(tok, (Ident, Backslash)):
             if isinstance(self.peek2(), IdenticalTo):
                 ident_tok = self.advance()
@@ -219,6 +228,46 @@ class _Parser:
         self.expect(Eq, "`=`")
         value = self.expr()
         return ConstAssign(name=name, value=value, span=const_tok.span.to(value.span))
+
+    # import-stmt ::= "\\import" "(" string (":" member ("," member)*)? ")" ;
+    # pyimport-stmt ::= "\\pyimport" "(" string ":" member ("," member)* ")" ;
+    # Statement-level only: an import binds names and produces no output, so it has
+    # no value — in expression position the head stays an ordinary unbound name and
+    # fails at evaluation with a usage message (the `\py`/`\if` pattern). Member
+    # tokens are ordinary name spellings; the colon commits the member list, and
+    # `\pyimport` requires it (there is no module value to bind).
+    def _import_statement(self, head: Backslash) -> Node:
+        self.advance()  # the `\import` / `\pyimport` token
+        self.expect(LParen, "`(`")
+        path_tok = self.peek()
+        if not isinstance(path_tok, Str):
+            what = "module" if head.name == "pyimport" else "ad file"
+            raise self.error_at_current(
+                f"expected a string literal naming the {what}, found {path_tok.describe}")
+        self.advance()
+        members: list[str] = []
+        if isinstance(self.peek(), Colon):
+            self.advance()
+            while True:
+                tok = self.peek()
+                if isinstance(tok, (Ident, Backslash)):
+                    members.append(tok.ch if isinstance(tok, Ident) else tok.name)
+                    self.advance()
+                else:
+                    raise self.error_at_current(
+                        f"expected a member name, found {tok.describe}")
+                if isinstance(self.peek(), Comma):
+                    self.advance()
+                else:
+                    break
+        elif head.name == "pyimport":
+            raise ParseError(
+                '`\\pyimport` binds members by name: \\pyimport("math": \\sqrt, \\tau)',
+                head.span.to(self.peek().span))
+        rparen = self.expect(RParen, "`)`")
+        cls = PyImport if head.name == "pyimport" else Import
+        return cls(path=path_tok.text, members=tuple(members),
+                   span=head.span.to(rparen.span))
 
     def _func_params(self) -> tuple[str, ...]:
         params: list[str] = []
@@ -536,6 +585,14 @@ class _Parser:
                     if isinstance(self.peek(), RParen):
                         raise ParseError("expected `)`, found `;`", semi.span)
                     items.append(self.statement())
+                # Imports bind names and produce no output — they have no value, so
+                # a parenthesized sequence group (an expression) cannot hold one.
+                # Statement contexts (top level, function bodies) parse them fine.
+                for item in items:
+                    if isinstance(item, Import | PyImport):
+                        raise ParseError(
+                            "`\\import` and `\\pyimport` are statements, not expressions",
+                            item.span)
                 inner = items[0] if len(items) == 1 else Seq(
                     statements=tuple(items), span=items[0].span.to(items[-1].span)
                 )

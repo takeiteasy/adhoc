@@ -198,6 +198,16 @@ class Comma(Token):
 
 
 @dataclass(frozen=True)
+class Colon(Token):
+    """The member-list separator in import statements: `\\import("lib": f, \\g)`.
+    `:=` still lexes as one ColonEq token; a `:` that does not precede `=` is this."""
+
+    @property
+    def describe(self) -> str:
+        return "`:`"
+
+
+@dataclass(frozen=True)
 class DotDot(Token):
     @property
     def describe(self) -> str:
@@ -318,7 +328,11 @@ def tokenize(src: str) -> list[Token]:
                 tokens.append(ColonEq(span=Span(pos, end)))
                 i += 2
                 continue
-            raise LexError("unexpected character `:`", Span(pos, pos + len(c.encode("utf-8"))))
+            # A `:` not followed by `=` is the import member-list separator.
+            end = pos + len(c.encode("utf-8"))
+            tokens.append(Colon(span=Span(pos, end)))
+            i += 1
+            continue
 
         if c == "." and i + 1 < n and entries[i + 1][1] == ".":
             tokens.append(DotDot(span=Span(pos, entries[i + 1][0] + 1)))

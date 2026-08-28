@@ -80,7 +80,12 @@ difference between them is *when* each calls it, not how the output looks.
   name in the call frame. `\if` is a lazy compiler special form (not an eager ordinary call).
   `\py(path)` has its own seam method
   resolving the dotted path and converting results back through the matrix
-  (docs/numerics.md).
+  (docs/numerics.md). Imports lower to `_e.import_(path, members, sid)` and
+  `_e.pyimport(...)`: the session's module registry (absolute path → module
+  environment), the import base directory, and the in-progress import chain ride on
+  the root engine and are inherited by every child frame and imported module engine,
+  which is what makes re-imports cached, cycles typed errors, and nested resolution
+  relative to the importing file.
 - Range construction lowers to `_e.range(start, second, end, sid)`. `RangeValue` stores
   numeric endpoints and step without materializing values; iteration computes each next
   value through the numeric seam.

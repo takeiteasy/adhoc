@@ -29,6 +29,8 @@ written against — it should stay in lockstep with the code.
 program    ::= statement (";" statement)* ";"? ;
 statement  ::= func-def
              | const-stmt
+             | import-stmt
+             | pyimport-stmt
              | string
              | identifier ("=" | ":=") expr
              | expr ;
@@ -36,6 +38,9 @@ const-stmt ::= identifier "≡" expr
              | identifier "==" expr
              | "\const" name "=" expr
              | "\const" name "(" params? ")" "=" statement (";" statement)* ;
+import-stmt   ::= "\import" "(" string (":" member ("," member)*)? ")" ;
+pyimport-stmt ::= "\pyimport" "(" string ":" member ("," member)* ")" ;
+member        ::= identifier | "\"-name ;
 
 expr       ::= range ;
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
@@ -254,6 +259,53 @@ appear in exactly two places:
 When a Python function hands a `str` back across the boundary, it is **display-only**: it
 prints quoted (`= "hello"`), and any attempt to assign it fails (`strings cannot be assigned
 — they are literals, not values`). See docs/numerics.md for the full conversion matrix.
+
+## Modules and imports
+
+Two statement-level forms, two targets — a module value does not exist in the value
+model, and dotted attribute access (`math.sqrt` on a bound module) is not in the
+grammar, so both forms bind *members* rather than namespaces. An import is a statement:
+it binds names, produces no output, and has no value (a parenthesized sequence group
+cannot hold one; in expression position the head is an unbound name with a usage
+message, the `\py` pattern).
+
+`\import("lib")` reads an **ad source file** (`lib.ad`; a path already ending in `.ad`
+is taken literally) and binds its top-level names into the importing environment — all
+of them, or only the members after the colon (`\import("lib": f, \fact)`). Module code
+is ordinary ad source: single-character or `\`-sigiled names, functions, constants.
+
+`\pyimport("math": \sqrt, \tau)` binds members of a **Python module**. Member selection
+is mandatory — there is nothing to bind without names. Callables bind as callables (the
+`\py` rule); every other member converts through the interop matrix or fails at the
+import's span, so `tau` binds as a number while a dict member is a typed rejection.
+
+Shared rules:
+
+- **Resolution**: `\import` searches the importing file's directory first, then the
+  working directory (REPL: working directory). A name that resolves as a Python module
+  instead of a file gets an error hinting at `\pyimport`. `\pyimport` resolves dotted
+  paths exactly like `\py`.
+- **Once per session**: each ad file evaluates exactly once per session, in a fresh
+  root environment of its own; the module's bindings are cached and re-imports re-copy
+  the cached values without re-evaluating. Evaluating a module twice (e.g. two
+  sessions) yields fresh, unrelated values.
+- **Closures**: imported functions keep the module's environment as their closure —
+  reads of module globals stay live through the closure — while the copied values are
+  snapshots bound into the importer.
+- **Cycles**: importing a file that is already being evaluated (directly or through a
+  chain) is a typed error naming the chain.
+- **Binding rules**: everything validates before anything binds. A member missing from
+  the module, a protected name (prelude or session constant), or a name already bound
+  to a different value is a typed error; a name already bound to the *identical*
+  cached value is a silent no-op (re-import). Imported names land as ordinary
+  bindings — rebindable, not protected.
+
+```
+\import("lib")                 -- bind everything lib.ad defines at the top level
+\import("lib": f, \fact)       -- bind only f and \fact
+\pyimport("math": \hypot)      -- bind math.hypot as \hypot
+\hypot(3, 4)                   ->  = 5.0
+```
 
 ## The `\` sigil
 

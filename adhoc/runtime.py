@@ -43,6 +43,27 @@ The conversion matrix (`_to_ad`) is therefore deliberately small:
 then attributes) and requires the result to be callable. This is a full-trust escape
 hatch by design: a script that can call `\\py` can do anything Python can.
 
+## Modules and imports
+
+Two statement-level forms, two semantics (a module value and dotted attribute access do
+not exist in the grammar — identifiers are one character):
+
+- `\\import("lib")` reads an ad source file, evaluates it once per session in a fresh
+  root environment, and binds its top-level names into the importing environment (all
+  of them, or only the members after `:`). Resolution searches the importing file's
+  directory first, then the working directory. The session's module registry (shared by
+  every engine in a session) caches each module by absolute path, so re-imports re-copy
+  cached bindings instead of re-evaluating; a file currently being evaluated is a
+  circular-import error. Imported functions keep the module's environment as their
+  closure — their reads of module globals stay live — while the copied values are
+  snapshots. Bindings land as fresh ordinary bindings: a protected or already-bound
+  name (identical cached value excepted) is a typed error.
+- `\\pyimport("math": \\sqrt, \\tau)` resolves a Python module and binds the named
+  members. Member selection is mandatory. Callables bind as callables (the `\\py`
+  rule); every other member converts through the interop matrix or fails at the
+  import's span. The usual binding rules apply: a protected or already-bound name is a
+  typed error.
+
 ## The prelude
 
 A built-in scope present in every session (`PRELUDE` below): constants (`π`/`\\pi`,
@@ -74,6 +95,8 @@ from fractions import Fraction
 import importlib
 import math
 import numbers
+import os
+import types
 from typing import Any, NoReturn
 
 from .span import Span
@@ -391,6 +414,7 @@ class EvalError(Exception):
 
 
 _MISSING = object()
+_IMPORTING = object()  # module-registry marker: evaluation in progress (cycle guard)
 
 
 class AdFunction:
@@ -403,7 +427,8 @@ class AdFunction:
         frame = dict(zip(self.params, args))
         frame[self.name] = self
         child = Engine(frame, self.body.spans, self.body.definitions, self.closure,
-                       self.closure.consts)
+                       self.closure.consts, self.closure.modules,
+                       self.closure.base_dir, self.closure.import_chain)
         try:
             scope = {"_e": child}
             exec(self.body.code, scope)
@@ -470,7 +495,8 @@ class Engine:
     (matching main.rs's run_and_echo vs repl.rs)."""
 
     def __init__(self, env: dict[str, Any], spans: Sequence[Span], definitions=None,
-                 parent=None, consts: set[str] | None = None):
+                 parent=None, consts: set[str] | None = None, modules: dict | None = None,
+                 base_dir: str | None = None, import_chain: tuple[str, ...] = ()):
         self.env = env
         self.spans = spans
         self.definitions = definitions or {}
@@ -479,6 +505,14 @@ class Engine:
         # created at the root engine (constant declaration is top-level only) and
         # shared with every child frame, so protection checks need no chain walk.
         self.consts: set[str] = consts if consts is not None else set()
+        # The session's module registry (absolute path -> module environment) and the
+        # directory relative to which `\import` resolves files. Both ride on the root
+        # engine and are inherited by every child frame and imported module engine.
+        self.modules = modules if modules is not None else {}
+        self.base_dir = base_dir
+        # Absolute paths of modules currently being evaluated up the import stack —
+        # what a circular-import error names.
+        self.import_chain = import_chain
         self.outputs: list[str] = []
         self.result: Any = None
 
@@ -517,6 +551,10 @@ class Engine:
             self._fail("`\\if` must be applied: \\if(condition, then[, otherwise])", sid)
         if name == "const":
             self._fail("`\\const` declares constants: \\const x = e, or x ≡ e", sid)
+        if name == "import":
+            self._fail(r'`\import` reads an ad file: \import("lib") or \import("lib": f)', sid)
+        if name == "pyimport":
+            self._fail(r'`\pyimport` binds Python members: \pyimport("math": \sqrt)', sid)
         value = self._lookup(name)
         if value is _MISSING:
             self._fail(f"`\\{name}` is not bound", sid)
@@ -604,7 +642,8 @@ class Engine:
         """Evaluate a compiled body once with the loop variable layered over a child
         frame. Scoping mirrors AdFunction.__call__: reads of other names fall through
         to the parent chain, writes stay local to this iteration."""
-        child = Engine(bindings, body.spans, body.definitions, self, self.consts)
+        child = Engine(bindings, body.spans, body.definitions, self, self.consts,
+                       self.modules, self.base_dir, self.import_chain)
         scope = {"_e": child}
         try:
             exec(body.code, scope)
@@ -729,6 +768,134 @@ class Engine:
         if not callable(obj):
             self._fail(f"`{path}` is not callable", sid)
         return obj
+
+    def import_(self, path: Any, members: tuple[str, ...], sid: int) -> None:
+        """`\\import("lib")` / `\\import("lib": f, \\g)` — evaluate an ad source file
+        once per session in a fresh root environment and bind its top-level names into
+        this environment. See the module docstring's "Modules and imports" for the
+        full semantics: resolution, caching, cycles, closures, binding rules."""
+        if not isinstance(path, str):
+            self._fail("`\\import` takes one string literal naming an ad file", sid)
+        resolved = self._resolve_ad_file(path, sid)
+        chain = self.import_chain + (resolved,)
+        if resolved in self.import_chain or self.modules.get(resolved) is _IMPORTING:
+            self._fail(f"circular import: {' -> '.join(chain)}", sid)
+        record = self.modules.get(resolved)
+        if record is None:
+            record = self._evaluate_module(resolved, path, sid)
+        self._bind_imported(record, members, path, sid)
+
+    def pyimport(self, path: Any, members: tuple[str, ...], sid: int) -> None:
+        """`\\pyimport("math": \\sqrt, \\tau)` — resolve a Python module and bind the
+        named members into this environment. Callables bind as callables (the `\\py`
+        rule); every other member converts through the interop matrix or fails at the
+        import's span. Member selection is mandatory (there is no module value to
+        bind), and all members validate before any binds."""
+        if not isinstance(path, str):
+            self._fail(r"`\pyimport` takes one string literal naming a Python module", sid)
+        if not members:
+            self._fail(r'`\pyimport` binds members by name: \pyimport("math": \sqrt)', sid)
+        module = _resolve_dotted(path)
+        if module is _MISSING:
+            self._fail(f"`\\pyimport` cannot resolve `{path}`", sid)
+        if not isinstance(module, types.ModuleType):
+            self._fail(f"`{path}` is not a Python module", sid)
+        if len(set(members)) != len(members):
+            self._fail("duplicate member in `\\pyimport`", sid)
+        bound: list[tuple[str, Any]] = []
+        for name in members:
+            value = getattr(module, name, _MISSING)
+            if value is _MISSING:
+                self._fail(f"module `{path}` has no member `{_name_text(name)}`", sid)
+            if self._protected(name):
+                self._fail(f"`{_name_text(name)}` is a constant", sid)
+            if name in self.env:
+                self._fail(f"`{_name_text(name)}` is already bound", sid)
+            if callable(value):
+                bound.append((name, value))
+                continue
+            try:
+                bound.append((name, _to_ad(value)))
+            except NumError as e:
+                self._fail(f"member `{_name_text(name)}`: {e.args[0]}", sid)
+        for name, value in bound:
+            self.env[name] = value
+
+    def _resolve_ad_file(self, path: str, sid: int) -> str:
+        r"""The importing file's directory first, then the working directory; `".ad"`
+        is appended unless the path already carries it. A path that instead resolves
+        as a Python module gets a pointed hint — `\import` and `\pyimport` are
+        deliberately separate semantics."""
+        name = path if path.endswith(".ad") else f"{path}.ad"
+        searched: list[str] = []
+        for base in (self.base_dir, os.getcwd()):
+            if base is None:
+                continue
+            candidate = os.path.abspath(os.path.join(base, name))
+            if candidate in searched:
+                continue
+            searched.append(candidate)
+            if os.path.isfile(candidate):
+                return candidate
+        if _resolve_dotted(path) is not _MISSING:
+            self._fail(
+                f"`{path}` resolves to a Python module; Python imports use "
+                + r'`\pyimport("' + path + r'": \member)`', sid)
+        self._fail(f"no such ad file `{name}` (searched {', '.join(searched)})", sid)
+
+    def _evaluate_module(self, resolved: str, path: str, sid: int) -> dict:
+        """Read, compile, and execute an ad module in a fresh root environment, then
+        cache its environment in the session registry. `compile_source` is imported
+        late — the driver pairs frontend and exec and sits above this seam, so a
+        module-level import would be a cycle. Module outputs are discarded; a parse
+        or evaluation failure inside the module fails at the import's span."""
+        from .driver import compile_source
+        from .parser import ParseError
+        try:
+            with open(resolved, encoding="utf-8") as f:
+                source = f.read()
+        except OSError as e:
+            self._fail(f"cannot read `{resolved}`: {e.strerror or e}", sid)
+        try:
+            unit = compile_source(source)
+        except ParseError as e:
+            self._fail(f"error in `{path}`: {e.msg}", sid)
+        module_env: dict = {}
+        engine = Engine(module_env, unit.spans, unit.definitions, None, set(),
+                        self.modules, os.path.dirname(resolved),
+                        self.import_chain + (resolved,))
+        self.modules[resolved] = _IMPORTING
+        g: dict = {"_e": engine}
+        try:
+            exec(unit.code, g)  # noqa: S102 - generated from our own AST only
+        except EvalError as e:
+            del self.modules[resolved]
+            self._fail(f"error evaluating `{path}`: {e.msg}", sid)
+        except Exception as e:
+            del self.modules[resolved]
+            self._fail(f"internal error evaluating `{path}`: {type(e).__name__}: {e}", sid)
+        self.modules[resolved] = module_env
+        return module_env
+
+    def _bind_imported(self, module_env: dict, members: tuple[str, ...], path: str,
+                       sid: int) -> None:
+        """Copy bindings out of a (cached) module environment: every top-level name,
+        or only the selected members. Everything validates before anything binds, so
+        a bad member leaves the environment untouched rather than partially
+        imported. A name already bound to the *identical* cached value is a silent
+        no-op (re-import), any other collision a typed error."""
+        names = members if members else tuple(module_env)
+        if len(set(names)) != len(names):
+            self._fail("duplicate member in `\\import`", sid)
+        for name in names:
+            if name not in module_env:
+                self._fail(f"`{_name_text(name)}` is not defined in `{path}`", sid)
+            if self._protected(name):
+                self._fail(f"`{_name_text(name)}` is a constant", sid)
+            if name in self.env and self.env[name] is not module_env[name]:
+                self._fail(f"`{_name_text(name)}` is already bound", sid)
+        for name in names:
+            self.env[name] = module_env[name]
 
     def app(self, fn: Any, args: tuple[Any, ...], kwargs: dict[str, Any],
             sid: int) -> AdValue | str:

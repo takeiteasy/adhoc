@@ -40,6 +40,15 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   Python path to a callable (full trust — same power as running Python itself); arguments and
   results convert at the boundary (docs/numerics.md). Returned strings print display-only and
   cannot be bound.
+- Imports, statement-level and silent: `\import("lib")` binds the top-level names of `lib.ad`
+  (all of them, or only the listed members: `\import("lib": f, \fact)`), each file evaluating
+  once per session in a fresh root environment — imported functions keep the module's
+  environment as their closure, re-imports reuse the cache, cycles are typed errors, and
+  resolution searches the importing file's directory then the working directory.
+  `\pyimport("math": \hypot, \tau)` binds named Python-module members (callables as
+  callables, values through the conversion matrix); member selection is mandatory and
+  there are no module values or dotted attribute access (docs/grammar.md,
+  `## Modules and imports`).
 - Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`).
 - Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
 - User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
@@ -92,7 +101,8 @@ and closed.
 
 The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
 same way, and meaning comes from two places — the parser's closed set of special forms
-(`\sum`/`\prod`/`\lim` binders, call-shaped `\if`, `\py`, `\const`) and the prelude scope of
+(`\sum`/`\prod`/`\lim` binders, call-shaped `\if`, `\py`, `\const`, statement-shaped
+`\import`/`\pyimport`) and the prelude scope of
 built-in constants and function aliases (see docs/grammar.md, `## Constants and the
 prelude`). Everything else lexes cleanly and fails at evaluation as an unbound name, so
 later phases add bindings without touching the lexer.

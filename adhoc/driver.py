@@ -20,13 +20,18 @@ def compile_source(src: str) -> Compiled:
     return compile_program(parse_program(src))
 
 
-def execute(compiled: Compiled, env: dict, consts: set[str] | None = None) -> list[str]:
+def execute(compiled: Compiled, env: dict, consts: set[str] | None = None,
+            modules: dict | None = None, base_dir: str | None = None) -> list[str]:
     """Run a compiled unit against `env`, returning one formatted string per statement.
     `consts` is the session's set of user-declared constant names — pass the same set
     across calls (as the REPL does alongside `env`) so permanent immutability outlives
-    a single statement."""
+    a single statement. `modules` is the session's import registry and `base_dir` the
+    directory relative to which `\\import` resolves files (the script's directory in
+    script mode; None means the working directory) — pass the same dict across calls
+    so each ad module evaluates once per session."""
     g: dict = {}
-    g["_e"] = Engine(env, compiled.spans, compiled.definitions, consts=consts)
+    g["_e"] = Engine(env, compiled.spans, compiled.definitions, consts=consts,
+                     modules=modules, base_dir=base_dir)
     try:
         exec(compiled.code, g)  # noqa: S102 - generated from our own AST only
     except EvalError as e:
@@ -52,8 +57,9 @@ def _map_unexpected(e: Exception, compiled: Compiled) -> EvalError:
 
 
 def run_source(src: str, env: dict | None = None,
-               consts: set[str] | None = None) -> list[str]:
+               consts: set[str] | None = None, modules: dict | None = None,
+               base_dir: str | None = None) -> list[str]:
     """Convenience for callers that just want text in, strings out."""
     if env is None:
         env = {}
-    return execute(compile_source(src), env, consts)
+    return execute(compile_source(src), env, consts, modules, base_dir)

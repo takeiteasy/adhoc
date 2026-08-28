@@ -136,5 +136,8 @@ former is phase-independent, the latter rides phase 4.
   promote into phase 4 rather than past it.
 - **Arbitrary-precision float tier** — MPFR/gmpy2 behind the numeric seam with a `\prec(n)`
   directive (docs/numerics.md already anticipates the slot); makes RRA display tunable.
-- **User modules / custom preludes** — `\use("file.ad")` importing bindings; the
-  protected-name machinery generalizes to "this file's constants are protected on import".
+- **Module system growth** — `\import`/`\pyimport` exist (ad files and Python members,
+  statement-level, cached per session); what remains: imported constants joining the
+  protected set on import ("this file's constants are protected", generalizing the
+  prelude machinery), dotted attribute access on bound Python objects, and module
+  namespaces as values.

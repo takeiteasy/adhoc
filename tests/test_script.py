@@ -62,3 +62,21 @@ def test_emit_py_flag_dumps_generated_source_to_stderr(tmp_path):
     assert r.returncode == 0
     assert "_e.out(_e.add(1, 2," in r.stderr
     assert r.stdout == "< = 3\n"
+
+
+def test_script_import_resolves_against_the_script_directory(tmp_path):
+    (tmp_path / "lib.ad").write_text("k ≡ 5; f(x) = x + k")
+    path = tmp_path / "main.ad"
+    path.write_text('\\import("lib"); f(3)\n')
+    r = run_cli(["run", str(path)])
+    assert r.returncode == 0
+    assert r.stdout == "< = 8\n"
+
+
+def test_script_import_failure_stops_the_run_with_a_diagnostic(tmp_path):
+    path = tmp_path / "main.ad"
+    path.write_text('\\import("nowhere"); 1\n')
+    r = run_cli(["run", str(path)])
+    assert r.returncode != 0
+    assert "no such ad file `nowhere.ad`" in r.stdout
+    assert "^" in r.stdout  # the diagnostic points at the import

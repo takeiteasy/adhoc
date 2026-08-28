@@ -177,3 +177,28 @@ class ConstAssign(Node):
 @dataclass(frozen=True)
 class Seq(Node):
     statements: tuple[Node, ...]
+
+
+@dataclass(frozen=True)
+class Import(Node):
+    """`\\import("lib")` / `\\import("lib": f, \\fact)` — statement-level: evaluate an
+    ad source file once per session in a fresh root environment and bind its top-level
+    names into the importing environment (all of them, or only the listed members).
+    Imported functions keep the module's environment as their closure, so their reads
+    of module globals stay live. Imports produce no output; an import is a statement,
+    never an expression."""
+
+    path: str
+    members: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PyImport(Node):
+    """`\\pyimport("math": \\sqrt, \\tau)` — statement-level: resolve a Python module
+    and bind the named members into the importing environment. Callable members bind
+    as callables (the `\\py` rule); every other member converts through the interop
+    matrix or fails at the import's span. Member selection is mandatory — there is no
+    module value to bind, and dotted attribute access does not exist in the grammar."""
+
+    path: str
+    members: tuple[str, ...]
