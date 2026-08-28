@@ -10,6 +10,7 @@ precedence table in docs/grammar.md:
     unary       ::= "-" unary | power ;
     power       ::= postfix ("^" unary)? ;  -- right-associative
     postfix     ::= atom ("(" args ")")* ;  -- trailers attach only to name-ish heads
+    args        ::= (expr | string | kwarg) ("," ...)* ;   kwarg ::= name "=" value ;
     atom        ::= number | identifier | "\\"-name | "(" expr ")" ;
 
 `power`'s exponent recurses into `unary`, not `power` — that's what makes `2^-1` parse
@@ -80,6 +81,7 @@ from .syntax import (
     Fold,
     FuncDef,
     IfExpr,
+    KwArg,
     Limit,
     Node,
     NumLit,
@@ -405,22 +407,36 @@ class _Parser:
             return self._special_form(node, fold_op)
         while isinstance(node, _Parser._NAMEISH) and isinstance(self.peek(), LParen):
             self.advance()
-            args: list[Node] = []
+            args: tuple[Node, ...] = ()
+            kwargs: tuple[KwArg, ...] = ()
             if not isinstance(self.peek(), RParen):  # `f()` — zero-arg calls are legal
-                args.append(self.call_arg())
+                items: list[Node] = [self.call_arg()]
                 while isinstance(self.peek(), Comma):
                     self.advance()
-                    args.append(self.call_arg())
+                    items.append(self.call_arg())
+                # Positionals and kwargs collect separately (their relative source
+                # order carries no meaning); duplicate kwarg names are a parse error
+                # rather than Python's silent last-one-wins.
+                seen: set[str] = set()
+                for item in items:
+                    if isinstance(item, KwArg):
+                        if item.name in seen:
+                            raise ParseError(
+                                f"duplicate keyword argument `{item.name}`", item.span)
+                        seen.add(item.name)
+                args = tuple(i for i in items if not isinstance(i, KwArg))
+                kwargs = tuple(i for i in items if isinstance(i, KwArg))
             rparen = self.expect(RParen, "`)`")
-            node = Call(head=node, args=tuple(args), span=node.span.to(rparen.span))
+            node = Call(head=node, args=args, kwargs=kwargs,
+                        span=node.span.to(rparen.span))
             if (
                 isinstance(node.head, BackslashRef)
                 and node.head.name == "py"
-                and len(node.args) != 1
+                and (len(node.args) != 1 or node.kwargs)
             ):
                 raise ParseError("`\\py` takes exactly one argument", node.span)
             if isinstance(node.head, BackslashRef) and node.head.name == "if":
-                if len(node.args) not in (2, 3):
+                if node.kwargs or len(node.args) not in (2, 3):
                     raise ParseError("`\\if` takes two or three arguments", node.span)
                 node = IfExpr(node.span, node.args[0], node.args[1],
                               node.args[2] if len(node.args) == 3 else None)
@@ -478,9 +494,22 @@ class _Parser:
             case _:
                 return "?"
 
-    # args ::= expr | string — a string may be a whole argument (the `\py` case) but
-    # never an operand inside one: `"a" + 1` stays a parse error at the quote.
+    # args ::= (expr | string | kwarg) ("," ...)* — a string may be a whole argument
+    # (the `\py` case) but never an operand inside one: `"a" + 1` stays a parse error
+    # at the quote. A kwarg is `name=value`; the `=` seen directly after a name token
+    # commits it, and bare `=` cannot occur inside a general expression, so nothing
+    # else can want that shape. Multi-character names take the `\` sigil (`\dpi=300`).
     def call_arg(self) -> Node:
+        tok = self.peek()
+        if isinstance(tok, (Ident, Backslash)) and isinstance(self.look(1), Eq):
+            name_tok = self.advance()
+            self.advance()  # `=`
+            value = self.call_value()
+            name = name_tok.ch if isinstance(name_tok, Ident) else name_tok.name
+            return KwArg(name=name, value=value, span=name_tok.span.to(value.span))
+        return self.call_value()
+
+    def call_value(self) -> Node:
         if isinstance(self.peek(), Str):
             tok = self.advance()
             return StrLit(text=tok.text, span=tok.span)

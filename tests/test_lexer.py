@@ -62,6 +62,21 @@ def test_user_defined_backslash_names_lex_cleanly():
     assert toks[0].name == "bogus"
 
 
+def test_underscores_continue_backslash_names():
+    # `_` joins multi-character names (`\rel_tol`) but cannot start one — a bare
+    # `_` outside a `\`-name stays an unexpected character.
+    toks = tokenize("\\rel_tol 1")
+    assert isinstance(toks[0], Backslash)
+    assert toks[0].name == "rel_tol"
+    assert toks[0].span == Span(0, 8)
+
+
+def test_bare_underscore_is_still_unexpected():
+    with pytest.raises(LexError) as e:
+        tokenize("_")
+    assert "unexpected character" in e.value.msg
+
+
 def test_bare_backslash_errors():
     with pytest.raises(LexError) as e:
         tokenize("\\ ")

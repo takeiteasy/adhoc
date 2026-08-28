@@ -286,7 +286,10 @@ def tokenize(src: str) -> list[Token]:
 
         if c == "\\":
             j = i + 1
-            while j < n and entries[j][1].isalpha():
+            # Underscores join multi-character names (`\rel_tol`, `\my_var`): a `_`
+            # continues a name but cannot start one — a bare `_` is still an
+            # unexpected character.
+            while j < n and (entries[j][1].isalpha() or entries[j][1] == "_"):
                 j += 1
             end = entries[j][0] if j < n else eof_off
             name = src[i + 1 : j]

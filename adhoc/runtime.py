@@ -730,16 +730,22 @@ class Engine:
             self._fail(f"`{path}` is not callable", sid)
         return obj
 
-    def app(self, fn: Any, args: tuple[Any, ...], sid: int) -> AdValue | str:
-        """Postfix application `f(args)` lowered to one seam call, with dynamic
-        juxtaposition: a callable head applies; a non-callable head with exactly one
-        argument falls back to the paper product (`x(y+1)` is `x*(y+1)`); any other
-        non-callable shape fails at the call's span. The fallback means identical source
-        can read as product or application depending on what the head is bound to —
-        accepted deliberately (docs/grammar.md)."""
+    def app(self, fn: Any, args: tuple[Any, ...], kwargs: dict[str, Any],
+            sid: int) -> AdValue | str:
+        """Postfix application `f(args, \\name=value…)` lowered to one seam call, with
+        dynamic juxtaposition: a callable head applies; a non-callable head with exactly
+        one positional argument and no kwargs falls back to the paper product
+        (`x(y+1)` is `x*(y+1)`); any other non-callable shape fails at the call's span.
+        The fallback means identical source can read as product or application depending
+        on what the head is bound to — accepted deliberately (docs/grammar.md).
+        Kwargs pass through to Python callables as native keyword arguments
+        (`\\py("math.isclose")(1, 2, \\rel_tol=0.5)`); user-defined functions reject
+        them — their parameters are positional."""
         if callable(fn):
+            if kwargs and isinstance(fn, AdFunction):
+                self._fail("user-defined functions take positional arguments only", sid)
             try:
-                result = fn(*args)
+                result = fn(*args, **kwargs)
             except NumError:
                 raise
             except EvalError:
@@ -751,7 +757,7 @@ class Engine:
                 return _to_ad(result)
             except NumError as e:
                 self._fail(e.args[0], sid)
-        if len(args) == 1:
+        if not kwargs and len(args) == 1:
             return self.mul(fn, args[0], sid)
         self._fail(f"{nshow(fn)} is not a function", sid)
 

@@ -71,9 +71,11 @@ difference between them is *when* each calls it, not how the output looks.
   local frame with global read-through; body writes use `_e.set` and never escape. The user
   environment is a plain dict kept separate from exec globals. Callables bind like any
   value; strings never enter it.
-- Application lowers to `_e.app(head, args, sid)` with dynamic juxtaposition: callable
-  heads apply; a non-callable head with one argument falls back to multiplication;
-  anything else fails at the call's span. Definitions lower to callable `AdFunction` values;
+- Application lowers to `_e.app(head, args, kwargs, sid)` with dynamic juxtaposition:
+  callable heads apply (kwargs pass through as native Python keyword arguments); a
+  non-callable head with one positional argument and no kwargs falls back to
+  multiplication; anything else fails at the call's span. Definitions lower to callable
+  `AdFunction` values;
   each body has its own compiled code and span table, and recursion pre-binds the function
   name in the call frame. `\if` is a lazy compiler special form (not an eager ordinary call).
   `\py(path)` has its own seam method

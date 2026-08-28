@@ -11,6 +11,8 @@ from adhoc.syntax import (
     ConstAssign,
     Fold,
     FuncDef,
+    IfExpr,
+    KwArg,
     Limit,
     NumLit,
     Range,
@@ -250,6 +252,63 @@ def test_zero_arg_call():
     assert isinstance(node, Call)
     assert node.args == ()
     assert node.span == Span(0, 3)
+
+
+# --- keyword arguments in argument lists ---
+
+
+def test_kwarg_parses_into_kwarg_node():
+    node = parse_program('\\py("math.isclose")(1, 2, \\rel_tol=0.5)')
+    match node:
+        case Call(
+            head=Call(head=BackslashRef(name="py"),
+                      args=(StrLit(text="math.isclose"),)),
+            args=(NumLit(text="1"), NumLit(text="2")),
+            kwargs=(KwArg(name="rel_tol", value=NumLit(text="0.5")),),
+        ):
+            # `\rel_tol=0.5` — the kwarg span covers name through value.
+            assert node.kwargs[0].span == Span(26, 38)
+        case _:
+            pytest.fail(f"expected call with kwarg, got {node!r}")
+
+
+def test_single_char_kwarg_needs_no_sigil():
+    node = parse_program("f(x = 3)")
+    assert isinstance(node, Call)
+    assert node.args == ()
+    assert node.kwargs == (KwArg(name="x", value=NumLit(text="3", span=Span(6, 7)),
+                                 span=Span(2, 7)),)
+
+
+def test_positional_and_kwarg_source_order_carries_no_meaning():
+    node = parse_program("f(1,\\a=2,3)")
+    assert isinstance(node, Call)
+    assert node.args == (NumLit(text="1", span=Span(2, 3)), NumLit(text="3", span=Span(9, 10)))
+    assert node.kwargs == (KwArg(name="a", value=NumLit(text="2", span=Span(7, 8)),
+                                 span=Span(4, 8)),)
+
+
+def test_string_kwarg_value():
+    node = parse_program('f(\\mode="w")')
+    assert isinstance(node, Call)
+    assert node.args == ()
+    assert node.kwargs == (KwArg(name="mode", value=StrLit(text="w", span=Span(8, 11)),
+                                 span=Span(2, 11)),)
+
+
+def test_duplicate_kwarg_is_a_parse_error():
+    with pytest.raises(ParseError, match="duplicate keyword argument `a`"):
+        parse_program("f(\\a=1, \\a=2)")
+
+
+def test_py_rejects_kwargs():
+    with pytest.raises(ParseError, match="`\\\\py` takes exactly one argument"):
+        parse_program('\\py("math.sqrt", \\k=1)')
+
+
+def test_if_rejects_kwargs():
+    with pytest.raises(ParseError, match="`\\\\if` takes two or three arguments"):
+        parse_program("\\if(1 < 2, 1, 0, \\k=1)")
 
 
 def test_def_shape_parses_into_funcdef():

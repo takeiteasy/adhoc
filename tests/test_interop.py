@@ -194,6 +194,62 @@ def test_noncallable_head_with_wrong_arity_still_errors():
         assert e.value.msg == "3 is not a function"
 
 
+# --- keyword arguments pass through application ---
+
+
+def test_kwarg_reaches_python_callable():
+    assert last('\\py("int")("ff", \\base=16)') == "= 255"
+
+
+def test_numeric_kwarg_value_stays_exact():
+    # isclose(1, 1.001, rel_tol=1/100) is true; the kwarg value keeps its ad tier.
+    assert last('\\py("math.isclose")(1, 1.001, \\rel_tol=0.01)') == "= 1"
+
+
+def test_kwarg_on_bound_callable():
+    env: dict = {}
+    last('s = \\py("math.isclose")', env)
+    assert last('s(1, 1.5, \\abs_tol=1)', env) == "= 1"
+
+
+def test_string_kwarg_value_reaches_python(tmp_path, monkeypatch):
+    # The savefig shape from the tracker ticket: a Python side effect proves the
+    # string kwarg landed (mode="w" creates the file; the default "r" would not).
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(EvalError) as e:
+        run_source('\\py("open")("plot.svg", \\mode="w")')
+    assert "cannot convert a returned TextIOWrapper" in e.value.msg
+    assert (tmp_path / "plot.svg").exists()
+
+
+def test_kwarg_names_may_contain_underscores():
+    assert last('\\py("round")(3.14159, \\ndigits=2)') == "= 3.14"
+
+
+def test_kwarg_on_user_function_rejects():
+    env: dict = {}
+    run_source("f(x, y) = x + y", env)
+    with pytest.raises(EvalError) as e:
+        run_source("f(1, \\y=2)", env)
+    assert e.value.msg == "user-defined functions take positional arguments only"
+
+
+def test_kwarg_on_noncallable_head_is_not_a_function():
+    # The product fallback needs exactly one positional and no kwargs.
+    with pytest.raises(EvalError) as e:
+        run_source("x = 3; x(2, \\k=1)")
+    assert e.value.msg == "3 is not a function"
+
+
+def test_builtin_rejecting_kwargs_maps_to_call_span():
+    # Many C builtins take no keyword arguments at all; the TypeError reports at
+    # the call's span like any other callee failure.
+    with pytest.raises(EvalError) as e:
+        run_source('\\py("format")(3.14, \\format_spec=".2f")')
+    assert "TypeError" in e.value.msg
+    assert e.value.span == Span(0, 39)
+
+
 # --- function definitions ---
 
 

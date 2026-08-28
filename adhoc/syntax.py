@@ -115,14 +115,28 @@ class Limit(Node):
 
 
 @dataclass(frozen=True)
+class KwArg(Node):
+    """A `name=value` argument inside a call's argument list. Names are single-character
+    identifiers or `\\`-sigiled multi-character names (`\\dpi`); the value may be any
+    expression or a string literal (`\\mode="w"`). KwArgs pass through application to
+    Python callables as native keyword arguments; user-defined functions reject them."""
+
+    name: str
+    value: Node
+
+
+@dataclass(frozen=True)
 class Call(Node):
     """Postfix application `head(arg, ...)`. The syntactic rule: a trailer `(…)`
     attaches only to name-ish heads (Var/BackslashRef) or to another Call —
     number-headed parens stay juxtaposition (`2(x+1)` is still `2*(x+1)`). Whether the
-    call applies or falls back to multiplication is decided at evaluation."""
+    call applies or falls back to multiplication is decided at evaluation. Positional
+    args and kwargs are collected separately, so their relative source order carries no
+    meaning — Python's own binding rules decide what `f(2, \\a=1)` means."""
 
     head: Node
     args: tuple[Node, ...]
+    kwargs: tuple[KwArg, ...] = ()
 
 
 @dataclass(frozen=True)

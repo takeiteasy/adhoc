@@ -18,11 +18,12 @@ Lowering rules:
   declarations (`x ≡ e` / `\\const x = e`) through `_e.const_assign`. The user env is
   a plain dict the engine holds; it never mixes with the exec globals.
 - `\name` lowers to `_e.bref("name", sid)`; application lowers to `_e.app(head, args,
-  sid)`; `\\py(path)` is the one backslash name with semantics of its own and lowers to
-  `_e.py(path, sid)`. `FuncDef` registers a separately compiled body and lowers to
-  `_e.define(...)`; `\\if` lowers to lazy thunk calls. `Fold`/`Limit` likewise register
-  their bodies via `_compile_body` and lower to `_e.fold(...)`/`_e.limit(...)`, which
-  evaluate the body once per term/probe in a child engine frame.
+  kwargs, sid)` with the kwargs as a dict literal; `\\py(path)` is the one backslash name
+  with semantics of its own and lowers to `_e.py(path, sid)`. `FuncDef` registers a
+  separately compiled body and lowers to `_e.define(...)`; `\\if` lowers to lazy thunk
+  calls. `Fold`/`Limit` likewise register their bodies via `_compile_body` and lower to
+  `_e.fold(...)`/`_e.limit(...)`, which evaluate the body once per term/probe in a child
+  engine frame.
 - `Seq` flattens; each statement becomes one line, matching script mode's per-statement
   echo and the line-number gutter.
 """
@@ -215,13 +216,21 @@ class _Lowerer:
                 sid = self._push(span)
                 arg_exprs = [self.expr(a) for a in args]
                 return _call("py", [*arg_exprs, pyast.Constant(sid)])
-            case Call(head=head, args=args, span=span):
+            case Call(head=head, args=args, kwargs=kwargs, span=span):
                 head_expr = self.expr(head)
                 arg_exprs = [self.expr(a) for a in args]
+                # Kwargs lower to a dict literal: Python keyword arguments on the far
+                # side of `app`, keyed by the source-level names, always present so
+                # every application has the same generated shape.
+                kw_dict = pyast.Dict(
+                    keys=[pyast.Constant(kw.name) for kw in kwargs],
+                    values=[self.expr(kw.value) for kw in kwargs],
+                )
                 sid = self._push(span)
                 return _call(
                     "app",
-                    [head_expr, pyast.Tuple(elts=arg_exprs, ctx=pyast.Load()), pyast.Constant(sid)],
+                    [head_expr, pyast.Tuple(elts=arg_exprs, ctx=pyast.Load()), kw_dict,
+                     pyast.Constant(sid)],
                 )
             case _:
                 raise TypeError(f"no lowering for {node!r}")

@@ -33,7 +33,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Postfix application `f(x)`: name-headed parens parse as calls; at evaluation a callable
   head applies, and a non-callable head with exactly one argument falls back to the paper
   product (`x(y+1)` = `x*(y+1)`). Number-headed parens (`2(x+1)`) are always
-  juxtaposition. Zero-argument calls are legal.
+  juxtaposition. Zero-argument calls are legal. Keyword arguments pass through to Python
+  callables natively: `\py("int")("ff", \base=16)` → `= 255` (multi-character kwarg names
+  take the `\` sigil; user-defined functions take positional arguments only).
 - The `\py` escape hatch: `\py("math.sqrt")(2)` → `= 1.4142135623730951`. Resolves any dotted
   Python path to a callable (full trust — same power as running Python itself); arguments and
   results convert at the boundary (docs/numerics.md). Returned strings print display-only and
@@ -88,12 +90,12 @@ see `README.md`. This is a naming convention, not a claim that `ad` parses TeX: 
 layout or document commands, and the set of `\`-names with language-defined meaning is small
 and closed.
 
-The lexer itself carries no name table: any `\`+letters sequence tokenizes the same way, and
-meaning comes from two places — the parser's closed set of special forms (`\sum`/`\prod`/`\lim`
-binders, call-shaped `\if`, `\py`, `\const`) and the prelude scope of built-in constants and
-function aliases (see docs/grammar.md, `## Constants and the prelude`). Everything else lexes
-cleanly and fails at evaluation as an unbound name, so later phases add bindings without
-touching the lexer.
+The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
+same way, and meaning comes from two places — the parser's closed set of special forms
+(`\sum`/`\prod`/`\lim` binders, call-shaped `\if`, `\py`, `\const`) and the prelude scope of
+built-in constants and function aliases (see docs/grammar.md, `## Constants and the
+prelude`). Everything else lexes cleanly and fails at evaluation as an unbound name, so
+later phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
 

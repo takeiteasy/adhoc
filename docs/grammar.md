@@ -16,8 +16,9 @@ written against — it should stay in lockstep with the code.
 - An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
   This is what makes `ab` unambiguous as `a * b` — see below.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
-  Backslash names may be built-ins or user-defined names, including variables; an unbound
-  one fails at evaluation.
+  After the first character a name may continue with letters or underscores (`\rel_tol`,
+  `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
+  names, including variables; an unbound one fails at evaluation.
 - Operators: `+ - * / ^ < > <= >= = := ≡ == .. ( ) ,`. Statement separator: `;`.
   `==` is an ASCII alias for `≡` — it declares a constant, it never compares (see
   `## Constants and the prelude`).
@@ -48,7 +49,8 @@ power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
 trailer    ::= "(" args? ")" ;
 args       ::= arg ("," arg)* ;
-arg        ::= expr | string ;
+arg        ::= expr | string | kwarg ;
+kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= identifier "(" params? ")" ("=" | ":=") statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | identifier | "\"-name | "(" sequence ")" ;
@@ -125,6 +127,29 @@ deliberately: the alternative (static application) made every arithmetic `x(...)
 and multiplication-by-juxtaposition is the reading a calculator's users expect first.
 Rebinding a name from number to function flips old lines' meaning — visible in source, and
 the failure mode when it surprises you is a typed error, not a silent wrong value.
+
+### Keyword arguments
+
+Arguments may be given as `name=value` pairs, passed through application to Python
+callables as native keyword arguments:
+
+```
+\py("int")("ff", \base=16)                 ->  = 255
+\py("math.isclose")(1, 2, \rel_tol=0.5)    ->  = 1
+s = \py("math.isclose")
+s(1, 1.5, \abs_tol=1)                      ->  = 1
+\py("open")("plot.svg", \mode="w")         -- the savefig/export shape
+```
+
+Multi-character kwarg names take the `\` sigil like every other multi-character name
+(`\dpi=300`); a single-character name needs none (`s=10`). The value may be any expression
+or a string literal (`\mode="w"`). Positional arguments and kwargs collect separately, so
+their relative source order carries no meaning — Python's own binding rules decide what
+`f(2, \a=1)` binds to. A duplicate kwarg name is a parse error; kwargs reaching a
+user-defined function are a typed error (parameters are positional); a non-callable head
+with kwargs is `` `…` is not a function `` rather than the product fallback. Python
+callables that accept no keyword arguments (many C builtins) report their `TypeError` at
+the call's span like any other callee failure.
 
 Errors inside either reading point at the whole call node's span (wider than a bare binop's,
 the cost of deciding late). Applying a string result falls into the product path and dies as
@@ -214,8 +239,9 @@ Strings are **literals, not values**. There is no string type in the value model
 never enters the environment, cannot be bound, stored, concatenated, or computed on. They
 appear in exactly two places:
 
-1. **As a whole argument of a call** — the `\py("dotted.path")` case. The literal converts
-   directly to a native Python `str` at the boundary; no ad string value ever exists.
+1. **As a whole argument of a call** — the `\py("dotted.path")` case, positional or as a
+   kwarg value (`\py("open")("f.ad", \mode="r")`). The literal converts directly to a
+   native Python `str` at the boundary; no ad string value ever exists.
 2. **As a whole statement** — ignored, exactly like a comment:
    ```
    > "chapter 3: convergence"

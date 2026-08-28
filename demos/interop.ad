@@ -23,3 +23,8 @@ F(1, 3) + F(1, 6);
 -- strings are literals passed through to Python, never ad values
 l = \py("len");
 l("adhoc");
+
+-- keyword arguments pass through to Python natively (multi-char names take the \ sigil)
+\py("int")("ff", \base=16);
+c = \py("math.isclose");
+c(1, 1.001, \rel_tol=0.01);
