@@ -8,12 +8,14 @@ from adhoc.syntax import (
     BinOp,
     BinOperator as B,
     Call,
+    Compare,
     ConstAssign,
     Fold,
     FuncDef,
     IfExpr,
     KwArg,
     Limit,
+    NoOp,
     NumLit,
     Range,
     Seq,
@@ -521,7 +523,8 @@ def test_missing_body_after_closed_binder_is_incomplete():
 def test_non_binder_use_of_special_heads_is_a_usage_error():
     # Fold/limit heads are reserved special forms: a paren that is not the binder
     # shape is a usage error at the head, not an application of an unbound name.
-    for src, head in [("\\sum(2)", "\\sum"), ("Σ(x)", "Σ"), ("\\lim(2)", "\\lim")]:
+    # Aliased spellings report their canonical name (Σ normalizes to \sum).
+    for src, head in [("\\sum(2)", "\\sum"), ("Σ(x)", "\\sum"), ("\\lim(2)", "\\lim")]:
         with pytest.raises(ParseError, match="takes a binder as its first argument") as e:
             parse_program(src)
         assert head in e.value.msg
@@ -529,3 +532,153 @@ def test_non_binder_use_of_special_heads_is_a_usage_error():
     # unbound name at evaluation.
     node = parse_program("\\sum")
     assert isinstance(node, BackslashRef) and node.name == "sum"
+
+
+# --- ternary `cond ? a : b` ---
+
+
+def test_ternary_desugars_to_ifexpr():
+    node = parse_program("x > 0 ? 1 : -1")
+    assert isinstance(node, IfExpr)
+    assert isinstance(node.condition, Compare)
+    assert node.then_branch == NumLit(text="1", span=node.then_branch.span)
+    assert isinstance(node.otherwise, UnOp) and node.otherwise.op == UnaryOperator.NEG
+
+
+def test_ternary_is_right_associative():
+    node = parse_program("a > 0 ? 1 : b > 0 ? 2 : 3")
+    assert isinstance(node, IfExpr)
+    assert isinstance(node.otherwise, IfExpr)  # a ? 1 : (b ? 2 : 3)
+
+
+def test_ternary_middle_closes_at_first_free_colon():
+    node = parse_program("a > 0 ? b > 0 ? 1 : 2 : 3")
+    middle = node.then_branch
+    assert isinstance(middle, IfExpr) and isinstance(middle.otherwise, NumLit)
+    assert isinstance(node.otherwise, NumLit)  # the `: 3` belongs to the outer form
+
+
+def test_ternary_binds_looser_than_everything_else():
+    # Condition parses at the full expression level; branches may be ranges.
+    node = parse_program("1 + 1 > 1 ? 1..3 : 4..6")
+    assert isinstance(node, IfExpr)
+    assert isinstance(node.condition, Compare)
+    assert isinstance(node.then_branch, Range) and isinstance(node.otherwise, Range)
+
+
+def test_ternary_branches_are_lazy_ifexprs():
+    # Same AST as \if, so parenthesized sequence branches work identically.
+    node = parse_program("x > 0 ? (y = x^2; y + 1) : 0")
+    assert isinstance(node, IfExpr)
+    assert isinstance(node.then_branch, Seq)
+
+
+def test_ternary_incomplete_at_eof_offers_continuation():
+    for src in ["1 > 0 ? 2", "1 > 0 ? 2 :", "a > b ?"]:
+        with pytest.raises(IncompleteInput):
+            parse_program(src)
+
+
+def test_ternary_missing_colon_is_a_parse_error():
+    with pytest.raises(ParseError, match="expected `:`"):
+        parse_program("1 > 0 ? 2 3 )")
+
+
+def test_fold_body_extends_over_a_ternary():
+    # The greedy fold body is parsed with the full expression grammar, so a
+    # conditional needs no parens.
+    node = parse_program("\\sum(i=1..10) i > 5 ? i : 0")
+    assert isinstance(node, Fold)
+    assert isinstance(node.body, IfExpr)
+
+
+# --- name aliases (\alias / \dual) ---
+
+
+def test_alias_directive_is_a_noop_and_normalizes_later_statements():
+    node = parse_program("\\alias \\sum, σ; σ(i=1..3) i")
+    assert isinstance(node, Seq)
+    assert isinstance(node.statements[0], NoOp)
+    fold = node.statements[1]
+    assert isinstance(fold, Fold) and fold.op == B.ADD
+
+
+def test_alias_onto_single_char_canonical_yields_var():
+    node = parse_program("\\alias x, ξ; ξ + 1")
+    assert isinstance(node, Seq)
+    assert isinstance(node.statements[1], BinOp)
+    lhs = node.statements[1].lhs
+    assert isinstance(lhs, Var) and lhs.ch == "x"
+
+
+def test_seed_aliases_normalize_without_a_directive():
+    node = parse_program("π + Σ(i=1..1) Π(j=1..1) 1")
+    match node:
+        case BinOp(lhs=BackslashRef(name="pi")):
+            pass
+        case _:
+            pytest.fail(f"π did not normalize to the canonical name: {node!r}")
+    fold = node.rhs
+    assert isinstance(fold, Fold)
+
+
+def test_alias_requires_a_short_spelling():
+    with pytest.raises(ParseError, match="at least one short spelling"):
+        parse_program("\\alias \\sum")
+
+
+def test_alias_short_must_be_single_character():
+    with pytest.raises(ParseError, match="single-character"):
+        parse_program("\\alias \\sum, \\total")
+
+
+def test_alias_cannot_repurpose_a_protected_name():
+    with pytest.raises(ParseError, match="`e` is a constant"):
+        parse_program("\\alias x, e")
+
+
+def test_alias_conflict_with_another_canonical():
+    with pytest.raises(ParseError, match="already an alias of `sum`"):
+        parse_program("\\alias \\sum, σ; \\alias \\prod, σ")
+
+
+def test_spelling_directives_are_top_level_only():
+    with pytest.raises(ParseError, match="top-level directive"):
+        parse_program("f(x) = (\\alias σ, \\sum; x)")
+    with pytest.raises(ParseError, match="top-level directive"):
+        parse_program("f(x) = (\\dual σ, ς = 1; x)")
+
+
+def test_dual_var_defines_the_canonical_name():
+    node = parse_program("\\dual \\alpha, α = 3.14")
+    assert isinstance(node, Assign) and node.name == "alpha"
+
+
+def test_dual_function_shares_params_and_body():
+    node = parse_program("\\dual \\fact, φ(n) = n")
+    assert isinstance(node, FuncDef) and node.name == "fact"
+    assert node.params == ("n",)
+
+
+def test_dual_needs_exactly_two_names():
+    for src in ["\\dual \\alpha = 1", "\\dual \\alpha, α, β = 1"]:
+        with pytest.raises(ParseError, match="exactly one short spelling"):
+            parse_program(src)
+
+
+def test_alias_map_writeback_is_atomic():
+    from adhoc.parser import ALIAS_SEED
+
+    session = dict(ALIAS_SEED)
+    with pytest.raises(ParseError):
+        parse_program("\\alias \\alpha, α; 1 +", session)
+    assert "α" not in session  # failed parse leaves the session map untouched
+    parse_program("\\alias \\alpha, α", session)
+    assert session["α"] == "alpha"
+
+
+def test_session_aliases_are_not_implicit():
+    # A map only applies when passed: scripts and modules parse with the seed
+    # alone, so a session alias never leaks across a unit boundary.
+    node = parse_program("α")
+    assert isinstance(node, Var) and node.ch == "α"

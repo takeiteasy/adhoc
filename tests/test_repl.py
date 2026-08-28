@@ -83,3 +83,26 @@ def test_bare_string_statement_echoes_nothing(tmp_path):
     out = run_repl('"just a note"\n2\n', tmp_path).stdout
     assert "< = 2" in out
     assert "< = \"just a note\"" not in out
+
+
+def test_alias_declared_in_repl_persists_across_inputs(tmp_path):
+    # The session alias map rides alongside env/consts/modules: a `\alias` on one
+    # line normalizes spellings on every later line.
+    out = run_repl("\\alias \\sum, σ\nσ(i=1..3) i\n", tmp_path).stdout
+    assert "ERROR" not in out
+    assert "< = 6" in out
+
+
+def test_dual_persists_and_reads_through_both_spellings(tmp_path):
+    out = run_repl("\\dual \\alpha, α = 3.14\nα\n\\alpha\n", tmp_path).stdout
+    assert "ERROR" not in out
+    assert "< = 3.14" in out
+    assert out.count("= 3.14") == 3  # definition echo + both reads
+
+
+def test_alias_survives_incomplete_then_completed_input(tmp_path):
+    # A declaration straddling the continuation prompt still lands once complete,
+    # and the failed partial never committed a half-declaration.
+    out = run_repl("\\alias \\sum,\nσ\nσ(i=1..2) i\n", tmp_path).stdout
+    assert ". " in out  # the partial line offered a continuation
+    assert "< = 3" in out

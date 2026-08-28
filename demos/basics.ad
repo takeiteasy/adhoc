@@ -30,9 +30,27 @@ r = 2;
 \sqrt(2);
 \sin(0);
 
+-- the non-finite floats are nameable prelude constants (IEEE semantics);
+-- range bounds must be finite — `a..` is the infinite range form
+\inf;
+-\inf;
+\nan;
+
+-- the ternary `c ? a : b` is the lazy `\if` in operator spelling
+r > 0 ? r : -r;
+\sum(i=1..10) i > 5 ? i : 0;
+
 -- ≡ (ASCII alias ==, keyword \const) declares a name that can never be rebound;
 -- note that == declares, it never compares
 -- (function definitions consume the rest of a script as their body, so defs
 -- belong in REPL input; bindings are fine here)
 φ ≡ 1.6180339887498948;
 φ;
+
+-- name aliases: Σ is \sum by seed; \alias declares your own short spelling.
+-- \dual defines a name under two spellings at once (the short form reads,
+-- assigns, and compares as the very same binding)
+\alias \prod, ρ;
+ρ(j=1..4) j;
+\dual \golden, γ = φ;
+γ;

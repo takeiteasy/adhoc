@@ -163,6 +163,17 @@ class GreaterEq(Token):
 
 
 @dataclass(frozen=True)
+class Question(Token):
+    """The ternary conditional's opening mark: `cond ? a : b` (docs/grammar.md).
+    Desugars to the same lazy IfExpr as `\\if`; `:` closes it in expression position
+    and keeps its import-only meaning everywhere else."""
+
+    @property
+    def describe(self) -> str:
+        return "`?`"
+
+
+@dataclass(frozen=True)
 class LParen(Token):
     @property
     def describe(self) -> str:
@@ -226,6 +237,7 @@ _SINGLE_CHAR_TOKENS = {
     ")": RParen,
     ";": Semi,
     ",": Comma,
+    "?": Question,
 }
 
 

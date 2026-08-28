@@ -19,7 +19,7 @@ from .compiler import compile_program
 from .driver import execute
 from .lexer import Eof, LexError, tokenize
 from .output import print_eval_error, print_parse_error
-from .parser import IncompleteInput, ParseError, parse_program
+from .parser import ALIAS_SEED, IncompleteInput, ParseError, parse_program
 from .runtime import EvalError
 
 _EOF = object()
@@ -74,6 +74,7 @@ def run_repl(emit_py: bool = False) -> int:
     env: dict = {}
     consts: set = set()  # user-declared constant names, protected for the session
     modules: dict = {}  # session import registry: `\import` evaluates each file once
+    aliases: dict = dict(ALIAS_SEED)  # session alias map; `\alias`/`\dual` extend it
     pending = ""
 
     while True:
@@ -85,7 +86,7 @@ def run_repl(emit_py: bool = False) -> int:
                 # Re-parse the buffered statement so its (still incomplete) diagnostic
                 # renders instead of exiting silently mid-statement.
                 try:
-                    parse_program(pending)
+                    parse_program(pending, aliases, consts)
                 except ParseError as e:
                     print_parse_error(pending, e)
             print()
@@ -109,7 +110,7 @@ def run_repl(emit_py: bool = False) -> int:
             continue
 
         try:
-            node = parse_program(source)
+            node = parse_program(source, aliases, consts)
         except IncompleteInput:
             pending = source
             continue

@@ -23,9 +23,11 @@ compatibility. See [`docs/language.md`](docs/language.md) for what's real today,
 ## Status
 
 Core phase 0 plus phase-1 language: a REPL and script runner that evaluate arithmetic exactly
-(`1/3 + 1/3 + 1/3` is `1`, not `0.999...`), with assignment, force-reassignment, caret-pointing
+(`1/3 + 1/3 + 1/3` is `1`, not `0.999...`), with assignment, caret-pointing
 error diagnostics, postfix application (`f(x)`), functions with local scoping, lazy conditionals
-(`\if`), real booleans with `\true`/`\false`, permanently-immutable constants (`φ ≡ 1.618...`),
+(`\if`, plus the ternary spelling `c ? a : b`), real booleans with `\true`/`\false`,
+permanently-immutable constants (`φ ≡ 1.618...`), name aliases (`Σ` is `\sum`; declare your
+own with `\alias`, or define both spellings at once with `\dual \alpha, α = 3.14`),
 a protected prelude scope (`π`, `\sqrt`, `\sin`, ...), and the `\py("math.sqrt")(2)` escape
 hatch into Python — full trust, native conversion
 both ways, with keyword arguments at any application site (`\py("int")("ff", \base=16)`)

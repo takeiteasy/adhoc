@@ -86,6 +86,25 @@ than inheriting the Python default:
 | float power overflow | unbounded exponent range | raises `OverflowError` | saturates to signed infinity |
 | negative base, fractional exponent | `NaN` | returns a `complex` | `NaN` |
 
+## Non-finite values
+
+The float tier carries IEEE non-finite values under the pinned semantics above:
+`0.0/0.0` → `NaN`, `1.0/0.0` → signed `Inf`, float overflow saturates. `\inf` and
+`\nan` name them as protected prelude constants (`-\inf` is unary minus on `\inf`).
+They are ordinary float values — they bind, propagate through arithmetic, and are
+rejected anywhere a finite number is required:
+
+- Assign-or-check `=` is IEEE-strict: NaN never equals itself, so `x = \nan` always
+  prints `false` even when `x` is NaN (matching MPFR/rug). Comparisons are all
+  `false` on NaN, also per IEEE. There is no direct NaN test today.
+- Conditions must be booleans — no numeric truthiness. `\if(\nan, ...)` is a typed
+  error exactly like `\if(0, ...)` (docs/grammar.md, `## Functions and conditionals`).
+- Range bounds must be finite: `1..\inf` and `\inf..3` are typed errors — `a..` is
+  the language's infinite range form. A non-finite endpoint in the finite-range loop
+  would iterate forever, or exact-accumulate rationals that never converge.
+- The convergence riders reject non-finite partials (`\sum`) and anchors (`\lim`),
+  as before.
+
 ## Display
 
 Exact rationals display as `a/b` (`1/3` prints `1/3`, not `0.333...`) — the collapse step

@@ -185,6 +185,13 @@ class Seq(Node):
 
 
 @dataclass(frozen=True)
+class NoOp(Node):
+    """A statement that binds no name and produces no value: the parse-time
+    directive statements (`\\alias`, `\\dual`'s declaration half is folded into its
+    definition node). Lowers to `pass` exactly like a lone string statement."""
+
+
+@dataclass(frozen=True)
 class Import(Node):
     """`\\import("lib")` / `\\import("lib": f, \\fact)` — statement-level: evaluate an
     ad source file once per session in a fresh root environment and bind its top-level

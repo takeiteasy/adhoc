@@ -57,25 +57,33 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   semicolon-sequenced bodies, first-class function values, and recursion.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
 - Booleans are real values: comparisons produce them, arithmetic rejects them, `\if`
-  consumes them, and `\true`/`\false` are bound constants.
+  consumes them, and `\true`/`\false` are bound constants. There is no numeric
+  truthiness — a number is never a condition (`\if(0, 1, 2)` is a typed error).
 - Lazy conditionals: `\if(condition, then)` and `\if(condition, then, otherwise)`. A false
   two-argument conditional is a statement-level no-op; parenthesized sequences such as
-  `(a = 1; a + 1)` support multi-statement branches.
+  `(a = 1; a + 1)` support multi-statement branches. The ternary `c ? a : b` is the same
+  lazy conditional in operator spelling (right-associative, loosest expression precedence).
 - Constant declarations: `c ≡ 5`, `c == 5` (ASCII alias — declares, never compares), or
   `\const c = 5` declare permanently-immutable globals —
   no `=`, local assignment, parameter, or binder can ever rebind the name, and
   `\const f(x) = ...` declares an immutable function the same way.
-- A protected prelude scope: `π`/`\pi`, `e`, `\true`/`\false`, and the `\sin`, `\cos`,
-  `\tan`, `\ln`, `\sqrt` function aliases (the plain `math.*` callables, float tier).
+- A protected prelude scope: `π`/`\pi`, `e`, `\inf`, `\nan`, `\true`/`\false`, and the
+  `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function aliases (the plain `math.*`
+  callables, float tier).
   Prelude names can never be rebound or shadowed, and unicode/ASCII spellings are one and
-  the same value (`π` and `\pi` are a single constant).
+  the same value (`π` and `\pi` are a single constant, via the name alias map).
 - Lazy arithmetic ranges: `a..b` is an inclusive step-1 range, `a..` is infinite, and
   `a,c..b` / `a,c..` infer the step as `c-a`. Finite ranges stop before crossing an
   unreachable endpoint; ranges display as `<range ...>` and can be assigned.
 - Folds: `\sum(i=1..10) i^2` → `= 385` and `\prod(j=1..5) j` → `= 120`, with the unicode
   spellings `Σ` and `Π`. The loop variable scopes like a function parameter (reads fall
   through, writes stay local, nothing leaks). Finite ranges accumulate exactly.
-- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
+- Name aliases: one name owns several spellings — `Σ` is `\sum`, `π` is `\pi`, and
+  `\alias \sum, σ` declares your own for the session (declare-before-use, top-level
+  only, protected names repurposed by no one; docs/grammar.md, `## Name aliases`).
+- Dual-form definitions: `\dual \alpha, α = 3.14` and `\dual \fact, φ(n) = ...` define
+  the canonical name and register its short spelling in one statement; both spellings
+  read, assign, and assign-or-check as the same binding.- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
   — approximate iteration in the float tier until values stabilize within tolerance,
   erroring at the iteration cap rather than returning a misleading partial (`\sum(i=1..) i`
   errors; docs/numerics.md).
@@ -102,9 +110,11 @@ layout or document commands, and the set of `\`-names with language-defined mean
 and closed.
 
 The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
-same way, and meaning comes from two places — the parser's closed set of special forms
+same way, and meaning comes from three places — the parser's closed set of special forms
 (`\sum`/`\prod`/`\lim` binders, call-shaped `\if`, `\py`, `\const`, statement-shaped
-`\import`/`\pyimport`) and the prelude scope of
+`\import`/`\pyimport`), the session alias map that normalizes short spellings to canonical
+names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`), and
+the prelude scope of
 built-in constants and function aliases (see docs/grammar.md, `## Constants and the
 prelude`). Everything else lexes cleanly and fails at evaluation as an unbound name, so
 later phases add bindings without touching the lexer.

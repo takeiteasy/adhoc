@@ -66,13 +66,16 @@ not exist in the grammar — identifiers are one character):
 
 ## The prelude
 
-A built-in scope present in every session (`PRELUDE` below): constants (`π`/`\\pi`,
-`e`, `\\true`, `\\false`) and py-function aliases (`\\sin`, `\\cos`, `\\tan`, `\\ln`,
-`\\sqrt` — plain `math.*` callables, float tier; symbolic closed forms are phase 2).
-Every unicode-named builtin is bound under both spellings to the same object (`π` and
-`\\pi` are one constant, not two). Prelude names are permanently protected — they can
-never be rebound or shadowed, so a parameter, local, or binder named like a prelude
-entry is a redefinition error, and every read of a prelude name yields the same value.
+A built-in scope present in every session (`PRELUDE` below): constants (`\\pi`,
+`e`, `\\inf`, `\\nan`, `\\true`, `\\false`) and py-function aliases (`\\sin`, `\\cos`,
+`\\tan`, `\\ln`, `\\sqrt` — plain `math.*` callables, float tier; symbolic closed forms
+are phase 2).
+Unicode spellings of prelude names (`π`, `Σ`, `Π`) are not separate keys: the parser's
+alias map normalizes them to the canonical `\\`-name before evaluation, so `π` and
+`\\pi` are one constant, not two (docs/grammar.md, `## Name aliases`). Prelude names
+are permanently protected — they can never be rebound or shadowed, so a parameter,
+local, or binder named like a prelude entry is a redefinition error, and every read
+of a prelude name yields the same value.
 User-declared constants (`x ≡ e` / `\\const x = e`) join the protected set for the rest
 of the session; the set lives on the root `Engine` and is shared with every child frame.
 
@@ -125,9 +128,10 @@ _NUMERIC_TYPES = (int, float, Fraction)
 # aliases are the float-tier `math.*` callables themselves — the symbolic tier will
 # replace these bindings in place, users never rebind them.
 PRELUDE: dict[str, Any] = {
-    "π": math.pi,
     "pi": math.pi,
     "e": math.e,
+    "inf": math.inf,
+    "nan": math.nan,
     "true": True,
     "false": False,
     "sin": math.sin,
@@ -555,6 +559,10 @@ class Engine:
             self._fail(r'`\import` reads an ad file: \import("lib") or \import("lib": f)', sid)
         if name == "pyimport":
             self._fail(r'`\pyimport` binds Python members: \pyimport("math": \sqrt)', sid)
+        if name == "alias":
+            self._fail("`\\alias` declares short spellings at top level: \\alias \\sum, σ", sid)
+        if name == "dual":
+            self._fail("`\\dual` defines a name under two spellings: \\dual \\alpha, α = 3.14", sid)
         value = self._lookup(name)
         if value is _MISSING:
             self._fail(f"`\\{name}` is not bound", sid)
@@ -633,6 +641,16 @@ class Engine:
                 step = nsub(second, start)
             if end is not None:
                 _reject_non_numeric(end)
+                # A non-finite endpoint would iterate forever (or never start) in
+                # the finite-range loop; `a..` is the language's infinite form.
+                if isinstance(end, float) and not math.isfinite(end):
+                    raise NumError(
+                        "range end must be a finite number (`a..` is the infinite "
+                        "range form)")
+            if isinstance(step, float) and not math.isfinite(step):
+                raise NumError("range step must be a finite number")
+            if isinstance(start, float) and not math.isfinite(start):
+                raise NumError("range start must be a finite number")
             if step == 0:
                 raise NumError("range step cannot be zero")
             return RangeValue(start, step, end, second)

@@ -52,6 +52,7 @@ from .syntax import (
     Import,
     Limit,
     Node,
+    NoOp,
     NumLit,
     PyImport,
     Range,
@@ -140,7 +141,7 @@ class _Lowerer:
                 sid = self._push(span)
                 return pyast.unparse(_call("pyimport",
                     [pyast.Constant(path), pyast.Constant(members), pyast.Constant(sid)]))
-            case StrLit():
+            case StrLit() | NoOp():
                 # A lone string is a comment-like no-op; `pass` keeps the one-line-per-
                 # statement invariant that the lineno ↔ span table depends on.
                 return "pass"

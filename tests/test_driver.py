@@ -7,9 +7,10 @@ from adhoc.runtime import EvalError
 from adhoc.span import Span
 
 
-def last(src: str, env: dict | None = None, consts: set | None = None) -> str:
+def last(src: str, env: dict | None = None, consts: set | None = None,
+         aliases: dict | None = None) -> str:
     """Mirror interp.rs's run(...).format(): only the final statement's result."""
-    return run_source(src, env, consts)[-1]
+    return run_source(src, env, consts, aliases=aliases)[-1]
 
 
 # --- ports of interp.rs's test suite ---
@@ -314,9 +315,11 @@ def test_prelude_constants_are_bound():
 
 
 def test_unicode_and_ascii_prelude_names_share_one_value():
-    import adhoc.runtime as runtime
-
-    assert runtime.PRELUDE["π"] is runtime.PRELUDE["pi"]
+    # The sharing is a parse-time alias (π normalizes to \pi), not two prelude
+    # keys — both spellings read one value, and neither can be rebound.
+    assert last("π") == last("\\pi") == "= 3.141592653589793"
+    with pytest.raises(EvalError, match="is a constant"):
+        run_source("π = 3")
 
 
 def test_prelude_py_function_aliases():
@@ -329,6 +332,23 @@ def test_prelude_py_function_aliases():
     # They compose with the rest of the language.
     out = last("\\lim(x=0) \\sin(x)/x")
     assert abs(float(out[2:]) - 1.0) <= 1e-9
+
+
+def test_prelude_inf_and_nan_constants():
+    # The non-finite floats, nameable at last: ordinary protected prelude values
+    # with pinned IEEE semantics (docs/numerics.md).
+    assert last("\\inf") == "= Inf"
+    assert last("-\\inf") == "= -Inf"
+    assert last("\\nan") == "= NaN"
+    assert last("\\inf + 1") == "= Inf"
+    assert last("1/\\inf") == "= 0.0"
+    assert last("x = \\inf; x = \\inf") == "true"   # Inf equals itself (IEEE)
+    assert last("x = \\nan; x = \\nan") == "false"  # NaN never equals itself (IEEE)
+    with pytest.raises(EvalError, match="condition must be boolean"):
+        run_source("\\if(\\nan, 1, 2)")             # no numeric truthiness
+    for src in ["\\inf = 1", "\\nan = 1"]:
+        with pytest.raises(EvalError, match="is a constant"):
+            run_source(src)
 
 
 def test_prelude_names_cannot_be_rebound():
@@ -350,13 +370,14 @@ def test_prelude_names_cannot_be_shadowed_by_locals():
     run_source("f(x) = π = 1; x", env)  # definition succeeds; the body is never run
     with pytest.raises(EvalError) as e:
         run_source("f(5)", env)
-    assert e.value.msg == "`π` is a constant"
+    # The alias mechanism normalizes π to the canonical name; diagnostics echo it.
+    assert e.value.msg == "`pi` is a constant"
 
 
 def test_prelude_names_cannot_be_binder_variables():
-    with pytest.raises(EvalError, match="`π` is a constant"):
+    with pytest.raises(EvalError, match="`pi` is a constant"):
         run_source("\\sum(π=1..2) π")
-    with pytest.raises(EvalError, match="`π` is a constant"):
+    with pytest.raises(EvalError, match="`pi` is a constant"):
         run_source("\\lim(π=0) π")
 
 
@@ -461,3 +482,71 @@ def test_const_declarations_are_top_level_only():
 def test_multi_char_function_definitions_echo_single_sigil():
     # assign's _name_text already sigilates; the echoed line shows one backslash.
     assert run_source("\\fact(n) = n") == ["\\fact = <fn \\fact(n)>"]
+
+
+# --- ternary `cond ? a : b` ---
+
+
+def test_ternary_selects_lazily():
+    # The unselected branch never evaluates — 1/0 would die if it did.
+    assert last("1 > 0 ? 1 : 1/0") == "= 1"
+    assert last("1 > 2 ? 1/0 : 5") == "= 5"
+
+
+def test_ternary_condition_must_be_boolean():
+    with pytest.raises(EvalError, match="condition must be boolean"):
+        run_source("1 ? 2 : 3")
+
+
+def test_ternary_inside_fold_body():
+    assert last("\\sum(i=1..10) i > 5 ? i : 0") == "= 40"
+
+
+# --- name aliases ---
+
+
+def test_user_alias_drives_folds_and_reads():
+    assert last("\\alias \\sum, σ; σ(i=1..4) i") == "= 10"
+
+
+def test_alias_takes_effect_from_the_next_statement():
+    # Declare-before-use: a use parsed before the declaration reads the raw
+    # spelling, which no declaration retroactively renames.
+    with pytest.raises(EvalError, match=r"`\\sum` is not bound"):
+        run_source("σ = 5; \\alias \\sum, σ; σ")
+
+
+def test_alias_bare_heads_report_usage():
+    # `\alias`/`\dual` commit only before a name; anywhere else the head stays an
+    # ordinary unbound name and evaluation reports the usage message.
+    for head, usage in [("alias", "declares short spellings"),
+                        ("dual", "two spellings")]:
+        with pytest.raises(EvalError, match=usage):
+            run_source(f"\\{head} + 1")
+
+
+def test_dual_binds_one_name_under_two_spellings():
+    out = run_source("\\dual \\alpha, α = 3.14; α + \\alpha")
+    assert out[0] == "\\alpha = 3.14"
+    assert out[-1] == "= 6.28"
+
+
+def test_dual_assign_or_check_goes_through_either_spelling():
+    from adhoc.parser import ALIAS_SEED
+
+    env: dict = {}
+    aliases = dict(ALIAS_SEED)
+    run_source("\\dual \\alpha, α = 3.14", env, aliases=aliases)
+    # The alias map is session state like env: thread it and both spellings
+    # assign-or-check against the one binding.
+    assert last("α = 3.14", env, aliases=aliases) == "true"
+    assert last("\\alpha = 2", env, aliases=aliases) == "false"
+
+
+def test_dual_function_recurses_through_the_short_spelling():
+    from adhoc.parser import ALIAS_SEED
+
+    env: dict = {}
+    aliases = dict(ALIAS_SEED)
+    run_source("\\dual \\fact, φ(n) = n <= 1 ? 1 : n * φ(n - 1)", env, aliases=aliases)
+    assert last("φ(5)", env, aliases=aliases) == "= 120"

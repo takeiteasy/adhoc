@@ -198,6 +198,21 @@ def test_range_zero_step_is_rejected_by_engine():
         run_source("3,3..10")
 
 
+def test_non_finite_range_bounds_are_rejected():
+    # A non-finite bound would iterate forever (or never start) in the finite
+    # loop; `a..` is the language's infinite form (docs/numerics.md).
+    from adhoc.driver import run_source
+
+    with pytest.raises(EvalError, match="range end must be a finite"):
+        run_source("1..\\inf")
+    with pytest.raises(EvalError, match="range end must be a finite"):
+        run_source("1..\\nan")
+    with pytest.raises(EvalError, match="range start must be a finite"):
+        run_source("\\inf..3")
+    with pytest.raises(EvalError, match="range step must be a finite"):
+        run_source("1,\\inf..5")
+
+
 def test_values_are_plain_python_types():
     # The whole point of the seam mapping: adhoc values ARE int/Fraction/float, which is
     # what lets Python libraries consume them directly.

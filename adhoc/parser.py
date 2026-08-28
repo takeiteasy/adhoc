@@ -2,8 +2,9 @@
 precedence table in docs/grammar.md:
 
     program     ::= statement (";" statement)* ;
-    statement   ::= func-def | string | identifier "=" expr | expr ;
-    expr        ::= additive ;
+    statement   ::= func-def | const-stmt | string | identifier "=" expr | expr ;
+    expr        ::= ternary ;
+    ternary     ::= range ("?" ternary ":" ternary)? ;   -- lazy \\if spelling
     additive    ::= multiplicative (("+" | "-") multiplicative)* ;
     multiplicative ::= juxtaposed (("*" | "/") juxtaposed)* ;
     juxtaposed  ::= unary unary* ;          -- implicit multiplication
@@ -56,6 +57,7 @@ from .lexer import (
     Minus,
     Number,
     Plus,
+    Question,
     RParen,
     Semi,
     Slash,
@@ -68,6 +70,7 @@ from .lexer import (
     UnterminatedString,
     tokenize,
 )
+from .runtime import PRELUDE
 from .span import Span
 from .syntax import (
     Assign,
@@ -85,6 +88,7 @@ from .syntax import (
     KwArg,
     Limit,
     Node,
+    NoOp,
     NumLit,
     PyImport,
     Range,
@@ -111,11 +115,30 @@ class IncompleteInput(ParseError):
 
 _ATOM_STARTERS = (Number, Ident, Backslash, LParen)
 
+# Seed of the session alias map (short spelling → canonical name): the unicode
+# fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
+# hardcoded parser/prelude special cases (docs/grammar.md, `## Name aliases`).
+ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi"}
+
 
 class _Parser:
-    def __init__(self, tokens: list[Token]):
+    def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None,
+                 protected: set[str] | None = None):
         self.tokens = tokens
         self.pos = 0
+        # Working alias map: the session's map (if given) layered over the seed.
+        # `\alias`/`\dual` declarations mutate this dict; parse_program merges it
+        # back into the caller's map only on a fully successful parse.
+        self.aliases = dict(ALIAS_SEED)
+        if aliases:
+            self.aliases.update(aliases)
+        # Names a spelling declaration may not repurpose: the prelude plus the
+        # caller's session constants (the REPL passes its consts set).
+        self.protected = frozenset(PRELUDE) | (protected or set())
+        # Statement nesting depth: `\alias`/`\dual` are top-level directives —
+        # declaring one inside a function body or group would take effect at
+        # parse time whether or not the body ever runs.
+        self.depth = 0
 
     def peek(self) -> Token:
         return self.tokens[self.pos]
@@ -147,6 +170,25 @@ class _Parser:
 
     def _is_atom_starter(self) -> bool:
         return isinstance(self.peek(), _ATOM_STARTERS)
+
+    # -- alias normalization (docs/grammar.md, `## Name aliases`) ---------------
+    # A single-character spelling with an alias entry reads as its canonical name
+    # everywhere a name is consumed: Σ IS \sum, π IS \pi, not two names that happen
+    # to hold one value. `\`-names are already canonical and pass through.
+
+    def _canonical(self, spelling: str) -> str:
+        """The canonical name for a single-character spelling after alias
+        resolution; backslash names are canonical by construction."""
+        return self.aliases.get(spelling, spelling)
+
+    def _name_node(self, spelling: str, span: Span) -> Node:
+        """The read-side node for a name spelling post-normalization: a
+        single-character canonical name is a Var, a multi-character one a
+        BackslashRef — the language's own long/short name convention."""
+        canonical = self._canonical(spelling)
+        if len(canonical) == 1:
+            return Var(ch=canonical, span=span)
+        return BackslashRef(name=canonical, span=span)
 
     # program ::= statement (";" statement)* ;
     def program(self) -> Node:
@@ -180,12 +222,19 @@ class _Parser:
             and isinstance(self.peek2(), LParen)
         ):
             return self._import_statement(tok)
+        if (
+            isinstance(tok, Backslash)
+            and tok.name in ("alias", "dual")
+            and isinstance(self.peek2(), (Ident, Backslash))
+        ):
+            return self._spelling_statement(tok.name)
         if isinstance(tok, (Ident, Backslash)):
             if isinstance(self.peek2(), IdenticalTo):
                 ident_tok = self.advance()
                 self.advance()  # ≡
                 value = self.expr()
-                name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+                name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
+                        else ident_tok.name)
                 return ConstAssign(name=name, value=value,
                                    span=ident_tok.span.to(value.span))
             if isinstance(self.peek2(), Eq):
@@ -193,7 +242,8 @@ class _Parser:
                 self.advance()  # `=` — bind-or-check, there is no force spelling
                 value = self.expr()
                 span = ident_tok.span.to(value.span)
-                name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+                name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
+                        else ident_tok.name)
                 return Assign(name=name, value=value, span=span)
             if isinstance(self.peek2(), LParen):
                 saved = self.pos
@@ -212,7 +262,8 @@ class _Parser:
         if not isinstance(self.peek(), (Ident, Backslash)):
             raise self.error_at_current("expected a name after `\\const`")
         ident_tok = self.advance()
-        name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+        name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
+                else ident_tok.name)
         if isinstance(self.peek(), LParen):
             self.advance()
             params = self._func_params()
@@ -246,7 +297,8 @@ class _Parser:
             while True:
                 tok = self.peek()
                 if isinstance(tok, (Ident, Backslash)):
-                    members.append(tok.ch if isinstance(tok, Ident) else tok.name)
+                    members.append(self._canonical(tok.ch) if isinstance(tok, Ident)
+                                   else tok.name)
                     self.advance()
                 else:
                     raise self.error_at_current(
@@ -264,12 +316,88 @@ class _Parser:
         return cls(path=path_tok.text, members=tuple(members),
                    span=head.span.to(rparen.span))
 
+    # spelling-directive ::= "\\alias" name ("," name)+
+    #                      | "\\dual" name "," name params? "=" statement (";" statement)* ;
+    # Top-level parse-time directives (docs/grammar.md, `## Name aliases`): `\alias`
+    # declares short spellings for one canonical name, `\dual` declares the pair and
+    # defines the canonical name in the same statement. The declaration mutates the
+    # working alias map immediately — its effect starts with the next statement, so
+    # a spelling cannot be used before it is declared. `\dual` reuses the ordinary
+    # definition forms: the node binds the canonical name only; the short spelling
+    # reads (and assign-or-checks) as the very same name from then on.
+    def _spelling_statement(self, kind: str) -> Node:
+        head = self.advance()  # the `\alias` / `\dual` token
+        if self.depth > 0:
+            raise ParseError(
+                f"`\\{kind}` is a top-level directive: it cannot appear inside a "
+                "function body or parenthesized group", head.span)
+        names = self._collect_name_list()
+        if kind == "alias" and len(names) < 2:
+            raise self.error_at_current(
+                "`\\alias` declares a canonical name with at least one short "
+                "spelling: \\alias \\sum, σ")
+        if kind == "dual" and len(names) != 2:
+            raise self.error_at_current(
+                "`\\dual` pairs a canonical name with exactly one short spelling: "
+                "\\dual \\alpha, α = 3.14")
+        canonical_tok, canonical = names[0]
+        canonical_display = f"\\{canonical}" if len(canonical) > 1 else canonical
+        for short_tok, short in names[1:]:
+            if not isinstance(short_tok, Ident):
+                raise ParseError(
+                    "short spellings are single-character names: "
+                    f"\\{kind} {canonical_display}, σ — not {short_tok.describe}",
+                    short_tok.span)
+            if short == canonical:
+                raise ParseError(f"`{short}` already names itself", short_tok.span)
+            if short in self.protected:
+                raise ParseError(f"`{short}` is a constant", short_tok.span)
+            existing = self.aliases.get(short)
+            if existing is not None and existing != canonical:
+                raise ParseError(
+                    f"`{short}` is already an alias of `{existing}`", short_tok.span)
+            self.aliases[short] = canonical
+        end = names[-1][0]
+        if kind == "alias":
+            return NoOp(span=head.span.to(end.span))
+        # `\dual`: the definition tail after the pair. A parameter list makes it a
+        # function definition with the ordinary greedy `;`-separated body; without
+        # one it is a plain binding whose value is a single expression, exactly
+        # like statement-level `=`.
+        params: tuple[str, ...] = ()
+        if isinstance(self.peek(), LParen):
+            self.advance()
+            params = self._func_params()
+        self.expect(Eq, "`=`")
+        if params:
+            body = self._func_body()
+            return FuncDef(name=canonical, params=params, body=body,
+                           span=head.span.to(body.span))
+        value = self.expr()
+        return Assign(name=canonical, value=value, span=head.span.to(value.span))
+
+    def _collect_name_list(self) -> list[tuple[Token, str]]:
+        """Comma-separated name spellings (Ident or Backslash tokens) with their
+        canonical-resolved names left raw — alias validation works on spellings."""
+        names: list[tuple[Token, str]] = []
+        while True:
+            tok = self.peek()
+            if not isinstance(tok, (Ident, Backslash)):
+                raise self.error_at_current(f"expected a name, found {tok.describe}")
+            names.append((tok, tok.ch if isinstance(tok, Ident) else tok.name))
+            self.advance()
+            if isinstance(self.peek(), Comma):
+                self.advance()
+            else:
+                break
+        return names
+
     def _func_params(self) -> tuple[str, ...]:
         params: list[str] = []
         while True:
             tok = self.peek()
             if isinstance(tok, Ident):
-                params.append(tok.ch)
+                params.append(self._canonical(tok.ch))
                 self.advance()
             elif isinstance(tok, RParen):
                 break
@@ -284,12 +412,16 @@ class _Parser:
         return tuple(params)
 
     def _func_body(self) -> Node:
-        body_stmts = [self.statement()]
-        while isinstance(self.peek(), Semi):
-            self.advance()
-            if isinstance(self.peek(), Eof):
-                break
-            body_stmts.append(self.statement())
+        self.depth += 1
+        try:
+            body_stmts = [self.statement()]
+            while isinstance(self.peek(), Semi):
+                self.advance()
+                if isinstance(self.peek(), Eof):
+                    break
+                body_stmts.append(self.statement())
+        finally:
+            self.depth -= 1
         if len(body_stmts) == 1:
             return body_stmts[0]
         return Seq(statements=tuple(body_stmts),
@@ -306,7 +438,7 @@ class _Parser:
         while True:
             tok = self.peek()
             if isinstance(tok, Ident):
-                params.append(tok.ch)
+                params.append(self._canonical(tok.ch))
                 self.advance()
             elif isinstance(tok, RParen):
                 break
@@ -324,11 +456,30 @@ class _Parser:
         self.advance()  # `=`
         body = self._func_body()
         span = ident_tok.span.to(body.span)
-        name = ident_tok.ch if isinstance(ident_tok, Ident) else ident_tok.name
+        name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
+                else ident_tok.name)
         return FuncDef(name=name, params=tuple(params), body=body, span=span)
 
     def expr(self) -> Node:
-        return self.range_expr()
+        return self.ternary()
+
+    # ternary ::= range ("?" ternary ":" ternary)? ; — the loosest expression level,
+    # right-associative through the recursive branches (`a ? b : c ? d : e` is
+    # `a ? b : (c ? d : e)`; a nested middle `a ? b ? c : d : e` closes at the first
+    # free `:`). Desugars to the same lazy IfExpr as `\if` — only the selected branch
+    # evaluates — so the compiler/runtime need no new node. A missing `:` at EOF is
+    # IncompleteInput (REPL continuation) via expect(); anywhere else it is a plain
+    # parse error. `?`/`:` are not atom starters, so juxtaposition never eats them.
+    def ternary(self) -> Node:
+        cond = self.range_expr()
+        if not isinstance(self.peek(), Question):
+            return cond
+        self.advance()  # `?`
+        then_branch = self.ternary()
+        self.expect(Colon, "`:`")
+        otherwise = self.ternary()
+        return IfExpr(condition=cond, then_branch=then_branch, otherwise=otherwise,
+                      span=cond.span.to(otherwise.span))
 
     # Range commas are only consumed when they introduce a following `..`, preserving
     # ordinary call argument commas such as `f(1, 2)`.
@@ -423,9 +574,10 @@ class _Parser:
 
     # Special forms recognized in postfix position (DESIGN.md "equality and =", case 3):
     # a closed list of builtins whose first argument is a binding, not a general
-    # equality expression. `\sum`≡`Σ`, `\prod`≡`Π`; `\lim` has no unicode spelling.
-    _FOLD_HEADS = {("sum", None): BinOperator.ADD, ("prod", None): BinOperator.MUL,
-                   (None, "Σ"): BinOperator.ADD, (None, "Π"): BinOperator.MUL}
+    # equality expression. The unicode spellings `Σ`/`Π` are not listed: the alias
+    # map normalizes them to `\sum`/`\prod` before this table is consulted (and a
+    # user `\alias` onto those names gets the same treatment for free).
+    _FOLD_HEADS = {("sum", None): BinOperator.ADD, ("prod", None): BinOperator.MUL}
     _LIMIT_LABEL = "\\lim"
 
     def postfix(self) -> Node:
@@ -487,11 +639,11 @@ class _Parser:
         return node
 
     def _fold_head(self, node: Node) -> BinOperator | None:
-        """The fold operator when `node` is a fold head, else None."""
+        """The fold operator when `node` is a fold head, else None. Heads are always
+        BackslashRefs — single-character spellings normalize to their canonical
+        multi-char names before this runs."""
         if isinstance(node, BackslashRef) and (node.name, None) in _Parser._FOLD_HEADS:
             return _Parser._FOLD_HEADS[(node.name, None)]
-        if isinstance(node, Var) and (None, node.ch) in _Parser._FOLD_HEADS:
-            return _Parser._FOLD_HEADS[(None, node.ch)]
         return None
 
     def _limit_head(self, node: Node) -> bool:
@@ -513,7 +665,7 @@ class _Parser:
     def _special_form(self, head: Node, fold_op: BinOperator | None) -> Node:
         label = self._LIMIT_LABEL if fold_op is None else self._form_label(head)
         self.advance()  # LParen — caller verified
-        var = self.advance().ch
+        var = self._canonical(self.advance().ch)
         self.expect(Eq, "`=`")
         bound = self.expr()
         self.expect(RParen, "`)`")
@@ -533,8 +685,6 @@ class _Parser:
         match head:
             case BackslashRef(name=name):
                 return f"\\{name}"
-            case Var(ch=ch):
-                return ch
             case _:
                 return "?"
 
@@ -549,7 +699,8 @@ class _Parser:
             name_tok = self.advance()
             self.advance()  # `=`
             value = self.call_value()
-            name = name_tok.ch if isinstance(name_tok, Ident) else name_tok.name
+            name = (self._canonical(name_tok.ch) if isinstance(name_tok, Ident)
+                    else name_tok.name)
             return KwArg(name=name, value=value, span=name_tok.span.to(value.span))
         return self.call_value()
 
@@ -568,18 +719,22 @@ class _Parser:
                 return NumLit(text=tok.text, span=tok.span)
             case Ident():
                 self.advance()
-                return Var(ch=tok.ch, span=tok.span)
+                return self._name_node(tok.ch, tok.span)
             case Backslash():
                 self.advance()
                 return BackslashRef(name=tok.name, span=tok.span)
             case LParen():
                 self.advance()
-                items = [self.statement()]
-                while isinstance(self.peek(), Semi):
-                    semi = self.advance()
-                    if isinstance(self.peek(), RParen):
-                        raise ParseError("expected `)`, found `;`", semi.span)
-                    items.append(self.statement())
+                self.depth += 1
+                try:
+                    items = [self.statement()]
+                    while isinstance(self.peek(), Semi):
+                        semi = self.advance()
+                        if isinstance(self.peek(), RParen):
+                            raise ParseError("expected `)`, found `;`", semi.span)
+                        items.append(self.statement())
+                finally:
+                    self.depth -= 1
                 # Imports bind names and produce no output — they have no value, so
                 # a parenthesized sequence group (an expression) cannot hold one.
                 # Statement contexts (top level, function bodies) parse them fine.
@@ -598,8 +753,18 @@ class _Parser:
                 raise self.error_at_current(f"unexpected token {tok.describe}")
 
 
-def parse_program(src: str) -> Node:
-    """Tokenize and parse a complete program from source text."""
+def parse_program(src: str, aliases: dict[str, str] | None = None,
+                  protected: set[str] | None = None) -> Node:
+    """Tokenize and parse a complete program from source text.
+
+    `aliases` is the session alias map (short spelling → canonical name); the parse
+    works on a copy seeded from it and `\\alias`/`\\dual` declarations merge back into
+    the caller's dict only after a fully successful parse, so a failed or incomplete
+    input leaves the session map untouched. `None` means a throwaway seed-only map —
+    the right choice for scripts and imported modules, which do not inherit or export
+    session aliases (docs/grammar.md, `## Name aliases`). `protected` adds session
+    constant names (the REPL passes its consts set) to the prelude names that spelling
+    declarations may not repurpose."""
     try:
         tokens = tokenize(src)
     except UnterminatedString as e:
@@ -608,5 +773,8 @@ def parse_program(src: str) -> Node:
         raise IncompleteInput(e.msg, e.span) from e
     except LexError as e:
         raise ParseError(e.msg, e.span) from e
-    parser = _Parser(tokens)
-    return parser.program()
+    parser = _Parser(tokens, aliases, protected)
+    node = parser.program()
+    if aliases is not None:
+        aliases.update(parser.aliases)
+    return node

@@ -15,6 +15,7 @@ from adhoc.lexer import (
     Minus,
     Number,
     Plus,
+    Question,
     RParen,
     Semi,
     Slash,
@@ -193,3 +194,10 @@ def test_py_name_lexes_generically():
     toks = tokenize("\\py")
     assert isinstance(toks[0], Backslash)
     assert toks[0].name == "py"
+
+
+def test_question_token():
+    # The ternary's opening mark is a plain single-char token; `:` needs no new
+    # lexing (it already lexes as Colon for imports) and fuses with nothing.
+    assert kinds("a ? b : c") == [Ident, Question, Ident, Colon, Ident, Eof]
+    assert kinds("? :") == [Question, Colon, Eof]

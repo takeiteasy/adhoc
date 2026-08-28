@@ -19,9 +19,10 @@ written against — it should stay in lockstep with the code.
   After the first character a name may continue with letters or underscores (`\rel_tol`,
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation.
-- Operators: `+ - * / ^ < > <= >= = ≡ == .. ( ) ,`. Statement separator: `;`.
+- Operators: `+ - * / ^ < > <= >= = ≡ == .. ( ) , ? :`. Statement separator: `;`.
   `==` is an ASCII alias for `≡` — it declares a constant, it never compares (see
-  `## Constants and the prelude`).
+  `## Constants and the prelude`). `?` opens a ternary conditional and `:` closes it
+  in expression position (the only other use of `:` is the import member list).
 
 ## Grammar (EBNF)
 
@@ -31,6 +32,7 @@ statement  ::= func-def
              | const-stmt
              | import-stmt
              | pyimport-stmt
+             | spelling-directive
              | string
              | identifier "=" expr
              | expr ;
@@ -41,8 +43,14 @@ const-stmt ::= identifier "≡" expr
 import-stmt   ::= "\import" "(" string (":" member ("," member)*)? ")" ;
 pyimport-stmt ::= "\pyimport" "(" string ":" member ("," member)* ")" ;
 member        ::= identifier | "\"-name ;
+spelling-directive ::= alias-stmt | dual-stmt ;
+alias-stmt  ::= "\alias" name "," single-char ("," single-char)* ;
+dual-stmt   ::= "\dual" name "," single-char params? "=" statement (";" statement)* ;
+single-char ::= identifier ;                (* aliases are one-character letters *)
+name        ::= identifier | "\"-name ;
 
-expr       ::= range ;
+expr       ::= ternary ;
+ternary    ::= range ("?" ternary ":" ternary)? ;   (* right-associative *)
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
 comparison ::= additive (("<" | ">" | "<=" | ">=") additive)? ;
 additive   ::= multiplicative (("+" | "-") multiplicative)* ;
@@ -79,15 +87,16 @@ Loosest to tightest:
 
 | Level | Operators | Associativity |
 |---|---|---|
-| 1 | `=` `≡` `==` | statement level only, non-associative |
-| 2 | `..` (range) | non-associative |
-| 3 | `<` `>` `<=` `>=` | non-associative |
-| 4 | `+` `-` (binary) | left |
-| 5 | `*` `/` | left |
-| 6 | juxtaposition (implicit `*`) | left |
-| 7 | unary `-` | prefix |
-| 8 | `^` | right |
-| 9 | postfix `(…)` application | left |
+| 1 | `? :` (ternary) | right |
+| 2 | `=` `≡` `==` | statement level only, non-associative |
+| 3 | `..` (range) | non-associative |
+| 4 | `<` `>` `<=` `>=` | non-associative |
+| 5 | `+` `-` (binary) | left |
+| 6 | `*` `/` | left |
+| 7 | juxtaposition (implicit `*`) | left |
+| 8 | unary `-` | prefix |
+| 9 | `^` | right |
+| 10 | postfix `(…)` application | left |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -195,17 +204,39 @@ that case reports an error. Parenthesized sequences provide multi-statement bran
 \if(x > 0, (y = x^2; y + 1), (y = -x; y * 2))
 ```
 
+The ternary `condition ? then : otherwise` is the same lazy conditional in operator
+spelling — it desugars to the same node, so only the selected branch evaluates and
+the condition must be a boolean. It binds looser than every other expression
+operator (precedence table, level 1) and nests right-associatively through its
+branches; a nested middle closes at the first free `:`. A missing `:` at end of
+input offers the REPL continuation prompt. There is no two-branch ternary — the
+false-no-op form is `\if`'s statement-level behavior, and a ternary is an
+expression that always needs its else. Branches may be any expression, including
+parenthesized sequences and ranges:
+
+```
+x > 0 ? 1 : -1                  ->  = 1
+\sum(i=1..10) i > 5 ? i : 0     ->  = 40
+5 > 3 ? 1..3 : 4..6             ->  = <range 1..3>
+a > 0 ? 1 : b > 0 ? 2 : 3       -- a ? 1 : (b ? 2 : 3)
+```
+
 Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
-Booleans are valid values and conditions but are not numeric operands.
+Booleans are valid values and conditions but are not numeric operands. There is no
+numeric truthiness: a number is never a condition — `\if(0, 1, 2)` is a typed error,
+not a no-op, and the only conditions are comparisons and `\true`/`\false`.
 
 ## Special forms: folds and limits
 
-`\sum`, `\prod`, `\lim`, and the unicode spellings `Σ` ≡ `\sum`, `Π` ≡ `\prod` are
+`\sum`, `\prod`, and `\lim` are
 **special forms**, not functions: their first parenthesized argument is a binding — an
 identifier, `=`, then the bound expression — which general expressions cannot contain.
 The parser recognizes the `(ident =` shape after one of these heads; any other
 parenthesized use is a parse-time usage error naming the expected binder form, and
-without a paren the head is simply an unbound name at evaluation.
+without a paren the head is simply an unbound name at evaluation. The unicode
+spellings `Σ` and `Π` are name aliases of `\sum` and `\prod` (see `## Name aliases`)
+— they normalize to the canonical heads before the special-form table is consulted,
+and a user `\alias` onto those names gets the same treatment for free.
 
 ```
 \sum(i=1..10) i^2            ->  = 385          -- fold + over the range
@@ -313,7 +344,8 @@ Shared rules:
 
 An identifier is exactly one character. Any language-defined name longer than one character
 is `\`-prefixed, regardless of script — `\pi`, `\sum`, `\sin`, `\solve`, `\map`, `\graph`. Where
-a `\`-name has a single-character unicode form, they are the same name (`\pi` ≡ `π`); where
+a `\`-name has a single-character unicode form, they are the same name (`\pi` ≡ `π` — the
+name-alias mechanism, `## Name aliases`); where
 there is no unicode form, the `\` spelling is the only one (`\sin`, `\lim`, `\solve`, ...).
 
 The names are chosen to match their LaTeX command where one exists, so `ad` source reads like
@@ -321,6 +353,62 @@ the ASCII you'd already type to write the same expression in LaTeX — this is a
 convention, not a claim that `ad` parses TeX. The built-ins bound today are listed under
 `## Constants and the prelude`; `docs/language.md` has the fuller picture and `README.md` the
 framing.
+
+## Name aliases
+
+One name may own several spellings: `Σ` IS `\sum`, `π` IS `\pi` — one binding, two
+ways to write it, not two names that happen to hold one value. The mechanism is a
+session alias map (short spelling → canonical name) that the parser consults
+everywhere a name is consumed, seeded with:
+
+| spelling | canonical |
+|---|---|
+| `Σ` | `\sum` |
+| `Π` | `\prod` |
+| `π` | `\pi` |
+
+`\alias` extends the map for the rest of the session:
+
+```
+\alias \sum, σ        -- σ now reads (and assign-or-checks) as \sum
+\alias \alpha, α, ϵ   -- several short spellings may share one canonical name
+```
+
+`\dual` declares the pair and defines the canonical name in one statement — the
+ordinary definition forms with a second spelling attached:
+
+```
+\dual \alpha, α = 3.14               -- binds \alpha; α reads the same binding
+\dual \fact, φ(n) = n*\fact(n-1)     -- a function with a short spelling
+```
+
+Rules:
+
+- **Canonical first**: the first spelling is the canonical name (either name form);
+  the rest are single-character aliases — one character that lexes as an identifier,
+  i.e. a letter. Definitions bind the canonical name only, and the short spelling
+  reads, assigns, and assign-or-checks as the very same name from its declaration on.
+- **Parse-time, declare-before-use**: declarations take effect with the next
+  statement in the same unit; a use parsed before the declaration reads the raw
+  spelling, and no declaration renames it retroactively.
+- **Top-level only**: `\alias` and `\dual` are directives, not expressions — they
+  cannot appear inside a function body or parenthesized group (their effect is
+  parse-time, and a body's declarations would fire whether or not it ever runs).
+- **Protected names**: a spelling that names a prelude or session constant cannot be
+  repurposed as an alias (`\alias x, e` errors). Aliasing *onto* a canonical prelude
+  name is allowed — `\alias \pi, ϖ` gives `ϖ` to the constant — and protection still
+  holds, since every use of the short spelling becomes a use of the canonical name.
+- **Session scope**: the REPL threads the map across inputs alongside the
+  environment and constants; scripts and `\import`ed modules parse with the seed
+  alone — they never inherit or export declarations. The driver API threads the map
+  explicitly (`parse_program`/`compile_source` take `aliases=`).
+- **Diagnostics echo canonical names**: an error about a use of `π` names `pi`. The
+  source spelling is not carried into the value model — accepted for v1.
+- **Atomic registration**: declarations merge into the session map only after the
+  parse of their input unit succeeds; a failed or cancelled line declares nothing.
+
+Bare `\alias`/`\dual` heads (not followed by a name) stay ordinary unbound names and
+report their usage at evaluation, like `\py` and `\if`.
 
 ## Assignment semantics
 
@@ -361,12 +449,14 @@ Built-in names live in a prelude scope protected by that same mechanism:
 |---|---|
 | `π` / `\pi` | 3.141592653589793 |
 | `e` | 2.718281828459045 |
+| `\inf` / `\nan` | the non-finite floats `Inf` / `NaN` — float tier only; the exact tiers have neither (`1/0` is a typed error). IEEE semantics, docs/numerics.md |
 | `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
 | `\sin` `\cos` `\tan` `\ln` `\sqrt` | the `math.*` float-tier callables |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
-`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `π` is a constant ``),
-never shadows. Unicode and ASCII spellings are the same value — `π` and `\pi` are one
+`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is a constant ``
+— diagnostics echo the canonical name, see `## Name aliases`), never shadows.
+Unicode and ASCII spellings are the same value — `π` and `\pi` are one
 constant, not two. The function aliases are the plain float-tier `math.*` callables
 (`\sqrt(2)` is `1.4142135623730951`, not an exact symbolic value); the symbolic closed
 forms of the exact-arithmetic tower will replace those bindings in place.
@@ -398,4 +488,7 @@ a call returning a string is rejected instead of bound (strings are literals, se
 
 Logical operators, collections, the
 exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
+User-declarable *operator* spellings (generalizing the lexer's one `==`→`≡` alias)
+ride the phase-4 custom infix operators — `\alias` covers names only. Name aliases
+and `\dual` are built today (see `## Name aliases`).
 See `ROADMAP.md` and the tracker for the phase each lands in.
