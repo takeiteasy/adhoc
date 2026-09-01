@@ -167,8 +167,8 @@ def test_string_reassignment_is_assign_or_check():
     assert run_source('x = "b"', env) == ["false"]
 
 
-def test_string_through_if_branches():
-    assert run_source('s = \\if 1 < 2\n"yes"\n\\else\n"no"\n\\end') == ['s = "yes"']
+def test_string_through_ternary_branches():
+    assert run_source('s = 1 < 2 ? "yes" : "no"') == ['s = "yes"']
 
 
 def test_string_ordering_is_typed_error():

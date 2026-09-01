@@ -80,19 +80,21 @@ def test_piecewise_function_and_lazy_branch():
     assert run_source("m(5)", env) == ["= 5"]
 
 
-def test_if_block_statement_is_lazy_and_silent():
-    # Only the selected branch evaluates; the statement-level block is silent and
-    # the untaken branch's unbound name never fails.
+def test_ternary_is_lazy():
+    # Only the selected branch evaluates; the untaken branch's unbound name
+    # never fails.
     env = {}
-    assert run_source("\\if 1 > 2\n\\nope\n\\else\n7\n\\end", env) == []
-    assert run_source("\\if 1 > 2\n7\n\\end", env) == []
+    assert run_source("1 > 2 ? \\nope : 7", env) == ["= 7"]
 
 
-def test_if_sequence_group_is_lazy_and_returns_last_value():
+def test_group_branch_is_lazy_and_binds_into_the_frame():
+    # A parenthesized group is the multi-statement branch: it evaluates in the
+    # frame it lands in (binds are frame-local), and its value is the last
+    # statement's value.
     env = {}
-    assert run_source("\\if 1 < 2\nx = 4\nx + 1\n\\else\n99\n\\end", env) == []
+    assert run_source("1 < 2 ? (x = 4\nx + 1) : 99", env) == ["= 5"]
     assert run_source("x", env) == ["= 4"]
-    assert run_source("\\if 1 > 2\nx = 9\nx\n\\else\n11\n\\end", env) == []
+    assert run_source("1 > 2 ? (x = 9\nx) : 11", env) == ["= 11"]
     assert run_source("x", env) == ["= 4"]
 
 

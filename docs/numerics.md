@@ -97,8 +97,8 @@ rejected anywhere a finite number is required:
 - Assign-or-check `=` is IEEE-strict: NaN never equals itself, so `x = \nan` always
   prints `false` even when `x` is NaN (matching MPFR/rug). Comparisons are all
   `false` on NaN, also per IEEE. There is no direct NaN test today.
-- Conditions must be booleans — no numeric truthiness. `\if \nan …` is a typed
-  error exactly like `\if 0 …` (docs/grammar.md, `## Conditional blocks`).
+- Conditions must be booleans — no numeric truthiness. `\nan ? 1 : 2` is a typed
+  error exactly like `0 ? 1 : 2` (docs/grammar.md, `## Conditionals`).
 - Range bounds must be finite: `1..\inf` and `\inf..3` are typed errors — `a..` is
   the language's infinite range form. A non-finite endpoint in the finite-range loop
   would iterate forever, or exact-accumulate rationals that never converge.

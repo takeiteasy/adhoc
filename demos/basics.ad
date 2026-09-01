@@ -36,8 +36,9 @@ r = 2;
 -\inf;
 \nan;
 
--- the ternary `c ? a : b` is the lazy conditional in operator spelling; blocks
--- (`\begin … \end`, `\if cond … \end`) are its multi-line, multi-statement form
+-- the ternary `c ? a : b` is the one conditional; a parenthesized group is
+-- its multi-line, multi-statement form (newlines separate statements inside
+-- parens, and a line ending mid-expression continues onto the next)
 r > 0 ? r : -r;
 \sum(i=1..10) i > 5 ? i : 0;
 

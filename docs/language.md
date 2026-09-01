@@ -6,15 +6,15 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 ## Working today
 
 - A REPL: `> ` prompts for input, `... ` prompts for a continuation when a statement is
-  incomplete (an open block, paren, or string — the gutter is the visible "inside a
-  block" signal), `< ` prefixes output, Ctrl-D exits.
+  incomplete (an open paren or string — the gutter is the visible "still open" signal),
+  `< ` prefixes output, Ctrl-D exits.
 - Multi-line input: an unterminated statement (`(1 + 2`, `1 +`, `2 ^`, `x =`, `"abc`,
-  an unclosed `\begin` or `\if` block) buffers and continues on the next line rather
+  an unclosed `(`) buffers and continues on the next line rather
   than erroring immediately. A blank line cancels a pending continuation.
 - Script mode: `adhoc run script.ad` runs a file through the same grammar, printing one
-  `< ...` line per top-level statement. Statements are separated by `;` or simply by
-  being on different lines (newlines are insignificant at top level, but block syntax —
-  `\begin … \end`, `\if … \end` — is strictly line-structured). See `demos/` for working
+  `< ...` line per top-level statement. Statements are separated by `;`, a newline, or
+  simply by ending mid-expression and continuing on the next line — one uniform newline
+  rule everywhere, inside parens and out. See `demos/` for working
   examples.
 - Caret-pointing error diagnostics with source spans, e.g.:
   ```
@@ -47,17 +47,13 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Anonymous functions (lambdas): `\fn(x) x + 1` or `\λ(x) x + 1` — a definition without
   the name. First-class, eager, fixed arity, closures capture the defining scope; a
   parenthesized lambda applies in head position (`(\fn(x) x)(5)` → `= 5`); bodies extend
-  greedily unless bounded by a block; display as `<λ(x)>` (docs/grammar.md, `## Lambdas`).
-- Blocks: `\begin` NL statements `\end` — a line-structured statement sequence with an
-  explicit end (the body starts on the line after `\begin`; `\end` sits on its own
-  line), for multi-statement def bodies, `\if` branches, and lambda bodies. Same
-  flattening/scope rules as a parenthesized group; braces stay reserved for future set
-  literals (docs/grammar.md, `## Blocks`).
-- Conditional blocks: `\if cond` NL branch, optional `\elseif cond` NL branch and
-  `\else` NL branch, closed by `\end` — lazy, right-nesting, no scope of its own.
-  Statement position is silent (an all-false branchless form is a no-op); expression
-  position yields the selected branch's last statement's value (docs/grammar.md,
-  `## Conditional blocks`).
+  greedily unless bounded by a parenthesized group; display as `<λ(x)>` (docs/grammar.md,
+  `## Lambdas`).
+- Parenthesized statement groups: newlines separate statements inside `(...)` exactly as
+  at top level, so a group is the multi-line, multi-statement form for def bodies,
+  ternary branches, and lambda bodies — same flattening/scope rules as a top-level
+  `Seq`, value of its last statement. Braces stay reserved for future set
+  literals (docs/grammar.md, `## Groups`).
 - Imports, statement-level and silent: `\import("lib")` binds the top-level names of `lib.ad`
   (all of them, or only the listed members: `\import("lib": f, \fact)`), each file evaluating
   once per session in a fresh root environment — imported functions keep the module's
@@ -72,14 +68,14 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
   semicolon-sequenced bodies, first-class function values, and recursion.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
-- Booleans are real values: comparisons produce them, arithmetic rejects them, `\if`
-  blocks and the ternary consume them, and `\true`/`\false` are bound constants. There
-  is no numeric truthiness — a number is never a condition (`\if 0 \n 1 \n \else \n 2
-  \n \end` is a typed error).
-- Lazy conditionals: the `\if` block (with `\elseif`/`\else` branches) and the ternary
-  `c ? a : b` — the same node underneath, so only the selected branch evaluates. The
-  ternary is the lightweight expression spelling (right-associative, loosest expression
-  precedence); the block is the multi-statement form.
+- Booleans are real values: comparisons produce them, arithmetic rejects them, the
+  ternary consumes them, and `\true`/`\false` are bound constants. There
+  is no numeric truthiness — a number is never a condition (`0 ? 1 : 2` is a typed
+  error).
+- Lazy conditionals: the ternary `c ? a : b` is the one conditional — only the selected
+  branch evaluates. It is right-associative with the loosest expression precedence,
+  and a parenthesized statement group is its multi-statement branch form
+  (docs/grammar.md, `## Conditionals`).
 - A protected prelude scope: `π`/`\pi`, `e`, `\inf`, `\nan`, `\true`/`\false`, and the
   `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function aliases (the plain `math.*`
   callables, float tier).
@@ -96,7 +92,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   only, protected names repurposed by no one; docs/grammar.md, `## Name aliases`).
 - Dual-form definitions: `\dual \alpha, α = 3.14` and `\dual \fact, φ(n) = ...` define
   the canonical name and register its short spelling in one statement; both spellings
-  read and compare as the same binding.- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
+  read and compare as the same binding.
+- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
   — approximate iteration in the float tier until values stabilize within tolerance,
   erroring at the iteration cap rather than returning a misleading partial (`\sum(i=1..) i`
   errors; docs/numerics.md).
@@ -124,7 +121,7 @@ and closed.
 
 The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
 same way, and meaning comes from three places — the parser's closed set of special forms
-(`\sum`/`\prod`/`\lim` binders, the block forms `\begin`/`\end`/`\if`/`\elseif`/`\else`,
+(`\sum`/`\prod`/`\lim` binders,
 `\py`, statement-shaped
 `\import`/`\pyimport`, the lambda heads `\λ`/`\fn`),
 the session alias map that normalizes short spellings to canonical

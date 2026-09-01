@@ -1,8 +1,9 @@
-"""Tokenizer. Whitespace-insensitive except that a newline outside parentheses is a
-`Newline` token (the strict line structure of `\\begin`/`\\if` blocks rides on it);
-single-character (ASCII or unicode) identifiers, `--` line comments, and the
-`\\`-name convention: every language-defined name longer than one character takes a
-`\\` sigil.
+"""Tokenizer. Whitespace-insensitive except that a newline is a `Newline` token —
+the statement separator: the parser treats it as a boundary where an expression is
+complete and as whitespace where an operand is expected, inside parentheses and out
+(docs/grammar.md). Single-character (ASCII or unicode) identifiers, `--` line
+comments, and the `\\`-name convention: every language-defined name longer than one
+character takes a `\\` sigil.
 
 A `\\`-name is also the spelling for a user-defined multi-character identifier. Unknown
 names therefore lex cleanly and fail at evaluation if they are not bound, just like a
@@ -155,7 +156,7 @@ class GreaterEq(Token):
 @dataclass(frozen=True)
 class Question(Token):
     """The ternary conditional's opening mark: `cond ? a : b` (docs/grammar.md).
-    Desugars to the same lazy IfExpr as `\\if`; `:` closes it in expression position
+    `:` closes it in expression position
     and keeps its import-only meaning everywhere else."""
 
     @property
@@ -186,10 +187,12 @@ class Semi(Token):
 
 @dataclass(frozen=True)
 class Newline(Token):
-    """A newline outside parentheses: the block-level statement separator and the
-    strict line structure of `\\begin`/`\\if` blocks (docs/grammar.md). Suppressed
-    inside `(...)` so parenthesized groups and argument lists span lines freely, as
-    they always have."""
+    """The statement separator, everywhere: the parser skips newline runs where an
+    *operand* is expected (a statement or expression continues onto the next line
+    mid-expression — `1 +` NL `2` is one sum, an argument may start on the line
+    after its `,`), and a newline at a statement boundary separates. Inside `(...)`
+    this makes a parenthesized group the multi-line statement form and lets argument
+    lists span lines (docs/grammar.md)."""
 
     @property
     def describe(self) -> str:
@@ -257,21 +260,14 @@ def tokenize(src: str) -> list[Token]:
     eof_off = len(src.encode("utf-8"))
     tokens: list[Token] = []
     i = 0
-    parens = 0  # nesting depth of `(...)`: newlines are suppressed while > 0
 
     while i < n:
         pos, c = entries[i]
 
         if c == "\n":
-            if parens == 0:
-                tokens.append(Newline(span=Span(pos, pos + 1)))
+            tokens.append(Newline(span=Span(pos, pos + 1)))
             i += 1
             continue
-
-        if c == "(":
-            parens += 1
-        elif c == ")":
-            parens = max(0, parens - 1)
 
         if c.isspace():
             i += 1

@@ -564,9 +564,6 @@ class Engine:
     def bref(self, name: str, sid: int) -> AdValue:
         if name == "py":
             self._fail(r'`\py` must be applied to a path: \py("dotted.path")', sid)
-        if name == "if":
-            self._fail("`\\if` is a block: \\if condition NL branch NL [\\elseif … NL] "
-                       "[\\else … NL] \\end", sid)
         if name == "import":
             self._fail(r'`\import` reads an ad file: \import("lib") or \import("lib": f)', sid)
         if name == "pyimport":
@@ -782,23 +779,15 @@ class Engine:
         return self._binop(ndiv, mid, 2, sid)
 
     def if_expr(self, condition, then, otherwise, sid):
+        """The ternary `c ? a : b` — the one conditional. Only the selected branch's
+        thunk runs; the condition must be a boolean."""
         if not isinstance(condition, bool):
-            self._fail("\\if condition must be boolean", sid)
+            self._fail("ternary condition must be boolean", sid)
         if condition:
             return _to_ad(then())
         if otherwise is None:
-            self._fail("\\if condition was false and has no otherwise branch", sid)
+            self._fail("ternary condition was false and has no else branch", sid)
         return _to_ad(otherwise())
-
-    def if_stmt(self, condition, then, otherwise, sid):
-        """Statement-position `\\if` block: always silent — the selected branch's
-        thunks run for their effects (bindings, comparisons), no value is echoed."""
-        if not isinstance(condition, bool):
-            self._fail("\\if condition must be boolean", sid)
-        if condition:
-            then()
-        elif otherwise is not None:
-            otherwise()
 
     def py(self, path: Any, sid: int) -> Any:
         """`\\py("dotted.path")` — resolve a Python dotted path to a callable. The

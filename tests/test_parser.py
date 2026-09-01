@@ -162,10 +162,13 @@ def test_unexpected_token_error_message_and_span():
     assert e.value.span == Span(4, 5)
 
 
-def test_expect_error_message():
+def test_group_separator_error_message():
+    # A group's statements separate on a newline run or `;`; a `,` that does not
+    # open a stepped range is neither.
     with pytest.raises(ParseError) as e:
-        parse_program("(1;)")
-    assert e.value.msg == "expected `)`, found `;`"
+        parse_program("(1, 2)")
+    assert e.value.msg == (
+        "statements in a group are separated by a newline or `;`, found `,`")
 
 
 def test_lex_errors_surface_as_parse_errors():
@@ -321,11 +324,13 @@ def test_py_rejects_kwargs():
         parse_program('\\py("math.sqrt", \\k=1)')
 
 
-def test_if_block_takes_no_call_arguments():
-    # `\if` is a block form now: the old call spelling dies as an ordinary
-    # parse error inside the condition's paren group.
-    with pytest.raises(ParseError):
-        parse_program("\\if(1 < 2, 1, 0)")
+def test_if_is_an_ordinary_name():
+    # The block forms are gone: `\if` lexes and parses as an ordinary name (an
+    # unbound call head here) — the ternary is the one conditional.
+    node = parse_program("\\if(1 < 2, 1, 0)")
+    assert isinstance(node, Call)
+    assert isinstance(node.head, BackslashRef)
+    assert node.head.name == "if"
 
 
 def test_def_shape_parses_into_funcdef():

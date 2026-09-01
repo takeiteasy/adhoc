@@ -29,11 +29,7 @@
 \lim(x=0) x/x;
 
 -- jump discontinuities report a missing limit instead of picking a side:
--- \lim(x=0) \if x < 0
--- -1
--- \else
--- 1
--- \end;
+-- \lim(x=0) x < 0 ? -1 : 1;
 --    < ERROR! limit does not exist: left and right estimates disagree
 
 -- note: like every function definition, `f(x) = ...` swallows the

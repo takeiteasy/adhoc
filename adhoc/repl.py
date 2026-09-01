@@ -1,12 +1,11 @@
 """REPL driver. Binary-side glue over the library: prompt, history, multi-line
 continuation, error recovery.
 
-Multi-line continuation: `> ` when nothing is pending, `... ` while a block, parenthesized
-group, or string is still open (an `IncompleteInput` parse buffers the line for the next
-round, joined with `\\n`). Block syntax itself is line-structured — `\\begin`/`\\if`
-bodies live on the lines after their openers — so the `... ` gutter is the visible
-"inside a block" signal. A **blank line cancels** the pending statement rather than
-being swallowed as a block's separator.
+Multi-line continuation: `> ` when nothing is pending, `... ` while a parenthesized
+group or string is still open (an `IncompleteInput` parse buffers the line for the next
+round, joined with `\\n`) — the `... ` gutter is the visible "still open" signal. A
+**blank line cancels** the pending statement rather than being swallowed as a group's
+statement separator.
 
 History lives at `$ADHOC_HISTORY` (default `~/.adhoc_history`) and is only touched on an
 interactive terminal; piped stdin (scripts feeding the REPL, tests) goes through plain

@@ -108,26 +108,26 @@ def test_alias_survives_incomplete_then_completed_input(tmp_path):
     assert "< = 3" in out
 
 
-def test_unclosed_block_continues_then_evaluates(tmp_path):
-    # An open `\begin` behaves like an open paren: the `... ` continuation prompt
-    # gathers lines until the matching `\end`, then the whole block evaluates.
-    # The REPL prints only the last output per input, so the `a = 1` echo stays
-    # hidden.
-    out = run_repl("\\begin\na = 1\na + 1\n\\end\n2\n", tmp_path).stdout
+def test_unclosed_group_continues_then_evaluates(tmp_path):
+    # An open paren gathers lines under the `... ` continuation prompt until the
+    # matching `)`, then the whole group evaluates. The REPL prints only the last
+    # output per input, so the `a = 1` echo stays hidden.
+    out = run_repl("(\na = 1\na + 1\n)\n2\n", tmp_path).stdout
     assert "... " in out
     assert "ERROR" not in out
-    assert out.count("= 2") == 2  # the block's value and the later line
+    assert out.count("= 2") == 2  # the group's value and the later line
 
 
-def test_unclosed_if_block_continues_then_evaluates(tmp_path):
-    # The same continuation flow drives `\if` blocks: condition, branches, `\end`.
-    out = run_repl("\\if 1 < 2\nx = 4\nx + 1\n\\else\n99\n\\end\nx\n", tmp_path).stdout
+def test_unclosed_group_with_ternary_continues_then_evaluates(tmp_path):
+    # The same continuation flow drives a multi-line ternary whose branch is a
+    # parenthesized statement group.
+    out = run_repl("1 < 2 ? (\nx = 4\nx + 1\n) : 99\n", tmp_path).stdout
     assert "... " in out
     assert "ERROR" not in out
-    assert "< = 4" in out  # the if-block is silent; only the final `x` echoes
+    assert "< = 5" in out
 
 
-def test_unclosed_block_blank_line_cancels(tmp_path):
-    out = run_repl("\\begin\n1\n\n2\n", tmp_path).stdout
+def test_unclosed_group_blank_line_cancels(tmp_path):
+    out = run_repl("(\n1\n\n2\n", tmp_path).stdout
     assert "-- input cancelled" in out
     assert "< = 2" in out

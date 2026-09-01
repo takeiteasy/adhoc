@@ -31,9 +31,9 @@ they don't replace it. The interaction-net engine and parallel rewriting recorde
 - Functions: `f(a, b) = ...` definition, application, local scoping, and `;`-sequenced bodies.
   Definitions lower into the same callable world as interop values.
 - Recursion: function's own name is bound within its own body scope.
-- Conditionals: the `\if … \end` block with `\elseif`/`\else` branches (strict line
-  structure, like `\begin` blocks) and the ternary `c ? a : b` — one lazy conditional
-  node underneath. A false branchless block is a statement no-op.
+- Conditionals: the ternary `c ? a : b` — the one lazy conditional, right-associative,
+  loosest expression precedence. A parenthesized statement group is the multi-statement
+  branch form.
 - Comparisons: `<`, `>`, `<=`, `>=`; logical operators remain future work.
 - Ranges: `a..b`, `a..` (lazy infinite), `a,c..b` / `a,c..` (step-inferred).
 - `Σ`/`\sum`, `Π`/`\prod`, `\lim` — fold over a range; infinite-range `Σ`/`Π` as limit of partial

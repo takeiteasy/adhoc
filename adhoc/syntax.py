@@ -87,15 +87,12 @@ class Range(Node):
 @dataclass(frozen=True)
 class IfExpr(Node):
     """A lazy conditional: only the selected branch evaluates. The ternary
-    `c ? a : b` and the `\\if` block both produce this node — a `\\if` block with
-    `\\elseif` chains desugars to right-nested IfExprs exactly like nested ternaries.
-    `block_form` marks the block spelling; it decides statement-level lowering only
-    (block form is always silent; a statement-position ternary echoes its value)."""
+    `c ? a : b` is the one conditional — the branches may be any expression,
+    including parenthesized statement groups (`docs/grammar.md`)."""
 
     condition: Node
     then_branch: Node
     otherwise: Node | None
-    block_form: bool = False
 
 
 @dataclass(frozen=True)
@@ -169,7 +166,8 @@ class Lambda(Node):
     Exactly a definition without the name: eager, fixed arity, the body evaluates in
     a fresh frame over a closure of the defining scope, and there is no self-name to
     recurse through. The body extends greedily over the rest of the current
-    expression — `\\begin … \\end` gives it an explicit extent (docs/grammar.md)."""
+    expression — a parenthesized group gives it an explicit extent
+    (docs/grammar.md)."""
 
     params: tuple[str, ...]
     body: Node

@@ -77,7 +77,8 @@ difference between them is *when* each calls it, not how the output looks.
   multiplication; anything else fails at the call's span. Definitions lower to callable
   `AdFunction` values;
   each body has its own compiled code and span table, and recursion pre-binds the function
-  name in the call frame. `\if` is a lazy compiler special form (not an eager ordinary call).
+  name in the call frame. The ternary `? :` is a lazy compiler special form (not an
+  eager ordinary call).
   `\py(path)` has its own seam method
   resolving the dotted path and converting results back through the matrix
   (docs/numerics.md). Imports lower to `_e.import_(path, members, sid)` and

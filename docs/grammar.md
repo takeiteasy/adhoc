@@ -6,12 +6,12 @@ written against — it should stay in lockstep with the code.
 ## Lexical rules
 
 - Whitespace is insignificant, except as a token separator — and except that a **newline
-  outside parentheses is a token** (`Newline`). The parser skips newline runs wherever an
+  is a token** (`Newline`), everywhere. The parser skips newline runs wherever an
   *operand* is expected, so a statement or expression continues onto the next line
-  mid-expression (`1 +` NL `2` is one sum); but at statement boundaries the newline acts
-  as a separator, and block syntax (next section, `## Blocks`) gives it structural
-  meaning. Inside `(...)` newlines are suppressed entirely: parenthesized groups and
-  argument lists span lines freely, as they always have.
+  mid-expression (`1 +` NL `2` is one sum, an argument may start on the line after its
+  `,`); where an expression is complete, the newline separates statements. The rule is
+  uniform inside `(...)`: a parenthesized group is the multi-line statement form
+  (`## Groups`), and argument lists span lines comma-separated as they always have.
 - `--` starts a line comment, running to end of line; the newline that ends it is an
   ordinary newline token.
 - A **number literal** is a decimal integer or float: `3`, `0.5`, `12.34`. A `.` is only
@@ -32,11 +32,9 @@ written against — it should stay in lockstep with the code.
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
   conditional and `:` closes it
   in expression position (the only other use of `:` is the import member list).
-- A few `\`-names are **reserved markers the parser itself consumes**: the block
-  delimiters `\begin` / `\end`, the `\if` conditional block and its `\elseif` / `\else`
-  branch markers, and the lambda heads `\λ` / `\fn` (special only when a
-  parameter-list paren follows). They cannot be bound, defined, or aliased; any other
-  `\`-name lexes cleanly and fails at evaluation if unbound.
+- The lambda heads `\λ` / `\fn` are the one spelling the parser consumes specially —
+  and only when a parameter-list paren follows. Any other `\`-name lexes cleanly,
+  binds like any name, and fails at evaluation if unbound.
 
 ## Grammar (EBNF)
 
@@ -77,20 +75,15 @@ kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= identifier "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-             | block | if-block | lambda ;
-sequence   ::= statement (";" statement)* ;
-block      ::= "\begin" NL stmt-list "\end" ;
-if-block   ::= "\if" expr NL stmt-list
-               ("\elseif" expr NL stmt-list)*
-               ("\else" NL stmt-list)? "\end" ;
-stmt-list  ::= statement (sep statement)* sep? ;   (* the block-level statement list *)
+              | lambda ;
+sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 ```
 
-`sep` inside a block's `stmt-list` is a newline run or a single `;` — blank lines are
+`sep` inside a group's `sequence` is a newline run or a single `;` — blank lines are
 free, `;;` is an error. A trailing `;` after the last statement is tolerated (`1;` and
 `2;` both parse as a single statement, not as a statement followed by an empty one),
-at top level and before a block's closing marker alike.
+at top level and before a group's closing `)` alike.
 
 Special forms sit in postfix position but are not applications — their first parenthesized
 argument is a binding, not a general expression (see `## Special forms`):
@@ -206,7 +199,7 @@ f(3,4)                       ->  = 144
 \fact(n) = n <= 1 ? 1 : n*\fact(n-1)
 ```
 
-Function bodies are semicolon-separated statements; a `\begin` block (next section)
+Function bodies are semicolon-separated statements; a parenthesized group (`## Groups`)
 gives a def a multi-line body. A call gets a fresh local frame;
 reads fall through to globals, while assignments never escape the call. The function's
 own name is installed in that frame before the body runs, enabling recursion. Definitions
@@ -214,132 +207,81 @@ are first-class and display as `<fn f(x)>` or `<fn \fact(n)>`.
 
 Because `;` also separates top-level statements, a function definition consumes the
 semicolon-separated statements after its `=` **on its own line** as its body — write one
-definition per line, or group a multi-statement body in a `\begin … \end` block (a `;`
-after that block's `\end` still belongs to the body — see `## Blocks`).
+definition per line, or group a multi-statement body in parentheses (a `;` after the
+group's closing `)` still belongs to the body — see `## Groups`).
 
-## Conditional blocks: `\if … \end`
+## Groups: parenthesized statement sequences
 
-`\if` is a block form — the multi-line, multi-statement conditional:
-
-```
-if-block ::= "\if" expr NL stmt-list
-             ("\elseif" expr NL stmt-list)*
-             ("\else" NL stmt-list)? "\end" ;
-```
+A parenthesized group is a statement sequence with an explicit end — and the
+multi-line statement form:
 
 ```
-\if x > 0
+sequence ::= statement (sep statement)* sep? ;   -- sep: newline run | ";"
+```
+
+```
+f(x) = (
 y = x^2
 y + 1
-\elseif x < 0
-y = -x
-2y
-\else
-0
-\end
+)                   -- an explicit multi-statement def body
+
+c ? (a = 1
+     a + 1) : 0     -- a group as a ternary branch
 ```
 
-The condition is an expression ending at the line break; the branch body starts on the
-next line. (The known sharp edge of that rule: a branch body written on the *same* line
-as the condition can fold into it as a juxtaposed factor when the condition ends in a
-bare number — `\if x < 10 2` reads as `x < 20`. Put the branch on its own line.)
-`\elseif cond` adds a branch tried only when every earlier condition was
-false; `\else` catches the all-false case; `\end` closes. Every branch body is a
-statement sequence through the same machinery as a `\begin` block (a `;` may pack two
-statements onto one line), and — like a block — has **no scope of its own**. Branches
-evaluate lazily: only the selected branch runs, and the block's value is that branch's
-last statement's value. `\elseif` chains desugar to right-nested conditionals — the
-same shape nested ternaries produce — so there is one conditional node underneath.
+Statements inside a group separate on a newline run or a single `;` (blank lines are
+free, `;;` is an error, a trailing `;` before `)` is tolerated), and the same uniform
+newline rule holds that governs the top level: a line ending mid-expression continues
+(`x = 1 +` NL `2` is one sum, a committed range `1..` runs to the `)`), while an
+operator that *starts* a line belongs to a new statement (`x = 1` NL `+ 2` is two
+statements, the second an error). The same rule makes argument lists span lines
+comma-separated — an argument missing its comma is a new statement and a parse error.
+There is no single-line/new-line distinction to learn: parens group, newlines
+separate complete statements, trailing operators continue.
 
-**Statement vs expression.** In statement position an `\if` block is always **silent**:
-no echo, no value — its bindings land in the enclosing frame. Without an `\else` and
-with every condition false, the statement form is a no-op. In expression position
-(`r = \if c \n … \n \end`) the block is an ordinary sub-expression: its value is the
-selected branch's last statement's value, and a false condition with no `\else` is a
-typed error (an expression that needs a value has none to give). In a function or fold
-body the block supplies the body's result value silently.
+It parses through the same statement machinery as the top level and produces the
+same `Seq` node — **no scope of its own**, the ordinary flatten/echo/frame rules.
+A group is legal anywhere an expression is: statement position (it flattens into
+the enclosing unit, each statement with its own echo line), def bodies, ternary
+branches, lambda bodies. Its value is its last statement's value.
 
-The ternary `condition ? then : otherwise` is the same lazy conditional in operator
-spelling — it desugars to the same node, so only the selected branch evaluates and
-the condition must be a boolean. It binds looser than every other expression
+**Explicit extent.** The form earns its keep in expression position, where `,` and
+`)` would otherwise end the sequence: def bodies and lambda bodies. It does **not**
+shield against `;`: in a def body or at top level, a `;` after the closing `)`
+simply continues the enclosing statement sequence (a group is one grouped statement
+of it — definitions still consume their line). Imports
+are rejected inside a group (statements, not expressions — write them outside), and
+`\alias`/`\dual` are rejected (top-level directives). An unclosed group is incomplete
+input — the REPL offers a continuation prompt, and a blank line cancels.
+
+Braces `{}` are deliberately **not** given a grouping meaning — they are reserved for
+future set literals (see `## Deferred`).
+
+## Conditionals: the ternary
+
+The ternary `condition ? then : otherwise` is the one conditional. It is lazy —
+only the selected branch evaluates — and the condition must be a boolean. It
+binds looser than every other expression
 operator (precedence table, level 1) and nests right-associatively through its
 branches; a nested middle closes at the first free `:`. A missing `:` at end of
-input offers the REPL continuation prompt. There is no two-branch ternary — the
-false-no-op form is the `\if` block's statement-level behavior, and a ternary is an
+input offers the REPL continuation prompt. There is no two-branch form — a
+conditional that could do nothing would have no value to give, so a ternary is an
 expression that always needs its else. Branches may be any expression, including
-parenthesized sequences and ranges:
+parenthesized statement groups (the multi-statement branch — `## Groups`):
 
 ```
 x > 0 ? 1 : -1                  ->  = 1
 \sum(i=1..10) i > 5 ? i : 0     ->  = 40
 5 > 3 ? 1..3 : 4..6             ->  = <range 1..3>
 a > 0 ? 1 : b > 0 ? 2 : 3       -- a ? 1 : (b ? 2 : 3)
+1 < 2 ? (x = 4
+         x + 1) : 99            ->  = 5    -- a group is the multi-statement branch
 ```
 
 Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
 Booleans are valid values and conditions but are not numeric operands. There is no
-numeric truthiness: a number is never a condition — `\if 0 \n 1 \n \else \n 2 \n \end`
-is a typed error, not a no-op, and the only conditions are comparisons and
-`\true`/`\false`.
-
-## Blocks: `\begin … \end`
-
-A block is a statement sequence with an explicit end — and a visible one: block
-syntax is **line-structured**:
-
-```
-block ::= "\begin" NL stmt-list "\end" ;
-```
-
-```
-\begin
-a = 1
-a + 1
-\end
-```
-
-`\begin` must be followed by a newline (the body starts on the next line), statements
-are separated by newline runs or a single `;` (blank lines are free, `;;` is an
-error), and `\end` sits on a line of its own. There is no single-line block — the
-shape on the page mirrors the grouping, which is the point of the form beside `;`.
-
-It parses through the same statement machinery as a parenthesized group and produces
-the same `Seq` node — **no scope of its own**, the ordinary flatten/echo/frame rules.
-A block is legal anywhere a group is: statement position (it flattens into the
-enclosing unit, each statement with its own echo line), def bodies, `\if` branch
-bodies, lambda bodies. Its value is its last statement's value.
-
-```
-f(x) = \begin
-y = x^2
-y + 1
-\end                   -- an explicit multi-statement def body
-
-2 \begin
-3
-\end                   ->  = 6     (a block is a factor, like a paren group)
-```
-
-**Explicit extent.** The point of the form: `\end` terminates whatever expression is
-being parsed — it is never a juxtaposed factor, and it ends a range just like `,` `)`
-`;` and EOF (`r = \begin \n 1.. \n \end` is the infinite range). It does **not** shield
-against `;`: in a def body or at top level, a `;` after the closing `\end` simply
-continues the enclosing statement sequence (a block is one grouped statement of it —
-definitions still consume their line). The form earns its keep in expression position,
-where `,` and `)` would otherwise end the sequence: lambda bodies.
-
-A trailing `;` before `\end` is tolerated (top-level rule); `;;` is an error. An
-expression may continue across a block's line breaks when it ends mid-expression
-(`x = 1 +` NL `2`) — but an operator that *starts* a line belongs to a new statement,
-so `x = 1` NL `+ 2` is two statements (the second an error). Imports
-are rejected inside a block (statements, not expressions — the paren-group rule:
-write them outside), and `\alias`/`\dual` are rejected (top-level directives). An
-unclosed `\begin` is incomplete input — the REPL offers a continuation prompt, and a
-blank line cancels. `\begin` and `\end` are reserved names: they cannot be bound,
-defined, or aliased, and a stray `\end` with no open block is a parse error.
-
-Braces `{}` are deliberately **not** used for blocks — they are reserved for future
-set literals (see `## Deferred`).
+numeric truthiness: a number is never a condition — `0 ? 1 : 2` is a typed error,
+not a silent pick, and the only conditions are comparisons and `\true`/`\false`.
 
 ## Lambdas: anonymous functions
 
@@ -358,18 +300,18 @@ positional arguments only, and a parameter named like a prelude constant is reje
 at evaluation, exactly as for defs.
 
 **Body extent** follows the fold/limit rule: the body extends greedily over the rest
-of the current expression, up to the enclosing delimiter (`,` `)` `;` `\end`, end of
+of the current expression, up to the enclosing delimiter (`,` `)` `;`, end of
 input — a line break inside the expression continues it). One-statement lambdas
 therefore nest right-associatively with no delimiters
-at all, and a `\begin … \end` block gives an explicit extent and multiple statements:
+at all, and a parenthesized group gives an explicit extent and multiple statements:
 
 ```
-\fn(x) x^2                             -- a one-statement body needs no block
+\fn(x) x^2                             -- a one-statement body needs no group
 \fn(n) \fn(f) \fn(x) f(n(f)(x))        -- greedy nesting: each body is the rest
-\fn(f) \begin
+\fn(f) (
 g = \fn(x) f(f(x))
 g
-\end                                   -- explicit extent, two statements
+)                                      -- explicit extent, two statements
 ```
 
 **Application**: a parenthesized lambda is a name-ish head, so a trailer applies it —
@@ -433,7 +375,7 @@ than returning a possibly-misleading partial result; so does any non-finite part
 both sides with geometrically shrinking steps and never binds `x` to `a` itself. Each
 side must stabilize within `MAX_PROBES`; sides stabilizing further than twice the
 tolerance apart report `` limit does not exist: left and right estimates disagree ``
-(jump discontinuities like `\lim(x=0) \if(x < 0, -1, 1)`). A pole (`\lim(x=0) 1/x`)
+(jump discontinuities like `\lim(x=0) x < 0 ? -1 : 1`). A pole (`\lim(x=0) 1/x`)
 never stabilizes and reports probe exhaustion instead. Cancellation-prone spellings of
 removable singularities (e.g. `(x^2 - 1)/(x - 1)` near 1) lose float precision as steps
 shrink and may fail to stabilize — write them simplified.
@@ -582,7 +524,7 @@ Rules:
   parse of their input unit succeeds; a failed or cancelled line declares nothing.
 
 Bare `\alias`/`\dual` heads (not followed by a name) stay ordinary unbound names and
-report their usage at evaluation, like `\py` and `\if`.
+report their usage at evaluation, like `\py`.
 
 ## Assignment semantics
 
@@ -610,7 +552,7 @@ identity, so a check would be meaningless. Note that inside an argument list,
 Statement groups flatten: a top-level `(a; b)` becomes plain top-level statements, each
 with its own echo line — the parentheses do not create a scope, so a group cannot
 overwrite a global either (its `=` compares). Expression-position groups (function
-bodies, `\if` branch bodies) run the same rule in the frame they evaluate in.
+bodies, ternary branch groups) run the same rule in the frame they evaluate in.
 
 ## The prelude
 
@@ -656,8 +598,8 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators, collections (sets will take the `{}` spelling — deliberately not
-used for blocks; see `## Blocks`),
+Logical operators, collections (sets will take the `{}` spelling — it is deliberately
+unused today; see `## Groups`),
 the
 exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
