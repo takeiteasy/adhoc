@@ -8,11 +8,13 @@ are thin drivers over it, depending on it the way any other consumer would.
 ```
 adhoc/
 ├── span        — byte-offset spans (start, end)
-├── lexer       — tokens: numbers, strings, identifiers, \-names, operators
+├── lexer       — tokens: numbers, strings, identifiers, \-names, operators, the √ radical
 ├── syntax      — frozen AST dataclasses, each node carries its own Span
 ├── parser      — precedence climbing over docs/grammar.md
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
+├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
+│                 backed by sympy; only runtime.py dispatches into it)
 ├── compiler    — lowering: adhoc AST → Python source, one line per statement
 ├── driver      — compile/exec pairing, error mapping back through spans
 ├── diagnostic  — caret-pointing renderer

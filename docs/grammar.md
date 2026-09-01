@@ -23,6 +23,10 @@ written against — it should stay in lockstep with the code.
   values: see `## String literals` for their operators.
 - An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
   This is what makes `ab` unambiguous as `a * b` — see below.
+- The radical `√` is the one **prefix operator**: it is a math symbol, not a letter, so
+  it lexes as its own token and cannot be a name — it can never be aliased, bound, or
+  shadowed. The parser rewrites `√` + operand into a `\sqrt(...)` application
+  (docs/numerics.md for the values it produces).
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
   After the first character a name may continue with letters or underscores (`\rel_tol`,
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
@@ -66,6 +70,7 @@ multiplicative
            ::= juxtaposed (("*" | "/") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
+radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
 power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
 trailer    ::= "(" args? ")" ;
@@ -75,7 +80,7 @@ kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= identifier "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | lambda ;
+              | lambda | radical ;
 sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 ```
@@ -106,7 +111,7 @@ Loosest to tightest:
 | 5 | `+` `-` (binary) | left |
 | 6 | `*` `/` | left |
 | 7 | juxtaposition (implicit `*`) | left |
-| 8 | unary `-` | prefix |
+| 8 | unary `-`, `√` | prefix |
 | 9 | `^` | right |
 | 10 | postfix `(…)` application | left |
 
@@ -123,10 +128,13 @@ reads on paper:
 (1+2)*3  ->  9
 f(x)^2   ->  (f(x))^2       -- application binds tightest
 -f(x)    ->  -(f(x))
+√2^2     ->  √(2²) = 2      -- the radical's operand parses at the unary level
+2^√2     ->  2^(√2)         -- a radical can sit inside the exponent
+2√3      ->  2·√3           -- the radical is an atom starter: it juxtaposes
 ```
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `string`, `identifier`, `\`-name, and `(` — deliberately **not** `-`, so `a - b` always
+`number`, `string`, `identifier`, `\`-name, `√`, and `(` — deliberately **not** `-`, so `a - b` always
 parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
 parses as the multiplication it spells and dies as the usual typed "strings are not
 numbers" at evaluation — the same shape as any other string reaching a numeric operator.
@@ -503,7 +511,8 @@ Rules:
   the rest are single-character aliases — one character that lexes as an identifier,
   i.e. a letter. Definitions bind the canonical name only, and the short spelling
   reads (and checks against, via the statement `=` rule) as the very same name from
-  its declaration on.
+  its declaration on. The radical `√` is not a name (it is not a letter) and so is
+  outside the alias mechanism entirely — it is a fixed operator spelling.
 - **Parse-time, declare-before-use**: declarations take effect with the next
   statement in the same unit; a use parsed before the declaration reads the raw
   spelling, and no declaration renames it retroactively.
@@ -562,19 +571,25 @@ equally final. Built-in names live in a prelude scope protected by the same mech
 
 | spelling | value |
 |---|---|
-| `π` / `\pi` | 3.141592653589793 |
-| `e` | 2.718281828459045 |
+| `π` / `\pi` | the symbolic real π — exact; displays `3.14159265358979...` (docs/numerics.md) |
+| `e` | the symbolic real e — exact; displays `2.71828182845905...` |
 | `\inf` / `\nan` | the non-finite floats `Inf` / `NaN` — float tier only; the exact tiers have neither (`1/0` is a typed error). IEEE semantics, docs/numerics.md |
 | `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
-| `\sin` `\cos` `\tan` `\ln` `\sqrt` | the `math.*` float-tier callables |
+| `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`); everything else falls to the `math.*` float tier (`\sin(1)`). Display as `<fn \sqrt(x)>` |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
 `π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is protected ``
 — diagnostics echo the canonical name, see `## Name aliases`), never shadows.
 Unicode and ASCII spellings are the same value — `π` and `\pi` are one
-name, not two. The function aliases are the plain float-tier `math.*` callables
-(`\sqrt(2)` is `1.4142135623730951`, not an exact symbolic value); the symbolic closed
-forms of the exact-arithmetic tower will replace those bindings in place.
+name, not two. The function builtins replaced the original float-tier `math.*` aliases
+in place: binding names unchanged, but exact closed forms stay exact
+(`√2 * √2` collapses back to the integer `2`); a result with no recognized closed form
+falls to the float tier (`π + 1` is `4.141592653589793`), and the float tier keeps
+`math.*`'s own behavior for float arguments (`\sqrt(2.0)` is `1.4142135623730951`).
+`√` is the prefix-operator spelling of `\sqrt(...)` — same evaluation, no separate
+name. Exact-tier domain failures are typed errors (`\sqrt(-1)`, `\ln(0)`,
+`\tan(π/2)`); the float tier keeps `math.*`'s own raising (`\sqrt(-1.0)` →
+`ValueError`, wrapped and spanned).
 
 ## Ranges
 

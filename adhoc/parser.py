@@ -9,6 +9,8 @@ precedence table in docs/grammar.md:
     multiplicative ::= juxtaposed (("*" | "/") juxtaposed)* ;
     juxtaposed  ::= unary unary* ;          -- implicit multiplication
     unary       ::= "-" unary | power ;
+    radical     ::= "√" unary ;   -- prefix spelling of \\sqrt(...): `√2^2` is √(2²),
+                                  -- `2^√2` works, `√2 3` is `(√2)·3`
     power       ::= postfix ("^" unary)? ;  -- right-associative
     postfix     ::= atom ("(" args ")")* ;  -- trailers attach only to name-ish heads
     args        ::= (expr | string | kwarg) ("," ...)* ;   kwarg ::= name "=" value ;
@@ -16,7 +18,11 @@ precedence table in docs/grammar.md:
 
 `power`'s exponent recurses into `unary`, not `power` — that's what makes `2^-1` parse
 (unary minus binds inside the exponent) and `2^3^2` right-associate. The base of `^` is a
-postfix node, so `-2^2` is `-(2^2)` and `f(x)^2` squares the result.
+postfix node, so `-2^2` is `-(2^2)` and `f(x)^2` squares the result. The radical `√` is
+the one prefix operator: it sits at the unary level and rewrites to a `\\sqrt(...)`
+application node, so evaluation is identical to the ASCII call form — `√2 3` is `(√2)·3`,
+`√2^2` reads √(2²) like the overbar visually extends, and `√2√3` juxtaposes into
+`√2·√3`.
 
 Postfix application is *syntactically* name-headed: a `(…)` trailer attaches only when the
 head so far is a name-ish node (`Var`, `BackslashRef`, or another `Call`). Number-headed
@@ -73,6 +79,7 @@ from .lexer import (
     Number,
     Plus,
     Question,
+    Radical,
     RParen,
     Semi,
     Slash,
@@ -128,7 +135,7 @@ class IncompleteInput(ParseError):
     "parsing failed" can catch ParseError and get the same msg/span fields."""
 
 
-_ATOM_STARTERS = (Number, Ident, Backslash, LParen, Str)
+_ATOM_STARTERS = (Number, Ident, Backslash, LParen, Str, Radical)
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
 # a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
@@ -814,7 +821,7 @@ class _Parser:
         return self.expr()
 
     # atom ::= number | string | identifier | "\"-name | "(" sequence ")"
-    #          | lambda ;
+    #          | lambda | radical ;
     def atom(self) -> Node:
         # An operand may start on the line after the operator that demands it
         # (`1 +` NL `2`): mid-expression, a newline never separates statements.
@@ -836,6 +843,17 @@ class _Parser:
                     return self._lambda(tok)
                 self.advance()
                 return BackslashRef(name=tok.name, span=tok.span)
+            case Radical():
+                # `√` is the prefix spelling of `\sqrt(...)`: the operand parses at
+                # the unary level (so `√2^2` reads √(2²), `2^√2` works, `√2·3` is
+                # `(√2)·3`) and the node rewrites to the ordinary application —
+                # evaluation is identical to the ASCII call form. A dangling `√`
+                # at EOF is IncompleteInput via the operand's atom parse, exactly
+                # like an unclosed parenthesis.
+                rad = self.advance()
+                operand = self.unary()
+                return Call(head=BackslashRef(name="sqrt", span=rad.span),
+                            args=(operand,), span=rad.span.to(operand.span))
             case LParen():
                 self.advance()
                 self.depth += 1

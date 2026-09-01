@@ -84,6 +84,18 @@ class Backslash(Token):
 
 
 @dataclass(frozen=True)
+class Radical(Token):
+    """The prefix radical operator `√` — the operator spelling of `\\sqrt(...)`.
+    `√` is a math symbol, not a letter (`isalpha` is False), so it cannot lex as
+    an identifier: it gets its own token and the parser gives it its prefix rule.
+    Not a name — it cannot be aliased, bound, or shadowed."""
+
+    @property
+    def describe(self) -> str:
+        return "`√`"
+
+
+@dataclass(frozen=True)
 class Plus(Token):
     @property
     def describe(self) -> str:
@@ -351,6 +363,14 @@ def tokenize(src: str) -> list[Token]:
         if c.isalpha():
             end = pos + len(c.encode("utf-8"))
             tokens.append(Ident(ch=c, span=Span(pos, end)))
+            i += 1
+            continue
+
+        if c == "√":
+            # The radical: a math symbol (not `isalpha`), so it is its own token —
+            # the parser's prefix rule rewrites it to a `\sqrt(...)` application.
+            end = pos + len(c.encode("utf-8"))
+            tokens.append(Radical(span=Span(pos, end)))
             i += 1
             continue
 

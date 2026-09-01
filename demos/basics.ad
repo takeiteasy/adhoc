@@ -22,7 +22,8 @@ x = 10;
 x = 10;
 x = 11;
 
--- the prelude: built-in constants and function aliases, protected everywhere
+-- the prelude: built-in constants and function builtins, protected everywhere;
+-- π and √2 are exact symbolic reals (docs/numerics.md)
 π;
 \pi;
 r = 2;

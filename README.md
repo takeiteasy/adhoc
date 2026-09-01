@@ -30,7 +30,9 @@ branch), real booleans with `\true`/`\false`,
 immutable bindings (`x = 1` binds once and compares thereafter — there is no
 reassignment or declaration spelling), name aliases (`Σ` is `\sum`; declare your
 own with `\alias`, or define both spellings at once with `\dual \alpha, α = 3.14`),
-a protected prelude scope (`π`, `\sqrt`, `\sin`, ...), and the `\py("math.sqrt")(2)` escape
+a protected prelude scope (`π`, `\sqrt`, `\sin`, ... — `π` and `√2` stay exact as
+symbolic reals, and `√2 * √2` collapses back to the integer `2`),
+and the `\py("math.sqrt")(2)` escape
 hatch into Python — full trust, native conversion
 both ways, with keyword arguments at any application site (`\py("int")("ff", \base=16)`)
 (docs/numerics.md). Strings are values: they bind, concatenate with `+` (`"data" + ".csv"`),

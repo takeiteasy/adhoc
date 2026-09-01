@@ -76,11 +76,15 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   branch evaluates. It is right-associative with the loosest expression precedence,
   and a parenthesized statement group is its multi-statement branch form
   (docs/grammar.md, `## Conditionals`).
-- A protected prelude scope: `π`/`\pi`, `e`, `\inf`, `\nan`, `\true`/`\false`, and the
-  `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function aliases (the plain `math.*`
-  callables, float tier).
+- A protected prelude scope: `π`/`\pi` and `e` are exact symbolic reals (displaying with
+  a trailing ellipsis), `\inf`/`\nan` the non-finite floats, `\true`/`\false` the booleans,
+  and the `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function builtins — exact arguments go
+  through the symbolic closed-form tier (`\sqrt(2)` stays `√2`), everything else falls to
+  the `math.*` float tier (`\sin(1)`).
   Prelude names can never be rebound or shadowed, and unicode/ASCII spellings are one and
-  the same value (`π` and `\pi` are a single constant, via the name alias map).
+  the same value (`π` and `\pi` are a single constant, via the name alias map). `√` is the
+  prefix-operator spelling of `\sqrt(...)` — `√2 * √2` collapses back to the exact
+  integer `2` (docs/numerics.md).
 - Lazy arithmetic ranges: `a..b` is an inclusive step-1 range, `a..` is infinite, and
   `a,c..b` / `a,c..` infer the step as `c-a`. Finite ranges stop before crossing an
   unreachable endpoint; ranges display as `<range ...>` and can be assigned.
@@ -127,7 +131,7 @@ same way, and meaning comes from three places — the parser's closed set of spe
 the session alias map that normalizes short spellings to canonical
 names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`), and
 the prelude scope of
-built-in constants and function aliases (see docs/grammar.md, `## Constants and the
+built-in constants and function builtins (see docs/grammar.md, `## Constants and the
 prelude`). Everything else lexes cleanly and fails at evaluation as an unbound name, so
 later phases add bindings without touching the lexer.
 

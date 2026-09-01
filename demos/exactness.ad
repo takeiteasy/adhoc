@@ -9,6 +9,17 @@
 -- big integers are native
 2^100;
 
+-- common irrationals stay exact too (docs/numerics.md): a rational coefficient
+-- times one recognized symbolic real — π, √n, eⁿ, ln(n), sin/cos/tan(πn)
+π;
+√2;
+√2 * √2;        -- the collapse back to an exact integer
+√8;             -- normalized: 2√2
+\sin(π/3);      -- √3/2, exact
+\ln(2);
+2^(1/2);        -- the same √2, recognized through a rational exponent
+π + 1;          -- no single closed form → the float tier approximates it
+
 -- a float anywhere demotes the whole expression to the float tier
 0.1 + 0.2;
 1/3 + 0.5;

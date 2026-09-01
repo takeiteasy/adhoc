@@ -322,3 +322,144 @@ def test_fold_labels_map_ops_to_spellings():
     from adhoc.runtime import FOLD_LABELS
 
     assert FOLD_LABELS == {"add": "\\sum", "mul": "\\prod"}
+
+
+# --- the symbolic closed-form tier (adhoc/symbolic.py) ---
+
+
+import sympy
+
+from adhoc.runtime import PRELUDE, Engine
+from adhoc.span import Span
+from adhoc.symbolic import Symbolic, classify
+from adhoc.symbolic import E as E_SYM
+from adhoc.symbolic import PI as PI_SYM
+
+
+def sym(expr):
+    """Admit a sympy expression through the tier's gate — the only route tests
+    use to build symbolic values, mirroring what the seam does."""
+    return classify(expr)
+
+
+SQRT2 = sym(sympy.sqrt(2))
+SQRT3 = sym(sympy.sqrt(3))
+
+
+def test_symbolic_products_collapse_back_to_exact():
+    # The tier's headline: √2·√2 recognizes and collapses to the exact integer 2;
+    # π − π is 0. The collapse is an int, not a Fraction.
+    product = nmul(SQRT2, SQRT2)
+    assert product == 2 and type(product) is int
+    assert nsub(PI_SYM, PI_SYM) == 0 and type(nsub(PI_SYM, PI_SYM)) is int
+
+
+def test_symbolic_results_stay_symbolic():
+    # √2·√3 is √6, √8 normalizes to 2√2 — same canonical form, structural eq.
+    assert nmul(SQRT2, SQRT3) == sym(sympy.sqrt(6))
+    assert sym(sympy.sqrt(8)) == sym(2 * sympy.sqrt(2))
+    assert nadd(PI_SYM, PI_SYM) == sym(2 * sympy.pi)
+    assert npow(2, Fraction(1, 2)) == SQRT2  # 2^(1/2) recognizes as √2
+    assert npow(8, Fraction(1, 3)) == 2      # perfect cube collapses
+
+
+def test_symbolic_display_is_truncated_digits_plus_ellipsis():
+    assert nshow(PI_SYM) == "3.14159265358979..."
+    assert nshow(E_SYM) == "2.71828182845905..."
+    assert nshow(SQRT2) == "1.4142135623731..."
+    assert nshow(ndiv(PI_SYM, 2)) == "1.5707963267949..."
+    assert nshow(nmul(2, PI_SYM)) == "6.28318530717959..."
+    assert nshow(nneg(PI_SYM)) == "-3.14159265358979..."
+
+
+def test_symbolic_without_closed_form_falls_to_float():
+    # The strict single-term shape: π + 1, π·√2, 1/π and 2^(1/3) have no
+    # coefficient×atom form — the float tier stands in for the algebraic/RRA
+    # tiers until they land.
+    assert nadd(PI_SYM, 1) == 4.141592653589793
+    assert nmul(PI_SYM, SQRT2) == 4.442882938158366
+    assert ndiv(1, PI_SYM) == 0.3183098861837907
+    assert npow(2, Fraction(1, 3)) == 1.2599210498948732
+    assert npow(PI_SYM, -1) == 0.3183098861837907
+
+
+def test_symbolic_exact_tier_domain_errors_are_typed():
+    # No complex tier and no exact-tier infinity: fractional powers of negative
+    # bases and 0⁻ⁿ are typed NumErrors (the float tier would yield NaN).
+    with pytest.raises(NumError, match="not a real number"):
+        npow(-2, Fraction(1, 2))
+    with pytest.raises(NumError, match=DIVISION_BY_ZERO):
+        npow(0, Fraction(-1, 2))
+
+
+def test_symbolic_equality_is_exact():
+    assert neq(PI_SYM, PI_SYM)
+    assert neq(SQRT2, npow(2, Fraction(1, 2)))
+    assert not neq(PI_SYM, Fraction(22, 7))  # an atom never equals a rational
+    assert not neq(SQRT2, 2)
+
+
+def test_symbolic_ordering_is_exact():
+    eng = Engine({}, (Span(0, 0),))
+    assert eng.lt(PI_SYM, Fraction(22, 7), 0)
+    assert not eng.gt(PI_SYM, Fraction(22, 7), 0)
+    assert eng.lt(SQRT2, Fraction(3, 2), 0)
+    assert eng.gt(PI_SYM, 3, 0)
+    assert eng.ge(sym(sympy.sqrt(2)), sym(sympy.sqrt(2)), 0)
+
+
+def test_symbolic_float_side_compares_approximately():
+    # A float operand drags the comparison to the float tier: π equals its own
+    # double-precision rounding, and differs from 22/7's.
+    assert neq(PI_SYM, 3.141592653589793)
+    assert not neq(PI_SYM, 3.14)
+
+
+def test_as_float_widens_symbolic_reals():
+    assert _as_float(PI_SYM) == math.pi
+    assert _as_float(SQRT2) == math.sqrt(2)
+
+
+def test_prelude_constants_are_symbolic():
+    assert PRELUDE["pi"] is PI_SYM
+    assert PRELUDE["e"] is E_SYM
+    assert isinstance(PRELUDE["pi"], Symbolic)
+
+
+def test_prelude_builtins_recognize_exact_forms():
+    assert PRELUDE["sqrt"](2) == SQRT2
+    assert PRELUDE["sqrt"](8) == sym(2 * sympy.sqrt(2))
+    assert PRELUDE["sqrt"](2.0) == math.sqrt(2.0)  # float tier untouched
+    assert PRELUDE["sin"](ndiv(PI_SYM, 2)) == 1
+    assert PRELUDE["tan"](ndiv(PI_SYM, 4)) == 1
+    assert PRELUDE["cos"](ndiv(PI_SYM, 6)) == sym(sympy.sqrt(3) / 2)
+    assert PRELUDE["ln"](2) == sym(sympy.log(2))
+    assert PRELUDE["ln"](1) == 0
+    assert PRELUDE["sin"](0) == 0
+    assert PRELUDE["sin"](1) == math.sin(1)  # no closed form → float tier
+
+
+def test_prelude_builtins_domain_errors():
+    with pytest.raises(NumError, match="not a real number"):
+        PRELUDE["sqrt"](-2)
+    with pytest.raises(NumError, match="defined only for positive"):
+        PRELUDE["ln"](0)
+    with pytest.raises(NumError, match="odd multiples of pi/2"):
+        PRELUDE["tan"](ndiv(PI_SYM, 2))
+
+
+def test_prelude_builtin_display():
+    assert nshow(PRELUDE["sqrt"]) == "<fn \\sqrt(x)>"
+
+
+def test_to_ad_admits_recognized_sympy_values():
+    assert _to_ad(sympy.sqrt(2)) == SQRT2
+    assert _to_ad(sympy.pi) == PI_SYM
+    assert _to_ad(sympy.Rational(1, 2)) == Fraction(1, 2)
+
+
+def test_to_ad_rejects_unrecognized_sympy_values():
+    with pytest.raises(NumError, match="cannot convert a returned Symbol"):
+        _to_ad(sympy.Symbol("x"))
+    with pytest.raises(NumError, match="cannot convert"):
+        _to_ad(sympy.sqrt(2) + sympy.pi)  # real, but no single-atom form

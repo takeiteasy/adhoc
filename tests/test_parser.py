@@ -661,3 +661,71 @@ def test_session_aliases_are_not_implicit():
     # alone, so a session alias never leaks across a unit boundary.
     node = parse_program("α")
     assert isinstance(node, Var) and node.ch == "α"
+
+
+# --- the radical prefix operator (√) ---
+
+
+def test_radical_rewrites_to_sqrt_application():
+    # `√2` is the operator spelling of \sqrt(2): same node shape as the ASCII
+    # call, so evaluation is identical and no compiler change is needed.
+    node = parse_program("√2")
+    match node:
+        case Call(head=BackslashRef(name="sqrt"), args=(NumLit(text="2"),)):
+            pass
+        case _:
+            pytest.fail(f"expected √2 to rewrite to \\sqrt(2), got {node!r}")
+
+
+def test_radical_binds_operand_at_unary_level():
+    # `√2^2` reads √(2²) — the overbar extends over the power — while the
+    # radical sits inside `2^√2`'s exponent.
+    node = parse_program("√2^2")
+    match node:
+        case Call(head=BackslashRef(name="sqrt"), args=(BinOp(op=B.POW),)):
+            pass
+        case _:
+            pytest.fail(f"expected √(2^2), got {node!r}")
+    node = parse_program("2^√2")
+    match node:
+        case BinOp(op=B.POW, rhs=Call(head=BackslashRef(name="sqrt"))):
+            pass
+        case _:
+            pytest.fail(f"expected 2^(√2), got {node!r}")
+
+
+def test_radical_juxtaposes_like_an_atom():
+    # The radical is an atom starter: `2√3` is 2·√3, `√2√3` is √2·√3 — never
+    # the misread `√·2` of the pre-operator lexer.
+    for src in ("2√3", "√2√3"):
+        node = parse_program(src)
+        match node:
+            case BinOp(op=B.MUL):
+                pass
+            case _:
+                pytest.fail(f"expected juxtaposition for {src!r}, got {node!r}")
+
+
+def test_unary_minus_binds_outside_the_radical():
+    node = parse_program("-√2")
+    match node:
+        case UnOp(op=UnaryOperator.NEG, operand=Call(head=BackslashRef(name="sqrt"))):
+            pass
+        case _:
+            pytest.fail(f"expected -(√2), got {node!r}")
+
+
+def test_radical_grouped_operand():
+    node = parse_program("√(1+1)")
+    match node:
+        case Call(head=BackslashRef(name="sqrt"), args=(BinOp(op=B.ADD),)):
+            pass
+        case _:
+            pytest.fail(f"expected √(1+1), got {node!r}")
+
+
+def test_dangling_radical_offers_continuation():
+    # A `√` with no operand at EOF is incomplete input — the REPL continues the
+    # line exactly like an unclosed parenthesis.
+    with pytest.raises(IncompleteInput):
+        parse_program("√")

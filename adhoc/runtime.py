@@ -1,13 +1,20 @@
 """The numeric seam plus the statement machinery the lowered code calls into.
 
 Mirrors `num.rs` one-to-one (`nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg`/`neq`/`nshow`).
-Values map onto Python natives — Int→`int`, Rat→`fractions.Fraction`, Float→`float` —
-and arithmetic stays at the lowest tier that remains exact:
+Values map onto Python natives — Int→`int`, Rat→`fractions.Fraction`, Float→`float`,
+Symbol→`adhoc/symbolic.py`'s `Symbolic` (a rational coefficient times one recognized
+closed-form atom, backed by sympy) — and arithmetic stays at the lowest tier that
+remains exact:
 
 1. `int` — arbitrary precision natively.
 2. `Fraction` — arbitrary precision rational; auto-normalized, and collapsed back to
    `int` whenever its denominator is 1, or display would print `"1/1"`-style values.
-3. `float` — once an operation can't stay exact (float literal, non-integer exponent).
+3. `Symbolic` — closed-form irrationals (`√2`, `π`, `e²`, `ln(2)`, `sin(π/7)`, ...):
+   recognized coefficient×atom shapes stay exact (`√2·√2` collapses back to the
+   integer `2`); a real result with no recognized form falls to the float tier, the
+   stand-in for the algebraic/RRA tiers above (adhoc/symbolic.py, docs/numerics.md).
+4. `float` — once an operation can't stay exact (float literal, non-integer exponent
+   with no closed form).
 
 The `Engine` object is the seam's other half: every operation in generated code routes
 through it carrying a span id, which is what keeps runtime-error spans narrow (a
@@ -33,8 +40,9 @@ compare equal only to other strings. The conversion matrix (`_to_ad`) is deliber
 small:
 
 - bool → int (true becomes 1), int/float/Fraction pass through, `numbers.Rational`
-  collapses to Fraction/int, other `numbers.Real` widens to float, Decimal converts
-  exactly via Fraction.
+  collapses to Fraction/int, `Symbolic` passes through, recognized sympy expressions
+  convert through the symbolic tier's own gate, other `numbers.Real` widens to float,
+  Decimal converts exactly via Fraction.
 - `str` passes through as the value it already is — printable by `out`, bindable,
   concatenable; rejected by every other arithmetic operator.
 - complex, None, and everything else (lists, dicts, ...) are span-pointed rejections —
@@ -67,13 +75,17 @@ not exist in the grammar — identifiers are one character):
 
 ## The prelude
 
-A built-in scope present in every session (`PRELUDE` below): constants (`\\pi`,
-`e`, `\\inf`, `\\nan`, `\\true`, `\\false`) and py-function aliases (`\\sin`, `\\cos`,
-`\\tan`, `\\ln`, `\\sqrt` — plain `math.*` callables, float tier; symbolic closed forms
-are phase 2).
+A built-in scope present in every session (`PRELUDE` below): symbolic constants
+(`\\pi`, `e` — exact symbolic reals, displaying with a trailing ellipsis), the
+non-finite floats (`\\inf`, `\\nan`), booleans (`\\true`, `\\false`), and the
+function builtins (`\\sin`, `\\cos`, `\\tan`, `\\ln`, `\\sqrt`) — seam-native
+`PreludeFn` callables that replaced the original float-tier `math.*` aliases in
+place: exact arguments go through the symbolic tier (`\\sqrt(2)` stays `√2`),
+everything else falls to the `math.*` float tier (`\\sin(1)`).
 Unicode spellings of prelude names (`π`, `Σ`, `Π`) are not separate keys: the parser's
 alias map normalizes them to the canonical `\\`-name before evaluation, so `π` and
-`\\pi` are one name, not two (docs/grammar.md, `## Name aliases`). Prelude names
+`\\pi` are one name, not two (docs/grammar.md, `## Name aliases`); `√` is not a name
+at all but the prefix-operator spelling of `\\sqrt(...)`. Prelude names
 are permanently protected — they can never be rebound or shadowed, so a parameter,
 local, or binder named like a prelude entry is a redefinition error.
 
@@ -96,7 +108,9 @@ name is an error.
 - Negative base with a fractional exponent yields NaN — MPFR semantics; CPython's `**`
   would silently return a `complex`.
 - Display never uses scientific notation: the shortest-round-trip `repr` is expanded
-  positionally, matching `f64`'s `Display` (`10000000000000000.0`, `0.0000001`).
+  positionally, matching `f64`'s `Display` (`10000000000000000.0`, `0.0000001`);
+  symbolic reals show 15 significant digits plus a trailing ellipsis (`π` is
+  `3.14159265358979...`).
 """
 
 from collections.abc import Sequence
@@ -108,11 +122,13 @@ import math
 import numbers
 import os
 import types
-from typing import Any, NoReturn
+from typing import Any, Callable, NoReturn
 
+from . import symbolic
 from .span import Span
+from .symbolic import DomainError, Symbolic, Unrepresentable
 
-AdValue = int | Fraction | float | bool | str
+AdValue = int | Fraction | float | bool | str | Symbolic
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -129,24 +145,65 @@ MAX_PROBES = 200
 
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod"}
 
-_NUMERIC_TYPES = (int, float, Fraction)
+_NUMERIC_TYPES = (int, float, Fraction, Symbolic)
 
-# The prelude scope: built-in constants and py-function aliases, present in every
-# session (see the module docstring). `\ln` is natural log (math.log); the function
-# aliases are the float-tier `math.*` callables themselves — the symbolic tier will
-# replace these bindings in place, users never rebind them.
+
+class PreludeFn:
+    """A seam-native prelude builtin (`\\sqrt`, `\\sin`, ...): the symbolic tier's
+    in-place replacement for the original float-tier `math.*` aliases. Displays
+    like a user-defined function; protected like every prelude name."""
+
+    __slots__ = ("name", "fn", "__name__")
+
+    def __init__(self, name: str, fn: Callable):
+        self.name = name
+        self.fn = fn
+        # app()'s error prefix names the builtin, not its class.
+        self.__name__ = name
+
+    def __call__(self, *args):
+        return self.fn(*args)
+
+
+def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
+    """Build one prelude function builtin: exact/symbolic arguments go through the
+    symbolic tier (`\\sqrt(2)` stays `√2`, `\\sin(π/3)` is `√3/2`, `\\ln(2)` stays
+    exact), falling to the `math.*` float tier when the exact result has no
+    recognized closed form (`\\sin(1)`). Float arguments stay entirely on the
+    float tier. Exact-tier domain failures (`\\sqrt(-2)`, `\\ln(0)`,
+    `\\tan(π/2)`) are typed NumErrors at the call's span; the float tier keeps
+    `math.*`'s own raising behavior (`\\sqrt(-2.0)` → ValueError, wrapped and
+    spanned by `app`)."""
+    def call(v: AdValue) -> AdValue:
+        _reject_non_numeric(v)
+        if isinstance(v, float):
+            return float_fn(v)
+        try:
+            return symbolic.apply(name, v)
+        except Unrepresentable:
+            return float_fn(_to_float(v))
+        except DomainError as e:
+            raise NumError(e.args[0])
+    return PreludeFn(name, call)
+
+
+# The prelude scope: built-in constants and function builtins, present in every
+# session (see the module docstring). `π`/`e` are exact symbolic reals; the function
+# builtins replaced the original float-tier `math.*` aliases in place — binding names
+# unchanged, exact arguments recognized through the symbolic tier (adhoc/symbolic.py,
+# docs/numerics.md), everything else on the `math.*` float tier.
 PRELUDE: dict[str, Any] = {
-    "pi": math.pi,
-    "e": math.e,
+    "pi": symbolic.PI,
+    "e": symbolic.E,
     "inf": math.inf,
     "nan": math.nan,
     "true": True,
     "false": False,
-    "sin": math.sin,
-    "cos": math.cos,
-    "tan": math.tan,
-    "ln": math.log,
-    "sqrt": math.sqrt,
+    "sin": _prelude_fn("sin", math.sin),
+    "cos": _prelude_fn("cos", math.cos),
+    "tan": _prelude_fn("tan", math.tan),
+    "ln": _prelude_fn("ln", math.log),
+    "sqrt": _prelude_fn("sqrt", math.sqrt),
 }
 
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
@@ -211,12 +268,30 @@ def _reject_non_numeric(*vals: AdValue) -> None:
             raise NumError(NOT_A_NUMBER)
 
 
+def _symbolic_combine(op: str, a: AdValue, b: AdValue,
+                      float_fallback: Callable[[], AdValue]) -> AdValue:
+    """The symbolic tier's binary-op shim: dispatch into symbolic.combine; a real
+    result with no recognized closed form (`π + 1/3`, `π·√2`) falls to the float
+    tier — the stand-in for the algebraic/RRA tiers above — and an exact-tier
+    domain failure (`1/0` shapes, fractional powers of negatives) becomes the
+    seam's typed NumError (the caller attaches the span)."""
+    try:
+        return symbolic.combine(op, a, b)
+    except Unrepresentable:
+        return float_fallback()
+    except DomainError as e:
+        raise NumError(e.args[0])
+
+
 def nadd(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, str) and isinstance(b, str):
         return a + b  # string + string concatenates; mixed never coerces
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _to_float(a) + _to_float(b)
+    if isinstance(a, Symbolic) or isinstance(b, Symbolic):
+        return _symbolic_combine("add", a, b,
+                                 lambda: _to_float(a) + _to_float(b))
     if isinstance(a, Fraction) or isinstance(b, Fraction):
         return _normalize(Fraction(a) + Fraction(b))
     return a + b
@@ -226,6 +301,9 @@ def nsub(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _to_float(a) - _to_float(b)
+    if isinstance(a, Symbolic) or isinstance(b, Symbolic):
+        return _symbolic_combine("sub", a, b,
+                                 lambda: _to_float(a) - _to_float(b))
     if isinstance(a, Fraction) or isinstance(b, Fraction):
         return _normalize(Fraction(a) - Fraction(b))
     return a - b
@@ -235,6 +313,9 @@ def nmul(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _to_float(a) * _to_float(b)
+    if isinstance(a, Symbolic) or isinstance(b, Symbolic):
+        return _symbolic_combine("mul", a, b,
+                                 lambda: _to_float(a) * _to_float(b))
     if isinstance(a, Fraction) or isinstance(b, Fraction):
         return _normalize(Fraction(a) * Fraction(b))
     return a * b
@@ -244,6 +325,9 @@ def ndiv(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _fdiv(_to_float(a), _to_float(b))
+    if isinstance(a, Symbolic) or isinstance(b, Symbolic):
+        return _symbolic_combine("div", a, b,
+                                 lambda: _fdiv(_to_float(a), _to_float(b)))
     divisor = Fraction(b)
     if divisor == 0:
         raise NumError(DIVISION_BY_ZERO)
@@ -266,8 +350,22 @@ def npow(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     n = _integer_exponent(b)
     if n is not None:
+        if isinstance(a, Symbolic):
+            # A symbolic base to an integer power stays symbolic when the result
+            # has a closed form ((√2)² collapses to 2, e³ stays `e³`); `π⁻¹` has
+            # none and falls to the float tier.
+            return _symbolic_combine("pow", a, n,
+                                     lambda: _fpow(_to_float(a), float(n)))
         return _pow_exact_base(a, n)
-    return _fpow(_to_float(a), _to_float(b))
+    if _is_float(a) or _is_float(b):
+        return _fpow(_to_float(a), _to_float(b))
+    # Non-integer exponent on exact or symbolic operands: the symbolic tier
+    # recognizes closed forms (`2^(1/2)` is `√2`, `8^(1/3)` collapses to `2`),
+    # everything else falls to the float tier. A negative base to a fractional
+    # power is a typed error here (no complex tier) — the float tier's `_fpow`
+    # would yield NaN instead.
+    return _symbolic_combine("pow", a, b,
+                             lambda: _fpow(_to_float(a), _to_float(b)))
 
 
 def _integer_exponent(v: AdValue) -> int | None:
@@ -312,6 +410,8 @@ def _fpow(base: float, exp: float) -> float:
 
 def nneg(a: AdValue) -> AdValue:
     _reject_non_numeric(a)
+    if isinstance(a, Symbolic):
+        return symbolic.negate(a)  # negating a coefficient×atom form stays one
     return -a
 
 
@@ -325,6 +425,11 @@ def neq(a: AdValue, b: AdValue) -> bool:
         return a is b  # callables and other exotics compare by identity
     if _is_float(a) or _is_float(b):
         return _to_float(a) == _to_float(b)
+    if isinstance(a, Symbolic) or isinstance(b, Symbolic):
+        # Exact, decided on the symbolic tier's canonical forms (`√4` has already
+        # collapsed; `√2 = 2^(1/2)` stores identically; an atom never equals a
+        # rational). A float operand takes the approximate float branch above.
+        return symbolic.structurally_equal(a, b)
     return Fraction(a) == Fraction(b)
 
 
@@ -344,6 +449,10 @@ def nshow(v: AdValue | str) -> str:
         end = "" if v.end is None else nshow(v.end)
         suffix = " (lazy, infinite)" if v.end is None else ""
         return f"<range {start}{middle}..{end}{suffix}>"
+    if isinstance(v, Symbolic):
+        return symbolic.show(v)  # exact value, truncated digits + ellipsis
+    if isinstance(v, PreludeFn):
+        return f"<fn \\{v.name}(x)>"
     if callable(v) and not isinstance(v, _NUMERIC_TYPES):
         return _show_callable(v)
     if isinstance(v, float):
@@ -498,6 +607,17 @@ def _to_ad(value: Any) -> Any:
         # Two-arg construction normalizes; the single-Rational-arg form copies
         # numerator/denominator verbatim on py3.12+.
         return _normalize(Fraction(int(value.numerator), int(value.denominator)))
+    if isinstance(value, Symbolic):
+        return value
+    if type(value).__module__.startswith("sympy"):
+        # A sympy object returned across the \py boundary: recognized closed forms
+        # convert through the same gate the tier admits by (sympy rationals were
+        # already handled exactly above); anything else is a named rejection.
+        try:
+            return symbolic.from_sympy(value)
+        except (Unrepresentable, DomainError):
+            raise NumError(
+                f"cannot convert a returned {type(value).__name__} to an ad value")
     if isinstance(value, str):
         # Already an ad value: bindable, concatenable, printable.
         return value
@@ -637,6 +757,10 @@ class Engine:
             _reject_non_numeric(a, b)
             if isinstance(a, float) or isinstance(b, float):
                 a, b = float(a), float(b)
+            elif isinstance(a, Symbolic) or isinstance(b, Symbolic):
+                # Exact ordering across the exact + symbolic tiers (a float operand
+                # takes the approximate float branch above).
+                return symbolic.compare(op, a, b)
             else:
                 a, b = Fraction(a), Fraction(b)
             return {"lt": a < b, "le": a <= b, "gt": a > b, "ge": a >= b}[op]
@@ -946,8 +1070,10 @@ class Engine:
                 self._fail("user-defined functions take positional arguments only", sid)
             try:
                 result = fn(*args, **kwargs)
-            except NumError:
-                raise
+            except NumError as e:
+                # A seam-native callable's typed failure gets the call's span (a
+                # bare NumError escaping would lose it to the defensive mapper).
+                self._fail(e.args[0], sid)
             except EvalError:
                 raise
             except Exception as e:

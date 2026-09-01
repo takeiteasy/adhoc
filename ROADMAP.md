@@ -53,6 +53,11 @@ anything above the seam — no reason to wait on phase 3's collection types, whi
 independent of it.
 
 - Symbolic closed-form irrationals (`π`, `√n`, `eⁿ`, `ln(n)`, `sin(πn)`, `tan(πn)`, ...).
+  **Done** — rational coefficient × one recognized atom behind the seam (adhoc/symbolic.py,
+  backed by sympy), with `cos(πn)` and integer powers of `π` added to the recognizer, `√`
+  as the prefix-operator spelling of `\sqrt(...)`, exact equality/ordering on canonical
+  forms, and float fallback (the stand-in for the tiers below) for values with no single
+  coefficient×atom form.
 - Algebraic numbers (roots of rational-coefficient polynomials).
 - Recursive Real Arithmetic (RRA) fallback: `tolerance -> rational` functions.
 - Display precision via iterative tolerance tightening (RRA tier only — exact rationals

@@ -150,7 +150,7 @@ literals:
 - Function definitions (`f(x) = body`) are declarations, not checks: a protected or
   already-visible name is an error, since functions compare by identity and a check
   would be meaningless.
-- Built-in constants/functions (`π`/`\pi`, `e`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`) live in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same name, not two different ones. The function aliases are the plain float-tier `math.*` callables; the symbolic closed forms of phase 2 replace those bindings in place.
+- Built-in constants/functions (`π`/`\pi`, `e`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`) live in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same name, not two different ones. The function builtins are seam-native: exact arguments are recognized through the symbolic closed-form tier (`√2 * √2` collapses back to `2`), everything else falls to the `math.*` float tier.
 - Prelude names are **protected everywhere**, not shadowable — a function parameter, local binding, or fold/limit binder named `π` (or any other prelude name) is a redefinition error, not a local shadow. This keeps a prelude name's meaning fixed regardless of where it's read from, at the cost of a handful of single-character names (`π`, `e`) being permanently unavailable as ordinary variable names.
 
 ## numeric types
@@ -293,7 +293,7 @@ Following the approach used by Android's calculator app (see https://chadnauseam
 
 1. **Bignum integers** — arbitrary-precision, the base case.
 2. **Bignum rationals** — numerator/denominator pairs of bignums.
-3. **Symbolic closed forms** — common irrationals (`π`/`\pi`, `√n`/`\sqrt(n)`, `e^n`, `\ln(n)`, `\sin(π*n)`/`\sin(\pi*n)`, `\tan(π*n)`/`\tan(\pi*n)`, ...) kept as a rational coefficient times a recognized symbolic real, rather than approximated. This is the same underlying value shape as `\expr(...)` from the symbolic algebra section — a "number" and an "unevaluated expression" aren't fully separate concepts here. `√` is sugar for `\sqrt(...)`, same rule as everything else unicode; `\sin`/`\tan`/`\ln` have no unicode form and are always written with the sigil.
+3. **Symbolic closed forms** — common irrationals (`π`/`\pi` and integer powers of it, `√n`/`\sqrt(n)`, `e^n`, `\ln(n)`, `\sin(π*n)`/`\sin(\pi*n)`, `\cos(π*n)`/`\cos(\pi*n)`, `\tan(π*n)`/`\tan(\pi*n)`, ...) kept as a rational coefficient times a recognized symbolic real, rather than approximated. This is the same underlying value shape as `\expr(...)` from the symbolic algebra section — a "number" and an "unevaluated expression" aren't fully separate concepts here. `√` is sugar for `\sqrt(...)`, same rule as everything else unicode; `\sin`/`\cos`/`\tan`/`\ln` have no unicode form and are always written with the sigil. The strict single-term shape is deliberate: a value with no coefficient×atom form (`π + 1/3`, `π·√2`) falls through to the next tier rather than widening the shape — the tier stays a recognizer, not a general symbolic algebra (that's phase 4).
 4. **Algebraic numbers** — roots of rational-coefficient polynomials, for exact values that don't reduce to a known symbolic form (e.g. roots from `solve`).
 5. **Recursive Real Arithmetic (RRA)** — the fallback for everything else. Every such real is represented as a function `tolerance -> rational`, i.e. "give me an error bound and I'll give you a rational within it." Arbitrarily precise on demand, but the slowest tier.
 

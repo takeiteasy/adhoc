@@ -16,6 +16,7 @@ from adhoc.lexer import (
     Number,
     Plus,
     Question,
+    Radical,
     RParen,
     Semi,
     Slash,
@@ -257,3 +258,13 @@ def test_question_token():
     # lexing (it already lexes as Colon for imports) and fuses with nothing.
     assert kinds("a ? b : c") == [Ident, Question, Ident, Colon, Ident, Eof]
     assert kinds("? :") == [Question, Colon, Eof]
+
+
+def test_radical_token():
+    # `√` is a math symbol, not a letter (`isalpha` is False) — its own token, and
+    # the parser's prefix rule is what gives it meaning. Byte spans, like every
+    # token: `√` is three UTF-8 bytes.
+    toks = tokenize("√2")
+    assert [type(t) for t in toks] == [Radical, Number, Eof]
+    assert toks[0].span == Span(0, 3)
+    assert kinds("√") == [Radical, Eof]

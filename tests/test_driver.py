@@ -308,26 +308,32 @@ def test_fold_and_limit_lower_through_engine_calls():
 
 
 def test_prelude_constants_are_bound():
-    assert last("π") == "= 3.141592653589793"
-    assert last("\\pi") == "= 3.141592653589793"
-    assert last("e") == "= 2.718281828459045"
+    # π and e are exact symbolic reals now: 15 significant digits, trailing
+    # ellipsis — the value is exact, the digits are a truncation (DESIGN.md).
+    assert last("π") == "= 3.14159265358979..."
+    assert last("\\pi") == "= 3.14159265358979..."
+    assert last("e") == "= 2.71828182845905..."
 
 
 def test_unicode_and_ascii_prelude_names_share_one_value():
     # The sharing is a parse-time alias (π normalizes to \pi), not two prelude
     # keys — both spellings read one value, and neither can be rebound.
-    assert last("π") == last("\\pi") == "= 3.141592653589793"
+    assert last("π") == last("\\pi") == "= 3.14159265358979..."
     with pytest.raises(EvalError, match="is protected"):
         run_source("π = 3")
 
 
 def test_prelude_py_function_aliases():
-    assert last("\\sqrt(2)") == "= 1.4142135623730951"
-    assert last("\\sin(0)") == "= 0.0"
-    assert last("\\cos(0)") == "= 1.0"
-    assert last("\\ln(1)") == "= 0.0"
-    # The aliases are the plain math.* callables themselves.
-    assert last("\\sqrt") == "= <py math.sqrt>"
+    # Exact arguments stay exact through the symbolic tier; float arguments stay
+    # on the float tier.
+    assert last("\\sqrt(2)") == "= 1.4142135623731..."
+    assert last("\\sqrt(2.0)") == "= 1.4142135623730951"
+    assert last("\\sin(0)") == "= 0"
+    assert last("\\cos(0)") == "= 1"
+    assert last("\\ln(1)") == "= 0"
+    assert last("\\sin(1)") == "= 0.8414709848078965"
+    # The builtins are seam-native now, not the math.* callables.
+    assert last("\\sqrt") == "= <fn \\sqrt(x)>"
     # They compose with the rest of the language.
     out = last("\\lim(x=0) \\sin(x)/x")
     assert abs(float(out[2:]) - 1.0) <= 1e-9
@@ -543,3 +549,67 @@ def test_dual_function_recurses_through_the_short_spelling():
     aliases = dict(ALIAS_SEED)
     run_source("\\dual \\fact, φ(n) = n <= 1 ? 1 : n * φ(n - 1)", env, aliases=aliases)
     assert last("φ(5)", env, aliases=aliases) == "= 120"
+
+
+# --- symbolic closed forms: the first tier above exact rationals ---
+
+
+def test_symbolic_irrationals_stay_exact():
+    assert last("√2 * √2") == "= 2"
+    assert last("\\sqrt(2) * \\sqrt(2)") == "= 2"
+    assert last("√8") == "= 2.82842712474619..."  # 2√2, normalized
+    assert last("π + π") == "= 6.28318530717959..."
+    assert last("2π") == "= 6.28318530717959..."
+    assert last("π - π") == "= 0"
+    assert last("\\sum(i=1..3) iπ") == "= 18.8495559215388..."  # 6π
+
+
+def test_symbolic_trig_and_log_forms():
+    assert last("\\sin(π/2)") == "= 1"
+    assert last("\\tan(π/4)") == "= 1"
+    assert last("\\sin(π/3)") == "= 0.866025403784439..."  # √3/2
+    assert last("\\cos(π/6)") == "= 0.866025403784439..."
+    assert last("\\ln(2)") == "= 0.693147180559945..."
+    assert last("\\ln(e)") == "= 1"
+
+
+def test_symbolic_exact_equality_and_order():
+    assert last("x = √2; x = 2^(1/2)") == "true"
+    assert last("x = π; x = π") == "true"
+    assert last("x = π; x = 22/7") == "false"
+    assert last("√2 < 3/2") == "= true"
+    assert last("π < 22/7") == "= true"
+    assert last("π > 3") == "= true"
+
+
+def test_symbolic_without_closed_form_falls_to_float():
+    # The strict single-term shape: π + 1, π·√2 and 2^(1/3) have no
+    # coefficient×atom form — the float tier approximates them until the
+    # algebraic/RRA tiers land (docs/numerics.md).
+    assert last("π + 1") == "= 4.141592653589793"
+    assert last("π √2") == "= 4.442882938158366"
+    assert last("2^(1/3)") == "= 1.2599210498948732"
+    assert last("1/π") == "= 0.3183098861837907"
+
+
+def test_radical_prefix_operator():
+    assert last("√2") == "= 1.4142135623731..."
+    assert last("√2^2") == "= 2"  # √(2²) — the overbar extends over the power
+    assert last("2^√2") == "= 2.665144142690225"
+    assert last("2√3") == "= 3.46410161513775..."  # juxtaposed: 2·√3
+    assert last("√(1+1)") == "= 1.4142135623731..."
+
+
+def test_symbolic_domain_errors_are_typed_and_spanned():
+    for src, msg in [
+        ("\\sqrt(-1)", "not a real number"),
+        ("√(-2)", "not a real number"),
+        ("\\ln(0)", "defined only for positive"),
+        ("\\ln(-1)", "defined only for positive"),
+        ("\\tan(π/2)", "odd multiples of pi/2"),
+        ("(-2)^(1/2)", "not a real number"),
+        ("0^(-1/2)", "division by zero"),
+    ]:
+        with pytest.raises(EvalError, match=msg) as e:
+            run_source(src)
+        assert "internal error" not in e.value.msg, f"for {src}"
