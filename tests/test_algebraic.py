@@ -6,6 +6,7 @@ import sympy
 
 from adhoc.algebraic import Algebraic, classify
 from adhoc.driver import run_source
+from adhoc.rra import RRA
 from adhoc.runtime import (
     DIVISION_BY_ZERO,
     PRELUDE,
@@ -84,13 +85,13 @@ def test_algebraic_arithmetic_stays_exact():
     assert isinstance(nneg(nadd(CBRT2, CBRT4)), Algebraic)
 
 
-def test_transcendental_results_fall_to_float():
+def test_transcendental_results_stay_rra():
     # π-bearing sums/products and `2^√2` (Gelfond–Schneider) are transcendental
-    # — not algebraic — so the float tier (the RRA stand-in) approximates them.
-    assert isinstance(nadd(PI_SYM, CBRT2), float)
-    assert isinstance(nmul(PI_SYM, CBRT2), float)
-    assert isinstance(npow(2, SQRT2), float)
-    assert nadd(PI_SYM, CBRT2) == math.pi + 2 ** (1 / 3)
+    # — not algebraic — so the RRA tier holds them exact (tests/test_rra.py).
+    assert isinstance(nadd(PI_SYM, CBRT2), RRA)
+    assert isinstance(nmul(PI_SYM, CBRT2), RRA)
+    assert isinstance(npow(2, SQRT2), RRA)
+    assert abs(float(nadd(PI_SYM, CBRT2)) - (math.pi + 2 ** (1 / 3))) <= 1e-12
 
 
 def test_algebraic_display_is_truncated_digits_plus_ellipsis():
@@ -142,18 +143,19 @@ def test_as_float_widens_algebraic_reals():
 
 def test_prelude_sqrt_recognizes_algebraic_forms():
     # Only `sqrt` routes algebraic arguments through the gate (`sin`/`ln` of a
-    # nonzero algebraic are transcendental — straight to the float tier).
+    # nonzero algebraic are transcendental — they go to the RRA tier, which
+    # holds every real).
     assert PRELUDE["sqrt"](CBRT2) == alg(sympy.Integer(2) ** sympy.Rational(1, 6))
-    assert isinstance(PRELUDE["sin"](CBRT2), float)
-    assert isinstance(PRELUDE["ln"](CBRT2), float)
+    assert isinstance(PRELUDE["sin"](CBRT2), RRA)
+    assert isinstance(PRELUDE["ln"](CBRT2), RRA)
     with pytest.raises(NumError, match="not a real number"):
         PRELUDE["sqrt"](nsub(0, CBRT4))
 
 
 def test_to_ad_admits_real_algebraic_sympy_values():
     assert _to_ad(sympy.Integer(2) ** sympy.Rational(1, 3)) == CBRT2
-    with pytest.raises(NumError, match="cannot convert"):
-        _to_ad(sympy.pi + sympy.Integer(2) ** sympy.Rational(1, 3))
+    assert isinstance(
+        _to_ad(sympy.pi + sympy.Integer(2) ** sympy.Rational(1, 3)), RRA)
 
 
 def test_algebraic_exact_arithmetic():

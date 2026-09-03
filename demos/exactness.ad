@@ -18,7 +18,7 @@
 \sin(π/3);      -- √3/2, exact
 \ln(2);
 2^(1/2);        -- the same √2, recognized through a rational exponent
-π + 1;          -- no single closed form → the float tier approximates it
+π + 1;          -- no single closed form → the RRA tier holds it exact
 
 -- a float anywhere demotes the whole expression to the float tier
 0.1 + 0.2;

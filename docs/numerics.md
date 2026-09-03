@@ -27,14 +27,19 @@ Values are Python natives plus one tier type:
 - `adhoc/algebraic.py`'s `Algebraic` — a real algebraic number with no symbolic
   closed form (`2^(1/3)`, `2^(1/4)`, `√2 + 2^(1/3)`), stored as the canonical
   sympy expression (see below).
-- `float` — the fallback once an operation can't stay exact (a float literal, a
-   transcendental result with no closed form), a 53-bit double just like the design's
-   default mantissa width. gmpy2 types can slot behind the same functions later without
-   touching anything above the seam.
+- `adhoc/rra.py`'s `RRA` — every other real (`π + 1`, `π·√2`, `1/π`, `2^√2`,
+  `sin(1)`), stored as the canonical sympy expression and approximated on
+  demand as a `tolerance -> rational` function (see below).
+- `float` — the explicitly-inexact tier: a float literal, a float-argument
+  call, or an IEEE non-finite value. Any float operand demotes the result to
+  `float` (the fast path); no exact tier ever produces it. gmpy2 types can
+  slot behind the same functions later without touching anything above the
+  seam.
 
 Arithmetic stays at the lowest tier that remains exact: any `float` operand demotes the
-result to `float`; otherwise any `Symbolic` or `Algebraic` operand dispatches into the
-exact tiers (symbolic tried first; a non-algebraic result demotes to `float` in turn);
+result to `float`; otherwise any `Symbolic`, `Algebraic` or `RRA` operand dispatches into the
+exact tiers (symbolic tried first, then algebraic, then RRA; a value of undecided
+reality demotes to `float` in turn);
 otherwise any
 `Fraction` promotes both operands to exact rationals; otherwise plain integer arithmetic.
 
@@ -42,8 +47,8 @@ otherwise any
 is the exact rational `1/2`, and `0^-n` raises the typed division-by-zero failure, the
 same failure as `1/0`, not a separate untyped error); a non-integer exponent tries the
 symbolic tier first (`2^(1/2)` is `√2`, `8^(1/3)` collapses to `2`), then the algebraic
-tier (`2^(1/3)` stays `2^(1/3)`, `(√2)^(1/2)` arrives as `2^(1/4)`), and falls to
-`float` when the result is transcendental (`2^√2`).
+tier (`2^(1/3)` stays `2^(1/3)`, `(√2)^(1/2)` arrives as `2^(1/4)`), then the RRA
+tier (`2^√2` stays exact).
 
 Every failure mode in this module is a typed `NumError`, not a generic exception — that's
 what lets the REPL and script driver catch "arithmetic failed" specifically and attach the
@@ -74,11 +79,10 @@ settles relational expressions between explicit numbers, not float-compares them
 
 The **strict single-term shape** is deliberate: a value like `π + 1`, `π·√2` or `1/π`
 has no coefficient×atom form and is transcendental (not algebraic either), so the gate
-rejects it and the seam **falls to the float
-tier** (`π + 1` is `4.141592653589793`). The float tier is the current stand-in for the
-RRA tier above this one — when it lands, these values stop being
-approximated. Until then, a float result mixed among exact values is the visible sign
-that neither exact tier could hold the value. Real algebraic results without a closed
+rejects it and the seam tries the algebraic tier next, then the RRA tier, which
+holds every real (`π + 1` is `4.14159265358979...`). A value of undecided
+reality is the only thing that still reaches the float tier. Real algebraic
+results without a closed
 form (`2^(1/3)`, `√2 + 2^(1/3)`) stay exact in the algebraic tier instead.
 
 Domain failures are typed `NumError`s — the exact tiers have no infinity and there is no
@@ -93,8 +97,10 @@ complex tier:
 
 The `√` prefix operator rewrites to a `\sqrt(...)` application at parse time
 (docs/grammar.md), so the prelude builtins carry all of this: exact arguments go through
-the gate (`\sqrt(2)` stays `√2`, `\ln(2)` stays exact), arguments with no closed form
-fall to the float tier (`\sin(1)` is `0.8414709848078965`), and float arguments stay
+the gate (`\sqrt(2)` stays `√2`, `\ln(2)` stays exact), algebraic `√` arguments
+through the algebraic gate (`\sqrt(2^(1/3))` is `2^(1/6)`, `\sqrt(√2)` is
+`2^(1/4)`), arguments with no lower-tier form through the RRA gate (`\sin(1)`
+stays exact), and float arguments stay
 entirely on the float tier (`\sqrt(2.0)` is `1.4142135623730951`).
 
 ## Algebraic numbers (tier 4)
@@ -109,14 +115,41 @@ The seam tries the symbolic tier first and this tier second: `2^(1/3)` and
 `2^(1/4)` stay exact, `(√2)^(1/2)` arrives as `2^(1/4)`, multi-term sums like
 `√2 + 2^(1/3)` stay exact, and integer powers collapse back down
 (`2^(1/3)^3` is the integer `2`). Transcendental results (`π + 2^(1/3)`,
-`2^√2`) are not algebraic and fall to the float tier. Equality and ordering are
+`2^√2`) are not algebraic and fall to the RRA tier. Equality and ordering are
 exact, decided on canonical forms like the symbolic tier's; only `\sqrt` routes
 algebraic arguments through the gate (`\sqrt(2^(1/3))` is `2^(1/6)` —
-`\sin`/`\ln` of a nonzero algebraic are transcendental, so those go straight to
-the float tier). The tier is real-only: fractional powers of negatives keep the
+`\sin`/`\ln` of a nonzero algebraic are transcendental, so those go to the RRA
+tier). The tier is real-only: fractional powers of negatives keep the
 exact tiers' typed "not a real number" failure (real-branch selection is future
 complex-surface work), and display reuses the symbolic policy — 15 significant
 digits plus a trailing ellipsis.
+
+## Recursive Real Arithmetic (tier 5)
+
+`adhoc/rra.py` implements the fallback above the algebraic tier (DESIGN.md,
+`## exact arithmetic (internals)`): every other real — multi-term
+transcendental sums (`π + 1`, `π·√2`), reciprocals of atoms (`1/π`),
+transcendental powers (`2^√2`), closed-form-free function results (`sin(1)`) —
+is kept exact as the canonical sympy expression, the same Expr-wrapper pattern
+as the symbolic and algebraic tiers, so structural equality on the stored
+expression decides equalities exactly.
+
+The ticket's spelling — a real as a function `tolerance -> rational` — is
+`approximate`/`to_function`: the stored expression evaluated at escalating
+sympy precision until two successive evaluations agree within half the
+requested tolerance, returning the agreed value's exact decimal expansion as a
+`Fraction`. The series, continued fractions and iterative methods behind that
+evaluation are sympy's, never hand-rolled at the seam; no separate
+interval-refinement machinery exists. Pointwise sympy evaluation re-gates from
+the top on every operation, so exact results collapse back down (`(π + 1) − π`
+is the integer `1`, never an RRA value), and only `\sqrt` of a symbolic
+argument additionally routes through the algebraic gate (`\sqrt(√2)` is
+`2^(1/4)`) — every other closed-form-free builtin result is transcendental and
+goes straight here. The tier is real-only like the ones below it, and display
+reuses the same interim policy — 15 significant digits plus a trailing
+ellipsis (`π + 1` is `4.14159265358979...`). Iterative tightening is ticket
+#40's work; Richardson–Fitch equality is ticket #41's — both build on
+`approximate`, neither lives here.
 
 ## Convergence: one mechanism, two riders
 
@@ -130,6 +163,11 @@ result. Three knobs live at the top of `runtime.py`:
 | `CONVERGENCE_TOLERANCE` | `1e-12` | plateau test shared by both features (`EXACT_CONVERGENCE_TOLERANCE = 1/10^12` mirrors it for exact-tier comparisons) |
 | `MAX_TERMS` | `2_000_000` | fold-term budget before `` `\sum did not converge within … terms `` |
 | `MAX_PROBES` | `200` | per-side `\lim` probe budget |
+
+RRA approximation (`approximate` in `adhoc/rra.py`) shares the shape with a
+caller-supplied tolerance rather than the fixed knob: escalate precision until
+two successive evaluations agree within half the tolerance, otherwise error
+rather than return a possibly-misleading partial. No second mechanism exists.
 
 The two riders:
 
@@ -191,11 +229,12 @@ is reserved for values that are already inexact or truncated: showing an *exact*
 through decimal machinery would be a category error — `1/3` never leaves the rational
 tier, per the tower's own "stay at the lowest tier that remains exact" rule.
 
-Symbolic reals print as **15 significant digits, expanded positionally, plus a trailing
-ellipsis** (`π` is `3.14159265358979...`, `√2` is `1.4142135623731...`, `-π` is
-`-3.14159265358979...`) — the DESIGN display examples verbatim. The value is exact; the
-digits are a truncation, and the ellipsis says so. (The full display policy for the
-non-exact tiers is its own ticket.)
+Symbolic, algebraic and RRA reals print as **15 significant digits, expanded
+positionally, plus a trailing ellipsis** (`π` is `3.14159265358979...`, `√2` is
+`1.4142135623731...`, `-π` is `-3.14159265358979...`, `π + 1` is
+`4.14159265358979...`) — the DESIGN display examples verbatim. The value is exact; the
+digits are a truncation, and the ellipsis says so. (Iterative
+tolerance-tightening display for the RRA tier is its own ticket.)
 
 Floats print via Python's shortest-round-trip `repr` (`"1.0"`, `"1.4142135623730951"`),
 with two adjustments so output matches `f64` `Display`: scientific notation is expanded
@@ -216,8 +255,8 @@ through `_to_ad`:
 | `int`, `float`, `Fraction` | pass through |
 | `decimal.Decimal` | exact `Fraction`/`int` via its string-exact value |
 | any other `numbers.Rational` | normalized `Fraction`/`int` (constructed from numerator/denominator explicitly — py3.12+'s single-Rational-arg constructor copies them unnormalized) |
-| `Symbolic` (an ad symbolic real passed through Python) | passes through |
-| a sympy expression (`\py("sympy.sqrt")(2)`) | recognized closed forms convert through the symbolic tier's gate (`sympy.sqrt(2)` arrives as `√2`), real algebraic values through the algebraic tier's (`sympy.cbrt(2)` arrives exact); sympy rationals convert exactly via the row above; anything else rejected |
+| `Symbolic`/`Algebraic`/`RRA` (an ad exact real passed through Python) | passes through |
+| a sympy expression (`\py("sympy.sqrt")(2)`) | recognized closed forms convert through the symbolic tier's gate (`sympy.sqrt(2)` arrives as `√2`), real algebraic values through the algebraic tier's (`sympy.cbrt(2)` arrives exact), every other real through the RRA tier's (`sympy.pi + 1` arrives exact); sympy rationals convert exactly via the row above; anything else rejected |
 | any other `numbers.Real` (incl. numpy floats) | widened to `float` |
 | `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
 | `complex` | rejected — no complex tier yet |
@@ -230,9 +269,11 @@ typed "operands must be numbers" failure at the operator's span.
 
 ## What later phases add here
 
-The symbolic closed-form tier is in (above), as is the algebraic tier. The RRA fallback
-becomes a new case in this module's dispatch the same way — the compiler/driver layers
-above are unaffected by its addition, which is the entire point of the seam. The
-algebraic tier's first payoff is already visible: former float fallbacks like
-`2^(1/3)` and `(√2)^(1/2)` are exact now, while transcendental values like `π + 1`
-and `π·√2` wait on RRA.
+The symbolic closed-form tier is in (above), as is the algebraic tier, as is
+the RRA fallback — each becomes a new case in this module's dispatch the same
+way, and the compiler/driver layers above are unaffected by each addition,
+which is the entire point of the seam. The RRA tier's first payoff is already
+visible: former float fallbacks like `π + 1`, `π·√2`, `2^√2` and `\sin(1)` are
+exact now, while values of undecided reality are the only thing that still
+reaches the float tier. Iterative display tightening (ticket #40) and
+Richardson–Fitch equality (ticket #41) build on `approximate` next.

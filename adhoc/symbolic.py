@@ -31,9 +31,8 @@ Two failure kinds, both internal — the seam converts them:
 
 - `Unrepresentable` — a real, finite value with no recognized closed form
   (`π + 1/3`, `π·√2`, `1/π`, `2^(1/3)`). The strict single-term shape cannot hold
-  it, so the seam demotes it to the float tier — the current stand-in for the
-  algebraic and RRA tiers above this one. That demotion is temporary by design:
-  when the upper tiers land, these values stop being approximated.
+  it, so the seam tries the algebraic tier next, then the RRA tier — only a
+  value of undecided reality reaches the float tier.
 - `DomainError` — the exact tiers have no infinity and there is no complex tier:
   `√` of a negative, `ln(0)`, `tan(π/2)`, `0⁻ⁿ`. The seam turns the message into
   its typed `NumError` with the caller's span. (The float tier keeps its own
@@ -61,8 +60,8 @@ DISPLAY_DIGITS = 15
 
 class Unrepresentable(Exception):
     """A real, finite symbolic-tier result with no recognized coefficient×atom
-    closed form (`π + 1/3`, `π·√2`, `2^(1/3)`). Internal: the seam demotes it to
-    the float tier, the stand-in for the not-yet-built algebraic/RRA tiers."""
+    closed form (`π + 1/3`, `π·√2`, `2^(1/3)`). Internal: the seam tries the
+    algebraic tier next, then the RRA tier."""
 
 
 class DomainError(Exception):
@@ -186,7 +185,7 @@ def classify(expr: sympy.Expr) -> Fraction | Symbolic:
     if isinstance(coeff, sympy.Rational) and coeff != 0 and _is_atom(rest):
         return Symbolic(expr)
     raise Unrepresentable(
-        "no recognized closed form; the float tier approximates it")
+        "no recognized closed form; the upper tiers hold it")
 
 
 def combine(op: str, a: int | Fraction | Symbolic,

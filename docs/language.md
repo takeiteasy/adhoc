@@ -64,8 +64,10 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   there are no module values or dotted attribute access (docs/grammar.md,
   `## Modules and imports`).
 - Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`),
-  exact symbolic closed forms (`√2 * √2` is exactly `2`), and exact real algebraic
-  numbers (`2^(1/3)` stays exact, displaying `1.25992104989487...`).
+  exact symbolic closed forms (`√2 * √2` is exactly `2`), exact real algebraic
+  numbers (`2^(1/3)` stays exact, displaying `1.25992104989487...`), and exact
+  Recursive Real Arithmetic (`π + 1` stays exact, displaying
+  `4.14159265358979...`; any error bound yields a rational within it).
 - Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
 - User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
   semicolon-sequenced bodies, first-class function values, and recursion.
@@ -139,6 +141,11 @@ later phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
 
+- Symbolic, algebraic and RRA values display 15 significant digits plus a trailing
+  ellipsis (`π` is `3.14159265358979...`, `2^(1/3)` is
+  `1.25992104989487...`, `π + 1` is `4.14159265358979...`). The value is exact;
+  only the digits are approximate —
+  the ellipsis says so (docs/numerics.md).
 - Caret columns are counted in *characters*, not terminal display width. A genuinely
   full-width or combining-mark identifier character will make the caret land a column or two
   off; ordinary unicode letters like `π` are unaffected (1 character, 1 column). Not worth a

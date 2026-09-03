@@ -329,6 +329,7 @@ def test_fold_labels_map_ops_to_spellings():
 
 import sympy
 
+from adhoc.rra import RRA
 from adhoc.runtime import PRELUDE, Engine
 from adhoc.span import Span
 from adhoc.symbolic import Symbolic, classify
@@ -372,16 +373,20 @@ def test_symbolic_display_is_truncated_digits_plus_ellipsis():
     assert nshow(nneg(PI_SYM)) == "-3.14159265358979..."
 
 
-def test_symbolic_without_closed_form_falls_to_float():
+def test_symbolic_without_closed_form_stays_rra():
     # The strict single-term shape: π + 1, π·√2 and 1/π have no
     # coefficient×atom form and are transcendental (not algebraic either) —
-    # the float tier stands in for the RRA tier until it lands
-    # (docs/numerics.md). Real algebraic results without a closed form
+    # the RRA tier holds them exact (docs/numerics.md, tests/test_rra.py).
+    # Real algebraic results without a closed form
     # (`2^(1/3)`) stay exact in the algebraic tier (tests/test_algebraic.py).
-    assert nadd(PI_SYM, 1) == 4.141592653589793
-    assert nmul(PI_SYM, SQRT2) == 4.442882938158366
-    assert ndiv(1, PI_SYM) == 0.3183098861837907
-    assert npow(PI_SYM, -1) == 0.3183098861837907
+    assert isinstance(nadd(PI_SYM, 1), RRA)
+    assert isinstance(nmul(PI_SYM, SQRT2), RRA)
+    assert isinstance(ndiv(1, PI_SYM), RRA)
+    assert isinstance(npow(PI_SYM, -1), RRA)
+    assert nshow(nadd(PI_SYM, 1)) == "4.14159265358979..."
+    assert nshow(nmul(PI_SYM, SQRT2)) == "4.44288293815837..."
+    assert nshow(ndiv(1, PI_SYM)) == "0.318309886183791..."
+    assert nshow(npow(PI_SYM, -1)) == "0.318309886183791..."
 
 
 def test_symbolic_exact_tier_domain_errors_are_typed():
@@ -437,7 +442,7 @@ def test_prelude_builtins_recognize_exact_forms():
     assert PRELUDE["ln"](2) == sym(sympy.log(2))
     assert PRELUDE["ln"](1) == 0
     assert PRELUDE["sin"](0) == 0
-    assert PRELUDE["sin"](1) == math.sin(1)  # no closed form → float tier
+    assert isinstance(PRELUDE["sin"](1), RRA)  # no closed form → RRA tier
 
 
 def test_prelude_builtins_domain_errors():
@@ -463,4 +468,6 @@ def test_to_ad_rejects_unrecognized_sympy_values():
     with pytest.raises(NumError, match="cannot convert a returned Symbol"):
         _to_ad(sympy.Symbol("x"))
     with pytest.raises(NumError, match="cannot convert"):
-        _to_ad(sympy.sqrt(2) + sympy.pi)  # real, but no single-atom form
+        _to_ad(sympy.oo)  # no exact tier holds infinity
+    # Real but form-free sums now admit through the RRA tier instead.
+    assert isinstance(_to_ad(sympy.sqrt(2) + sympy.pi), RRA)

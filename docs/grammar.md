@@ -575,7 +575,7 @@ equally final. Built-in names live in a prelude scope protected by the same mech
 | `e` | the symbolic real e — exact; displays `2.71828182845905...` |
 | `\inf` / `\nan` | the non-finite floats `Inf` / `NaN` — float tier only; the exact tiers have neither (`1/0` is a typed error). IEEE semantics, docs/numerics.md |
 | `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
-| `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`); everything else falls to the `math.*` float tier (`\sin(1)`). Display as `<fn \sqrt(x)>` |
+| `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`); algebraic `√` arguments through the algebraic tier (`\sqrt(2^(1/3))` is `2^(1/6)`); anything real the lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact); everything else falls to the `math.*` float tier. Display as `<fn \sqrt(x)>` |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
 `π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is protected ``
@@ -584,7 +584,7 @@ Unicode and ASCII spellings are the same value — `π` and `\pi` are one
 name, not two. The function builtins replaced the original float-tier `math.*` aliases
 in place: binding names unchanged, but exact closed forms stay exact
 (`√2 * √2` collapses back to the integer `2`); a result with no recognized closed form
-falls to the float tier (`π + 1` is `4.141592653589793`), and the float tier keeps
+stays exact in the algebraic or RRA tier (`π + 1` is `4.14159265358979...`), and the float tier keeps
 `math.*`'s own behavior for float arguments (`\sqrt(2.0)` is `1.4142135623730951`).
 `√` is the prefix-operator spelling of `\sqrt(...)` — same evaluation, no separate
 name. Exact-tier domain failures are typed errors (`\sqrt(-1)`, `\ln(0)`,

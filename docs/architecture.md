@@ -18,6 +18,9 @@ adhoc/
 ├── algebraic   — the real-algebraic tier behind the seam (roots beyond the
 │                 closed-form shape, backed by sympy; only runtime.py dispatches
 │                 into it)
+├── rra         — the Recursive Real Arithmetic fallback behind the seam
+│                 (every other real as a tolerance->rational function, backed
+│                 by sympy; only runtime.py dispatches into it)
 ├── compiler    — lowering: adhoc AST → Python source, one line per statement
 ├── driver      — compile/exec pairing, error mapping back through spans
 ├── diagnostic  — caret-pointing renderer

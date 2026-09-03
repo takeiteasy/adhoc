@@ -17,10 +17,14 @@ stays at the lowest tier that remains exact:
    adhoc/algebraic.py, docs/numerics.md).
 4. `Algebraic` — real algebraic numbers beyond the single-term shape (`2^(1/3)`,
    `2^(1/4)`, `√2 + 2^(1/3)`, ...): tried after the symbolic tier, exact with
-   decidable equality; anything non-algebraic falls to the float tier, the
-   stand-in for the RRA tier above.
-5. `float` — once an operation can't stay exact (float literal, transcendental
-   result with no closed form).
+   decidable equality; anything not algebraic falls to the RRA tier
+   (adhoc/algebraic.py, adhoc/rra.py, docs/numerics.md).
+5. `RRA` — every other real (`π + 1`, `π·√2`, `1/π`, `2^√2`, `sin(1)`, ...):
+   stored as the canonical sympy expression and approximated on demand as a
+   `tolerance -> rational` function (adhoc/rra.py).
+6. `float` — the explicitly-inexact tier: a float literal, a float-argument
+   call, or an IEEE non-finite value. Any float operand demotes the result to
+   float (the fast path); exact tiers never produce it.
 
 The `Engine` object is the seam's other half: every operation in generated code routes
 through it carrying a span id, which is what keeps runtime-error spans narrow (a
@@ -46,8 +50,9 @@ compare equal only to other strings. The conversion matrix (`_to_ad`) is deliber
 small:
 
 - bool → int (true becomes 1), int/float/Fraction pass through, `numbers.Rational`
-  collapses to Fraction/int, `Symbolic`/`Algebraic` pass through, recognized sympy
-  expressions convert through the symbolic tier's gate then the algebraic tier's,
+  collapses to Fraction/int, `Symbolic`/`Algebraic`/`RRA` pass through, recognized sympy
+  expressions convert through the symbolic tier's gate then the algebraic tier's
+  then the RRA tier's,
   other `numbers.Real` widens to float,
   Decimal converts exactly via Fraction.
 - `str` passes through as the value it already is — printable by `out`, bindable,
@@ -85,12 +90,13 @@ not exist in the grammar — identifiers are one character):
 A built-in scope present in every session (`PRELUDE` below): symbolic constants
 (`\\pi`, `e` — exact symbolic reals, displaying with a trailing ellipsis), the
 non-finite floats (`\\inf`, `\\nan`), booleans (`\\true`, `\\false`), and the
-function builtins (`\\sin`, `\\cos`, `\\tan`, `\\ln`, `\\sqrt`) — seam-native
-`PreludeFn` callables that replaced the original float-tier `math.*` aliases in
- place: exact arguments go through the symbolic tier (`\\sqrt(2)` stays `√2`),
- algebraic `\\sqrt` arguments through the algebraic tier (`\\sqrt(2^(1/3))` is
- `2^(1/6)`),
- everything else falls to the `math.*` float tier (`\\sin(1)`).
+  function builtins (`\\sin`, `\\cos`, `\\tan`, `\\ln`, `\\sqrt`) — seam-native
+  `PreludeFn` callables that replaced the original float-tier `math.*` aliases in
+  place: exact arguments go through the symbolic tier (`\\sqrt(2)` stays `√2`),
+  algebraic `\\sqrt` arguments through the algebraic tier (`\\sqrt(2^(1/3))` is
+  `2^(1/6)`), anything real the lower tiers cannot hold through the RRA tier
+  (`\\sin(1)` stays exact),
+  everything else falls to the `math.*` float tier (`\\sqrt(-2.0)`).
 Unicode spellings of prelude names (`π`, `Σ`, `Π`) are not separate keys: the parser's
 alias map normalizes them to the canonical `\\`-name before evaluation, so `π` and
 `\\pi` are one name, not two (docs/grammar.md, `## Name aliases`); `√` is not a name
@@ -118,7 +124,7 @@ name is an error.
   would silently return a `complex`.
 - Display never uses scientific notation: the shortest-round-trip `repr` is expanded
   positionally, matching `f64`'s `Display` (`10000000000000000.0`, `0.0000001`);
-  symbolic and algebraic reals show 15 significant digits plus a trailing
+  symbolic, algebraic and RRA reals show 15 significant digits plus a trailing
   ellipsis (`π` is `3.14159265358979...`).
 """
 
@@ -133,12 +139,13 @@ import os
 import types
 from typing import Any, Callable, NoReturn
 
-from . import algebraic, symbolic
+from . import algebraic, rra, symbolic
 from .span import Span
 from .algebraic import Algebraic
+from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
 
-AdValue = int | Fraction | float | bool | str | Symbolic | Algebraic
+AdValue = int | Fraction | float | bool | str | Symbolic | Algebraic | RRA
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -155,7 +162,7 @@ MAX_PROBES = 200
 
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod"}
 
-_NUMERIC_TYPES = (int, float, Fraction, Symbolic, Algebraic)
+_NUMERIC_TYPES = (int, float, Fraction, Symbolic, Algebraic, RRA)
 
 
 class PreludeFn:
@@ -178,9 +185,10 @@ class PreludeFn:
 def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
     """Build one prelude function builtin: exact/symbolic arguments go through the
     symbolic tier (`\\sqrt(2)` stays `√2`, `\\sin(π/3)` is `√3/2`, `\\ln(2)` stays
-    exact), algebraic arguments to `\\sqrt` through the algebraic tier
-    (`\\sqrt(2^(1/3))` is `2^(1/6)`), falling to the `math.*` float tier when the
-    exact result has no recognized closed form (`\\sin(1)`). Float arguments stay
+    exact), algebraic `\\sqrt` arguments through the algebraic tier
+    (`\\sqrt(2^(1/3))` is `2^(1/6)`), anything real the lower tiers cannot hold
+    through the RRA tier (`\\sin(1)` stays exact), falling to the `math.*` float
+    tier only when the value is not an established real. Float arguments stay
     entirely on the float tier. Exact-tier domain failures (`\\sqrt(-2)`,
     `\\ln(0)`,
     `\\tan(π/2)`) are typed NumErrors at the call's span; the float tier keeps
@@ -190,23 +198,55 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
         _reject_non_numeric(v)
         if isinstance(v, float):
             return float_fn(v)
+        if isinstance(v, RRA):
+            # An RRA argument is already beyond the lower tiers; the call stays
+            # real and finite, so the RRA tier holds it.
+            try:
+                return rra.apply(name, v)
+            except rra.DomainError as e:
+                raise NumError(e.args[0])
+            except rra.Unrepresentable:
+                return float_fn(_to_float(v))
         if isinstance(v, Algebraic):
             # Only `sqrt` preserves algebraicity (`sin`/`cos`/`tan`/`ln` of a
             # nonzero algebraic are transcendental), so only it routes through
-            # the algebraic gate — everything else stays on the float tier.
+            # the algebraic gate — everything else goes to the RRA tier, which
+            # holds every real, before the float tier.
             if name != "sqrt":
-                return float_fn(_to_float(v))
+                try:
+                    return rra.apply(name, v)
+                except rra.DomainError as e:
+                    raise NumError(e.args[0])
+                except rra.Unrepresentable:
+                    return float_fn(_to_float(v))
             try:
                 return algebraic.apply(name, v)
             except algebraic.Unrepresentable:
-                return float_fn(_to_float(v))
+                pass
             except algebraic.DomainError as e:
                 raise NumError(e.args[0])
         try:
             return symbolic.apply(name, v)
         except Unrepresentable:
-            return float_fn(_to_float(v))
+            pass
         except DomainError as e:
+            raise NumError(e.args[0])
+        if name == "sqrt":
+            # `sqrt` preserves algebraicity for symbolic arguments too
+            # (`\sqrt(√2)` is `2^(1/4)`), so it routes through the algebraic
+            # gate before the RRA tier — every other builtin of an exact
+            # argument with no closed form is transcendental.
+            try:
+                return algebraic.apply(name, v)
+            except algebraic.Unrepresentable:
+                pass
+            except algebraic.DomainError as e:
+                raise NumError(e.args[0])
+        try:
+            return rra.apply(name, v)
+        except rra.Unrepresentable:
+            return float_fn(_to_float(v))
+        except rra.DomainError as e:
             raise NumError(e.args[0])
     return PreludeFn(name, call)
 
@@ -215,7 +255,9 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
 # session (see the module docstring). `π`/`e` are exact symbolic reals; the function
 # builtins replaced the original float-tier `math.*` aliases in place — binding names
 # unchanged, exact arguments recognized through the symbolic tier (adhoc/symbolic.py,
-# docs/numerics.md), everything else on the `math.*` float tier.
+# docs/numerics.md), algebraic `sqrt` arguments through the algebraic tier, anything
+# real the lower tiers cannot hold through the RRA tier, everything else on the
+# `math.*` float tier.
 PRELUDE: dict[str, Any] = {
     "pi": symbolic.PI,
     "e": symbolic.E,
@@ -295,13 +337,14 @@ def _reject_non_numeric(*vals: AdValue) -> None:
 def _exact_combine(op: str, a: AdValue, b: AdValue,
                    float_fallback: Callable[[], AdValue]) -> AdValue:
     """The exact tiers' binary-op shim: dispatch into symbolic.combine first,
-    then algebraic.combine. A symbolic coefficient×atom result stays symbolic;
-    a real algebraic result with no recognized closed form (`2^(1/3)`,
-    `√2 + 2^(1/3)`) stays algebraic; a transcendental result (`π + 1/3`,
-    `π·√2`, `2^√2`) falls to the float tier — the stand-in for the RRA tier
-    above. An exact-tier domain failure (`1/0` shapes, fractional powers of
-    negatives) becomes the seam's typed NumError (the caller attaches the
-    span)."""
+    then algebraic.combine, then rra.combine. A symbolic coefficient×atom result
+    stays symbolic; a real algebraic result with no recognized closed form
+    (`2^(1/3)`, `√2 + 2^(1/3)`) stays algebraic; every other real
+    (`π + 1/3`, `π·√2`, `2^√2`) stays RRA — approximated on demand as a
+    `tolerance -> rational` function (adhoc/rra.py). Only a value of undecided
+    reality falls to the float tier. An exact-tier domain failure (`1/0`
+    shapes, fractional powers of negatives) becomes the seam's typed NumError
+    (the caller attaches the span)."""
     try:
         return symbolic.combine(op, a, b)
     except Unrepresentable:
@@ -311,8 +354,14 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
     try:
         return algebraic.combine(op, a, b)
     except algebraic.Unrepresentable:
-        return float_fallback()
+        pass
     except algebraic.DomainError as e:
+        raise NumError(e.args[0])
+    try:
+        return rra.combine(op, a, b)
+    except rra.Unrepresentable:
+        return float_fallback()
+    except rra.DomainError as e:
         raise NumError(e.args[0])
 
 
@@ -322,7 +371,7 @@ def nadd(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _to_float(a) + _to_float(b)
-    if isinstance(a, (Symbolic, Algebraic)) or isinstance(b, (Symbolic, Algebraic)):
+    if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("add", a, b,
                                  lambda: _to_float(a) + _to_float(b))
     if isinstance(a, Fraction) or isinstance(b, Fraction):
@@ -334,7 +383,7 @@ def nsub(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _to_float(a) - _to_float(b)
-    if isinstance(a, (Symbolic, Algebraic)) or isinstance(b, (Symbolic, Algebraic)):
+    if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("sub", a, b,
                                  lambda: _to_float(a) - _to_float(b))
     if isinstance(a, Fraction) or isinstance(b, Fraction):
@@ -346,7 +395,7 @@ def nmul(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _to_float(a) * _to_float(b)
-    if isinstance(a, (Symbolic, Algebraic)) or isinstance(b, (Symbolic, Algebraic)):
+    if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("mul", a, b,
                                  lambda: _to_float(a) * _to_float(b))
     if isinstance(a, Fraction) or isinstance(b, Fraction):
@@ -358,7 +407,7 @@ def ndiv(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         return _fdiv(_to_float(a), _to_float(b))
-    if isinstance(a, (Symbolic, Algebraic)) or isinstance(b, (Symbolic, Algebraic)):
+    if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("div", a, b,
                                  lambda: _fdiv(_to_float(a), _to_float(b)))
     divisor = Fraction(b)
@@ -383,23 +432,24 @@ def npow(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     n = _integer_exponent(b)
     if n is not None:
-        if isinstance(a, (Symbolic, Algebraic)):
-            # A symbolic/algebraic base to an integer power stays exact when
+        if isinstance(a, (Symbolic, Algebraic, RRA)):
+            # A symbolic/algebraic/RRA base to an integer power stays exact when
             # the result has a closed form ((√2)² collapses to 2, e³ stays
             # `e³`, `2^(1/3)^3` collapses to 2); `π⁻¹` has none and falls to
-            # the float tier.
+            # the RRA tier.
             return _exact_combine("pow", a, n,
                                      lambda: _fpow(_to_float(a), float(n)))
         return _pow_exact_base(a, n)
     if _is_float(a) or _is_float(b):
         return _fpow(_to_float(a), _to_float(b))
-    # Non-integer exponent on exact, symbolic or algebraic operands: the
+    # Non-integer exponent on exact, symbolic, algebraic or RRA operands: the
     # symbolic tier recognizes closed forms (`2^(1/2)` is `√2`, `8^(1/3)`
     # collapses to `2`), the algebraic tier real algebraic roots (`2^(1/3)`
-    # is `2^(1/3)`), and anything transcendental (`2^√2`) falls to the float
-    # tier. A negative base to a fractional power is a typed error here (no
-    # complex tier — real-branch selection is ticket #42's work) — the float
-    # tier's `_fpow` would yield NaN instead.
+    # is `2^(1/3)`), the RRA tier every other real (`2^√2`), and only a value
+    # of undecided reality falls to the float tier. A negative base to a
+    # fractional power is a typed error here (no complex tier — real-branch
+    # selection is ticket #42's work) — the float tier's `_fpow` would yield
+    # NaN instead.
     return _exact_combine("pow", a, b,
                              lambda: _fpow(_to_float(a), _to_float(b)))
 
@@ -450,6 +500,8 @@ def nneg(a: AdValue) -> AdValue:
         return symbolic.negate(a)  # negating a coefficient×atom form stays one
     if isinstance(a, Algebraic):
         return algebraic.negate(a)  # negating a real algebraic stays one
+    if isinstance(a, RRA):
+        return rra.negate(a)  # negating a real stays one
     return -a
 
 
@@ -463,6 +515,10 @@ def neq(a: AdValue, b: AdValue) -> bool:
         return a is b  # callables and other exotics compare by identity
     if _is_float(a) or _is_float(b):
         return _to_float(a) == _to_float(b)
+    if isinstance(a, RRA) or isinstance(b, RRA):
+        # Exact, decided on the tiers' canonical forms. A float operand takes
+        # the approximate float branch above; Richardson–Fitch is ticket #41.
+        return rra.structurally_equal(a, b)
     if isinstance(a, Algebraic) or isinstance(b, Algebraic):
         # Exact, decided on the tiers' canonical forms (`2^(1/3)^2` and
         # `4^(1/3)` store identically; an algebraic never equals a rational).
@@ -496,6 +552,8 @@ def nshow(v: AdValue | str) -> str:
         return symbolic.show(v)  # exact value, truncated digits + ellipsis
     if isinstance(v, Algebraic):
         return algebraic.show(v)  # exact value, truncated digits + ellipsis
+    if isinstance(v, RRA):
+        return rra.show(v)  # exact value, truncated digits + ellipsis
     if isinstance(v, PreludeFn):
         return f"<fn \\{v.name}(x)>"
     if callable(v) and not isinstance(v, _NUMERIC_TYPES):
@@ -656,11 +714,14 @@ def _to_ad(value: Any) -> Any:
         return value
     if isinstance(value, Algebraic):
         return value
+    if isinstance(value, RRA):
+        return value
     if type(value).__module__.startswith("sympy"):
         # A sympy object returned across the \py boundary: recognized closed forms
         # convert through the symbolic tier's own gate, real algebraic numbers
-        # through the algebraic tier's (sympy rationals were already handled
-        # exactly above); anything else is a named rejection.
+        # through the algebraic tier's, every other real through the RRA tier's
+        # (sympy rationals were already handled exactly above); anything else
+        # is a named rejection.
         try:
             return symbolic.from_sympy(value)
         except (Unrepresentable, DomainError):
@@ -668,6 +729,10 @@ def _to_ad(value: Any) -> Any:
         try:
             return algebraic.from_sympy(value)
         except (algebraic.Unrepresentable, algebraic.DomainError):
+            pass
+        try:
+            return rra.from_sympy(value)
+        except (rra.Unrepresentable, rra.DomainError):
             raise NumError(
                 f"cannot convert a returned {type(value).__name__} to an ad value")
     if isinstance(value, str):
@@ -809,6 +874,11 @@ class Engine:
             _reject_non_numeric(a, b)
             if isinstance(a, float) or isinstance(b, float):
                 a, b = float(a), float(b)
+            elif isinstance(a, RRA) or isinstance(b, RRA):
+                # Exact ordering across the exact + symbolic + algebraic + RRA
+                # tiers (a float operand takes the approximate float branch
+                # above).
+                return rra.compare(op, a, b)
             elif isinstance(a, Algebraic) or isinstance(b, Algebraic):
                 # Exact ordering across the exact + symbolic + algebraic tiers
                 # (a float operand takes the approximate float branch above).

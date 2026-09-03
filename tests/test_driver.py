@@ -331,7 +331,7 @@ def test_prelude_py_function_aliases():
     assert last("\\sin(0)") == "= 0"
     assert last("\\cos(0)") == "= 1"
     assert last("\\ln(1)") == "= 0"
-    assert last("\\sin(1)") == "= 0.8414709848078965"
+    assert last("\\sin(1)") == "= 0.841470984807897..."
     # The builtins are seam-native now, not the math.* callables.
     assert last("\\sqrt") == "= <fn \\sqrt(x)>"
     # They compose with the rest of the language.
@@ -582,21 +582,20 @@ def test_symbolic_exact_equality_and_order():
     assert last("π > 3") == "= true"
 
 
-def test_symbolic_without_closed_form_falls_to_float():
+def test_symbolic_without_closed_form_stays_rra():
     # The strict single-term shape: π + 1, π·√2 and 1/π have no
     # coefficient×atom form and are transcendental (not algebraic either) —
-    # the float tier approximates them until the RRA tier lands
-    # (docs/numerics.md). `2^(1/3)` stays exact in the algebraic tier
-    # (tests/test_algebraic.py).
-    assert last("π + 1") == "= 4.141592653589793"
-    assert last("π √2") == "= 4.442882938158366"
-    assert last("1/π") == "= 0.3183098861837907"
+    # the RRA tier holds them exact (docs/numerics.md, tests/test_rra.py).
+    # `2^(1/3)` stays exact in the algebraic tier (tests/test_algebraic.py).
+    assert last("π + 1") == "= 4.14159265358979..."
+    assert last("π √2") == "= 4.44288293815837..."
+    assert last("1/π") == "= 0.318309886183791..."
 
 
 def test_radical_prefix_operator():
     assert last("√2") == "= 1.4142135623731..."
     assert last("√2^2") == "= 2"  # √(2²) — the overbar extends over the power
-    assert last("2^√2") == "= 2.665144142690225"
+    assert last("2^√2") == "= 2.66514414269023..."
     assert last("2√3") == "= 3.46410161513775..."  # juxtaposed: 2·√3
     assert last("√(1+1)") == "= 1.4142135623731..."
 

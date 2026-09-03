@@ -56,16 +56,23 @@ independent of it.
   **Done** — rational coefficient × one recognized atom behind the seam (adhoc/symbolic.py,
   backed by sympy), with `cos(πn)` and integer powers of `π` added to the recognizer, `√`
   as the prefix-operator spelling of `\sqrt(...)`, exact equality/ordering on canonical
-  forms, and float fallback (the stand-in for the tiers below) for values with no single
+  forms, and fallback to the upper tiers for values with no single
   coefficient×atom form.
 - Algebraic numbers (roots of rational-coefficient polynomials).
   **Done** — real algebraic values beyond the closed-form shape stay exact behind
   the seam (adhoc/algebraic.py, backed by sympy; symbolic tried first), with exact
-  equality/ordering on canonical forms and float fallback (the stand-in for the
-  RRA tier) for transcendental results. Real odd roots of negatives keep the
+  equality/ordering on canonical forms and fallback to the RRA tier
+  for transcendental results. Real odd roots of negatives keep the
   exact tiers' domain-error contract; real-branch selection rides the future
   complex surface.
 - Recursive Real Arithmetic (RRA) fallback: `tolerance -> rational` functions.
+  **Done** — every other real stays exact behind the seam (adhoc/rra.py, backed
+  by sympy; symbolic tried first, then algebraic), with pointwise arithmetic
+  that collapses back down when a result fits a lower tier (`(π + 1) − π` is
+  the integer `1`), on-demand `tolerance -> rational` approximation sharing the
+  convergence shape, exact equality/ordering on canonical forms, and the float
+  tier remaining only for explicitly-inexact values (float literals,
+  float-argument calls, IEEE non-finite values).
 - Display precision via iterative tolerance tightening (RRA tier only — exact rationals
   already display as `a/b`, decided and implemented in phase 0).
 - Equality testing: exact for rational/algebraic tiers; Richardson-Fitch heuristic (Schanuel's

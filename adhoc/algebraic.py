@@ -28,8 +28,7 @@ The symbolic tier is tried first — the seam dispatches into `symbolic.combine`
 before this module, and this module's `classify` is never asked about a
 coefficient×atom form in normal operation. Anything transcendental (`π + 1`,
 `π·√2`, `1/π`, `2^√2`) is not algebraic and raises `Unrepresentable`: the seam
-demotes it to the float tier, the remaining stand-in for the RRA tier above
-(ticket #39). The tier is real-only: non-real results raise `DomainError`, and
+tries the RRA tier next, which holds every real. The tier is real-only: non-real results raise `DomainError`, and
 real odd roots of negatives keep the exact tiers' `DomainError` contract (the
 principal branch is complex; selecting the real branch is ticket #42's complex-
 surface work, not this tier's).
@@ -67,8 +66,7 @@ DISPLAY_DIGITS = 15
 
 class Unrepresentable(Exception):
     """A real, finite result that is not algebraic (`π + 2^(1/3)`, `2^√2`).
-    Internal: the seam demotes it to the float tier, the stand-in for the
-    not-yet-built RRA tier."""
+    Internal: the seam tries the RRA tier next, which holds every real."""
 
 
 class DomainError(Exception):
@@ -172,7 +170,7 @@ def classify(expr: sympy.Expr) -> Fraction | Algebraic:
     if expr.is_algebraic is True and expr.is_real is True:
         return Algebraic(expr)
     raise Unrepresentable(
-        "not a real algebraic number; the float tier approximates it")
+        "not a real algebraic number; the RRA tier holds it")
 
 
 def combine(op: str, a, b) -> Fraction | Algebraic:
