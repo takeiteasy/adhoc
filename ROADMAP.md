@@ -79,8 +79,13 @@ independent of it.
   those digits print (longest agreed prefix otherwise), with `\prec(n)` setting
   the target (significant digits, 1..1000, default 15) through the single
   `nshow` path for REPL and script mode.
-- Equality testing: exact for rational/algebraic tiers; Richardson-Fitch heuristic (Schanuel's
-  conjecture) for RRA tier — accepted limitation, not a bug to fix.
+- Equality testing: exact for rational/algebraic tiers (structural identity with a
+  minimal-polynomial fallback for unexpanded algebraic forms); Richardson-Fitch
+  heuristic (Schanuel's conjecture) for any RRA-involved pair — accepted
+  limitation, not a bug to fix.
+  **Done** — `rra.equal` probes the difference at escalating tolerances
+  (`1e-12`, `1e-30`, `1e-50`) via `approximate`, and statement-level
+  check-assignment inherits it; float operands keep float-tier rules.
 - Numeric type surface: `int`, `real`, `rational`, `complex` literal syntax and
   promotion/coercion rules.
   - Open: literal syntax for each, and int/int → rational-vs-real coercion rule.

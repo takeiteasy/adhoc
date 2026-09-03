@@ -123,6 +123,20 @@ def test_algebraic_equality_is_exact():
     assert not neq(CBRT2, CBRT4)
 
 
+def test_algebraic_unexpanded_powers_compare_by_minimal_polynomial():
+    # Ticket #41 audit: sympy stores these equal pairs differently (powers
+    # left unexpanded), so structural `==` misses them — the
+    # minimal-polynomial fallback decides them exactly.
+    assert neq(npow(nadd(1, SQRT2), 2), nadd(3, nmul(2, SQRT2)))
+    assert neq(npow(nadd(SQRT2, sym(sympy.sqrt(3))), 2),
+               nadd(5, nmul(2, nmul(SQRT2, sym(sympy.sqrt(3))))))
+    assert neq(npow(nadd(CBRT2, 1), 3),
+               nadd(nadd(3, nmul(3, CBRT2)), nmul(3, CBRT4)))
+    # Unequal pairs with the same shape still compare false.
+    assert not neq(npow(nadd(1, SQRT2), 2), nadd(4, nmul(2, SQRT2)))
+    assert not neq(nadd(CBRT2, 1), nadd(CBRT4, 1))
+
+
 def test_algebraic_ordering_is_exact():
     eng = Engine({}, (Span(0, 0),))
     assert eng.lt(CBRT2, Fraction(3, 2), 0)
@@ -166,3 +180,8 @@ def test_algebraic_exact_arithmetic():
     assert last("x = 2^(1/3); x = 2") == "false"
     assert last("2^(1/3) < 3/2") == "= true"
     assert last("\\sqrt(2^(1/3))") == "= 1.12246204830937..."
+
+
+def test_algebraic_check_assign_uses_minimal_polynomial():
+    assert last("x = (1+√2)^2; x = 3+2*√2") == "true"
+    assert last("x = (1+√2)^2; x = 4+2*√2") == "false"

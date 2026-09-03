@@ -115,8 +115,11 @@ The seam tries the symbolic tier first and this tier second: `2^(1/3)` and
 `2^(1/4)` stay exact, `(√2)^(1/2)` arrives as `2^(1/4)`, multi-term sums like
 `√2 + 2^(1/3)` stay exact, and integer powers collapse back down
 (`2^(1/3)^3` is the integer `2`). Transcendental results (`π + 2^(1/3)`,
-`2^√2`) are not algebraic and fall to the RRA tier. Equality and ordering are
-exact, decided on canonical forms like the symbolic tier's; only `\sqrt` routes
+`2^√2`) are not algebraic and fall to the RRA tier. Equality is exact:
+structural identity is the fast path, with a minimal-polynomial fallback for
+the pairs sympy never canonicalizes (`(1+√2)^2` vs `3+2√2` — the difference
+of two real algebraics is algebraic, so `minpoly(a-b) == x` decides it);
+ordering is exact like the symbolic tier's. Only `\sqrt` routes
 algebraic arguments through the gate (`\sqrt(2^(1/3))` is `2^(1/6)` —
 `\sin`/`\ln` of a nonzero algebraic are transcendental, so those go to the RRA
 tier). The tier is real-only: fractional powers of negatives keep the
@@ -131,8 +134,19 @@ digits plus a trailing ellipsis.
 transcendental sums (`π + 1`, `π·√2`), reciprocals of atoms (`1/π`),
 transcendental powers (`2^√2`), closed-form-free function results (`sin(1)`) —
 is kept exact as the canonical sympy expression, the same Expr-wrapper pattern
-as the symbolic and algebraic tiers, so structural equality on the stored
-expression decides equalities exactly.
+as the symbolic and algebraic tiers. Equality for any RRA-involved pair is
+the Richardson–Fitch heuristic (DESIGN.md `## exact arithmetic`): structural
+identity first, an exact shortcut when the difference simplifies to a
+rational, otherwise escalating `approximate` probes on the difference
+(`1e-12`, `1e-30`, `1e-50`) — equal while indistinguishable from zero at
+every probe, unequal at the first distinguishable one. This proves hidden
+identities sympy never simplifies (`\sin(1)^2 + \cos(1)^2` equals `1`,
+including across the tiers), and it is what statement-level `=` inherits.
+It is a heuristic relying on Schanuel's conjecture — an accepted limitation,
+not a proof: values closer than the tightest probe would miscompare, and
+ordering stays on the exact sympy-relational path, never the heuristic. A
+float operand never reaches it: any float side demotes equality to the float
+tier first.
 
 The ticket's spelling — a real as a function `tolerance -> rational` — is
 `approximate`/`to_function`: the stored expression evaluated at escalating
@@ -148,8 +162,6 @@ argument additionally routes through the algebraic gate (`\sqrt(√2)` is
 goes straight here. The tier is real-only like the ones below it, and display
 prints the session precision's significant digits plus a trailing ellipsis
 (default 15: `π + 1` is `4.14159265358979...`), tightened iteratively (below).
-Richardson–Fitch equality is ticket #41's work — it builds on `approximate`
-but lives outside this module.
 
 Display tightening shares the convergence shape with a caller-supplied
 target: successive `approximate` observations at tightening tolerances (each
@@ -291,5 +303,7 @@ which is the entire point of the seam. The RRA tier's first payoff is already
 visible: former float fallbacks like `π + 1`, `π·√2`, `2^√2` and `\sin(1)` are
 exact now, while values of undecided reality are the only thing that still
 reaches the float tier. Iterative display tightening with the `\prec`
-precision setting is in (above); Richardson–Fitch equality (ticket #41)
-builds on `approximate` next.
+precision setting is in (above), as is Richardson–Fitch equality for any
+RRA-involved pair and minimal-polynomial fallback equality for the algebraic
+tier — both build on the exact tiers' canonical forms, and statement-level
+`=` inherits them.

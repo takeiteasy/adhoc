@@ -122,9 +122,29 @@ def test_rra_equality_is_exact():
     total = nadd(PI_SYM, 1)
     assert neq(total, nadd(PI_SYM, 1))
     assert neq(total, rra(sympy.pi + 1))
-    assert not neq(total, 4)  # an RRA value never equals a rational
+    assert not neq(total, 4)  # this pair is unequal (π + 1 is not 4)
     assert not neq(total, Fraction(29, 7))
     assert not neq(total, nmul(PI_SYM, SQRT2))
+
+
+def test_richardson_fitch_proves_hidden_identities():
+    # sympy never simplifies `sin(1)^2 + cos(1)^2` to 1, so structural
+    # equality misses it — the escalating-probe heuristic finds it, including
+    # across the tiers (RRA vs exact int/Fraction).
+    s1, c1 = PRELUDE["sin"](1), PRELUDE["cos"](1)
+    assert isinstance(s1, RRA) and isinstance(c1, RRA)
+    circle = nadd(nmul(s1, s1), nmul(c1, c1))
+    assert isinstance(circle, RRA)
+    assert neq(circle, 1)
+    assert neq(circle, Fraction(1, 1))
+    assert neq(1, circle)
+
+
+def test_richardson_fitch_rejects_close_values():
+    total = nadd(PI_SYM, 1)
+    assert not neq(total, nadd(total, Fraction(1, 10**9)))
+    assert not neq(total, nsub(total, Fraction(1, 10**13)))
+    assert not neq(nadd(PI_SYM, 1), nadd(PI_SYM, 2))
 
 
 def test_rra_ordering_is_exact():
@@ -193,6 +213,13 @@ def test_rra_exact_arithmetic():
     assert last("x = π + 1; x = 4") == "false"
     assert last("π + 1 > 4") == "= true"
     assert last("(π + 1) - π") == "= 1"
+
+
+def test_rra_check_assign_uses_richardson_fitch():
+    # Statement-level `=` inherits neq: the circle identity compares true
+    # though the value stays RRA (the fold never collapses it to 1).
+    assert last("x = \\sin(1)^2 + \\cos(1)^2; x = 1") == "true"
+    assert last("x = π + 1; x = π + 2") == "false"
 
 
 @pytest.fixture(autouse=True)

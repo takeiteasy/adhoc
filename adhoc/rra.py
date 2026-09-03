@@ -11,10 +11,10 @@ representation — multi-term transcendental sums (`π + 1`, `π·√2`), recipr
 of atoms (`1/π`), transcendental powers (`2^√2`), and closed-form-free function
 results (`sin(1)`). Values are stored as the canonical sympy expression itself,
 the same Expr-wrapper pattern as `adhoc/symbolic.py` and `adhoc/algebraic.py`:
-sympy's automatic simplification produces the normal forms, so structural
-equality on the stored expression decides the tier's equalities exactly — the
-property ticket #41 (equality across the tower) relies on, with Richardson–Fitch
-reserved for that ticket rather than this one.
+structural identity is the fast equality path, and Richardson–Fitch
+(`equal` below: escalating `approximate` probes on the difference, equal
+while indistinguishable from zero) decides the pairs sympy never
+simplifies (`sin(1)^2+cos(1)^2` vs `1`).
 
 The ticket's spelling — a real as a function `tolerance -> rational` — is
 `approximate`/`to_function` below: the lower tiers' high-precision eval of the
@@ -134,9 +134,9 @@ class RRA:
     """A real number beyond the symbolic and algebraic tiers, in canonical sympy
     form: the `tolerance -> rational` fallback. The expression is never a bare
     rational — those collapse back to exact before admission — and is always
-    real and finite. Structural equality on the canonical form decides the
-    tier's equalities exactly (Richardson–Fitch is ticket #41's work, not this
-    tier's)."""
+    real and finite. Language equality is `equal` below (Richardson–Fitch);
+    Python `==` stays structural on purpose (an RF-based `__eq__` would break
+    the hash contract for equal-valued different-expression pairs)."""
 
     expr: sympy.Expr
 
@@ -144,11 +144,12 @@ class RRA:
         return float(self.expr)
 
     def __eq__(self, other) -> bool:
-        # A gate-passing RRA value is irrational (rationals collapse before
-        # admission), so it never equals a rational — the seam's neq() compares
-        # exactly through structurally_equal() instead. The `.expr` duck-type
-        # covers the symbolic and algebraic tiers without importing them (tiers
-        # stay independent; only the seam dispatches across them).
+        # Structural on purpose (see class docstring): the seam's neq()
+        # compares through equal(), which can find RF-equal pairs like
+        # `sin(1)^2+cos(1)^2` vs `1` that must keep different hashes. The
+        # `.expr` duck-type covers the symbolic and algebraic tiers without
+        # importing them (tiers stay independent; only the seam dispatches
+        # across them).
         if isinstance(other, RRA) or isinstance(
             getattr(other, "expr", None), sympy.Expr
         ):
@@ -340,16 +341,52 @@ def to_function(v: RRA) -> Callable[[int | Fraction | float], Fraction]:
 
 
 def structurally_equal(a, b) -> bool:
-    """Exact equality within the exact + symbolic + algebraic + RRA tiers:
-    canonical-form equality. Sound because every gate admits only canonical
-    shapes — two values are equal iff their canonical expressions are, and a
-    gate-passing RRA value never equals a rational.
-
-    Open audit for ticket #41 (equality across the tower): like the algebraic
-    tier, this assumes sympy's automatic simplification canonicalizes every
-    equal pair identically. Richardson–Fitch lives in that ticket, not here.
-    """
+    """Canonical-form equality across the tiers: the fast path `equal` tries
+    first (two values are equal when their canonical expressions match, and a
+    structurally identical pair never needs a probe). Kept as its own
+    function for the seam's fast path and for tests."""
     return _to_expr(a) == _to_expr(b)
+
+
+# Richardson–Fitch probe tolerances (ticket #41): the difference of two
+# RRA-involved values is evaluated at escalating precision and treated as
+# equal while indistinguishable from zero. Three probes from the seam's
+# convergence scale down to 1e-50 balance confidence against cost — a
+# heuristic relying on Schanuel's conjecture, an accepted limitation rather
+# than a proof.
+_RF_TOLERANCES: tuple[Fraction, ...] = (
+    Fraction(1, 10**12),
+    Fraction(1, 10**30),
+    Fraction(1, 10**50),
+)
+
+
+def equal(a, b) -> bool:
+    """Richardson–Fitch equality for any RRA-involved pair (RRA vs RRA, RRA
+    vs symbolic/algebraic/exact): structural identity first, an exact shortcut
+    when the difference simplifies to a rational, otherwise escalating
+    `approximate` probes on the difference — equal iff it stays within each
+    tolerance, unequal at the first distinguishable probe. Total: probe
+    failures (undecided reality, approximation budget) report unequal, never
+    raise. A float operand never reaches here — the seam demotes float
+    equality to the float tier before dispatch."""
+    xa, xb = _to_expr(a), _to_expr(b)
+    if xa == xb:
+        return True
+    diff = xa - xb
+    if diff == 0:
+        return True
+    if diff.is_Rational:
+        return False  # nonzero rational difference, decided exactly
+    probe = RRA(diff)
+    for tol in _RF_TOLERANCES:
+        try:
+            q = approximate(probe, tol)
+        except Exception:
+            return False
+        if abs(q) > tol:
+            return False
+    return True
 
 
 _RELATIONS = {

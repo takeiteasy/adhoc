@@ -12,9 +12,10 @@ rational-coefficient polynomials beyond the coefficient×atom shape
 Values are stored as the canonical sympy expression itself, the same
 Expr-wrapper pattern as `adhoc/symbolic.py`: sympy's automatic simplification
 produces the normal forms (`2^(1/3)^3` is `2`, `2^(1/3)^2` stores identically to
-`4^(1/3)`, `(√2)^(1/2)` stores identically to `2^(1/4)`), so structural equality
-on the stored expression decides the tier's equalities exactly — the property
-ticket #41 (equality across the tower) relies on.
+`4^(1/3)`, `(√2)^(1/2)` stores identically to `2^(1/4)`), so structural
+identity is the fast equality path, with a minimal-polynomial fallback for
+the pairs sympy never canonicalizes (`(1+√2)^2` vs `3+2√2`: the difference
+of two real algebraics is algebraic, so `minpoly(a-b) == x` decides it).
 
 Minimal-polynomial + isolating-interval is the classic representation the ticket
 names; here sympy holds that representation behind the seam (its `RootOf` forms
@@ -80,8 +81,10 @@ class DomainError(Exception):
 class Algebraic:
     """A real algebraic number in canonical sympy form. The expression is never
     a bare rational — those collapse back to exact before admission — and is
-    always real and finite. Structural equality on the canonical form decides
-    the tier's equalities exactly."""
+    always real and finite. Language equality is `structurally_equal`
+    (structural fast path plus minimal-polynomial fallback); Python `==`
+    stays structural on purpose (a minpoly-based `__eq__` would break the
+    hash contract for equal-valued different-expression pairs)."""
 
     expr: sympy.Expr
 
@@ -226,18 +229,25 @@ def apply(name: str, arg) -> Fraction | Algebraic:
 
 def structurally_equal(a, b) -> bool:
     """Exact equality within the exact + symbolic + algebraic tiers:
-    canonical-form equality. Sound because every gate admits only canonical
-    shapes — two values are equal iff their canonical expressions are
-    (`2^(1/3)^2` and `4^(1/3)` store identically), and a gate-passing algebraic
-    never equals a rational.
-
-    Open audit for ticket #41 (equality across the tower): this assumes sympy's
-    automatic simplification canonicalizes every equal pair of algebraic
-    expressions identically. If a counterexample surfaces (equal values storing
-    differently), equality must compare minimal polynomials (+ interval
-    refinement) instead of expressions.
-    """
-    return _to_expr(a) == _to_expr(b)
+    canonical-form equality with a minimal-polynomial fallback. The fast path
+    is structural (`2^(1/3)^2` and `4^(1/3)` store identically, and a
+    gate-passing algebraic never equals a rational); when sympy's automatic
+    simplification leaves equal values stored differently (e.g. `(1+√2)^2`
+    vs `3+2√2`), the difference of two real algebraics is itself algebraic,
+    so equality is decided by its minimal polynomial (`minpoly(a-b) == x`
+    iff `a == b`). A minimal-polynomial failure (transcendental difference
+    across the symbolic/algebraic boundary) means unequal, never a raise."""
+    xa, xb = _to_expr(a), _to_expr(b)
+    if xa == xb:
+        return True
+    diff = xa - xb
+    if diff == 0:
+        return True
+    try:
+        return sympy.minimal_polynomial(
+            diff, sympy.Symbol("x")) == sympy.Symbol("x")
+    except Exception:
+        return False
 
 
 _RELATIONS = {

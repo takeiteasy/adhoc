@@ -618,8 +618,10 @@ Logical operators, collections (sets will take the `{}` spelling — it is delib
 unused today; see `## Groups`),
 symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
-rule's check is the only equality today, and ticket #41 tracks equality semantics for
-the symbolic engine. User-declarable *operator* spellings ride the phase-4 custom
+rule's check is the only equality today, with tier-aware semantics: exact for
+the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)
+and the Richardson–Fitch heuristic for any RRA-involved pair (docs/numerics.md).
+User-declarable *operator* spellings ride the phase-4 custom
 infix operators — `\alias` covers names only. Name aliases
 and `\dual` are built today (see `## Name aliases`).
 See `ROADMAP.md` and the tracker for the phase each lands in.

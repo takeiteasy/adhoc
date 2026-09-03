@@ -17,11 +17,13 @@ stays at the lowest tier that remains exact:
    adhoc/algebraic.py, docs/numerics.md).
 4. `Algebraic` — real algebraic numbers beyond the single-term shape (`2^(1/3)`,
    `2^(1/4)`, `√2 + 2^(1/3)`, ...): tried after the symbolic tier, exact with
-   decidable equality; anything not algebraic falls to the RRA tier
+   decidable equality (structural fast path plus minimal-polynomial fallback);
+   anything not algebraic falls to the RRA tier
    (adhoc/algebraic.py, adhoc/rra.py, docs/numerics.md).
 5. `RRA` — every other real (`π + 1`, `π·√2`, `1/π`, `2^√2`, `sin(1)`, ...):
    stored as the canonical sympy expression and approximated on demand as a
-   `tolerance -> rational` function (adhoc/rra.py).
+   `tolerance -> rational` function; equality for any RRA-involved pair is the
+   Richardson–Fitch heuristic over those approximations (adhoc/rra.py).
 6. `float` — the explicitly-inexact tier: a float literal, a float-argument
    call, or an IEEE non-finite value. Any float operand demotes the result to
    float (the fast path); exact tiers never produce it.
@@ -536,13 +538,19 @@ def neq(a: AdValue, b: AdValue) -> bool:
     if _is_float(a) or _is_float(b):
         return _to_float(a) == _to_float(b)
     if isinstance(a, RRA) or isinstance(b, RRA):
-        # Exact, decided on the tiers' canonical forms. A float operand takes
-        # the approximate float branch above; Richardson–Fitch is ticket #41.
-        return rra.structurally_equal(a, b)
+        # Richardson–Fitch heuristic (DESIGN `## exact arithmetic`): structural
+        # identity first, then escalating `approximate` probes on the
+        # difference — equal while indistinguishable from zero (Schanuel's
+        # conjecture; an accepted limitation, not a proof). Covers any
+        # RRA-involved pair, including RRA vs exact (`sin(1)^2+cos(1)^2`
+        # equals `1` though sympy never simplifies it). A float operand takes
+        # the approximate float branch above.
+        return rra.equal(a, b)
     if isinstance(a, Algebraic) or isinstance(b, Algebraic):
-        # Exact, decided on the tiers' canonical forms (`2^(1/3)^2` and
-        # `4^(1/3)` store identically; an algebraic never equals a rational).
-        # A float operand takes the approximate float branch above.
+        # Exact, decided on canonical forms with a minimal-polynomial fallback
+        # (`(1+√2)^2` and `3+2√2` store differently but share a minimal
+        # polynomial; an algebraic never equals a rational). A float operand
+        # takes the approximate float branch above.
         return algebraic.structurally_equal(a, b)
     if isinstance(a, Symbolic) or isinstance(b, Symbolic):
         # Exact, decided on the symbolic tier's canonical forms (`√4` has already
