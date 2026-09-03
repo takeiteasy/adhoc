@@ -175,16 +175,17 @@ stay fixed at 15, floats keep shortest-round-trip, exact rationals keep
 reaches display through the single `nshow` path, so REPL and script mode
 agree.
 
-## Convergence: one mechanism, two riders
+## Convergence: one mechanism, two riders, one estimator
 
 Approximate iteration has a single shape (DESIGN.md "convergence over a lazy range"):
 advance until successive observations differ by at most `CONVERGENCE_TOLERANCE`
-(`1e-12`), otherwise error at the cap rather than return a possibly-misleading partial
+(`1e-12`, relatively scaled for large magnitudes — see below), otherwise error at the cap
+rather than return a possibly-misleading partial
 result. Three knobs live at the top of `runtime.py`:
 
 | Knob | Value | Role |
 |---|---|---|
-| `CONVERGENCE_TOLERANCE` | `1e-12` | plateau test shared by both features (`EXACT_CONVERGENCE_TOLERANCE = 1/10^12` mirrors it for exact-tier comparisons) |
+| `CONVERGENCE_TOLERANCE` | `1e-12` | plateau test shared by both features (`EXACT_CONVERGENCE_TOLERANCE = 1/10^12` mirrors it for exact-tier comparisons). The float branch scales relatively — `|Δ| <= tol · max(1, |prev|, |cur|)` — so O(1) and near-zero iteration behaves exactly as before while large-magnitude iteration (whose float64 ulps dwarf an absolute tolerance) can still settle |
 | `MAX_TERMS` | `2_000_000` | fold-term budget before `` `\sum did not converge within … terms `` |
 | `MAX_PROBES` | `200` | per-side `\lim` probe budget |
 
@@ -199,21 +200,36 @@ The two riders:
   **float tier**. Exact tiers are wrong for this job twice over: rationals with
   exponentially growing denominators stall plateau detection long before the tolerance is
   meaningful, and the tail remaining when a plateau triggers (~tolerance-sized) only makes
-  sense compared in floating point. Consequences, pinned: results print as floats;
-  slow-tail series like ζ(2) stop around one million terms and land within ~1e-6 of the
-  limit; monotone divergence and NaN partials error immediately or at the cap.
+  sense compared in floating point. Consequences, pinned: results print as floats.
+  Infinite **sums** additionally get a tail-estimated early exit (`_FoldTailEstimator`
+  in `adhoc/runtime.py`): monotone `k^-p` terms (decay exponent read from consecutive
+  ratios, tail from the integral-test form, partial-plus-tail returned) and strictly
+  alternating shrinking terms (Leibniz bound with the midpoint correction) propose a
+  limit with a claimed error, and the proposal returns only after a confirmation window
+  honors it — verify-before-return, with the raw plateau always winning ties and the cap
+  error untouched. `\sum(i=1..) 1/i^2` now stops around one hundred thousand terms at
+  ~1e-10-grade instead of around one million at ~1e-6; monotone divergence, the harmonic
+  tail (`p = 1`) and NaN partials still abstain and error immediately or at the cap.
+  Infinite **products** keep the plateau only: their log-space decay ratios inherit the
+  body's own float-cancellation noise, which can bias the estimate invisibly to every
+  local check — so slow-tail products like `\prod(i=1..) (1 + 1/i^2)` stay slow (~1e-6
+  grade) rather than risk a misleading partial; the two heavyweight tests carry the
+  `slow` pytest mark so the default suite stays fast.
 - **`\lim(x=a)`** coerces its anchor to float, probes at `a ± h` with `h` halving from
   ~0.8% of `max(|a|, 1)`, and never evaluates at `a` itself — a step that would round back
   onto the anchor ends the side first. Each side stops on the same plateau test; sides
-  further apart than *twice* the tolerance report `` limit does not exist `` (each side
-  legitimately plateaus up to one tolerance-radius away, so two matching estimates may sit
+  further apart than *twice* the (relatively scaled) tolerance report `` limit does not
+  exist `` (each side legitimately plateaus up to one tolerance-radius away, so two
+  matching estimates may sit
   2× apart).
 
-Known sharp edges (not bugs): a body whose value approaches 0 can plateau prematurely
-(the consecutive-partial test cannot distinguish "stable" from "the increments vanished");
+Known sharp edges (not bugs): series whose terms change sign irregularly have no
+boundable tail shape, so they keep the plateau's best effort — near zero that stays
+absolute-floored rather than relative (a strictly alternating run provably cannot sum
+to exactly zero, so exact-zero limits outside the recognized shapes remain unsupported);
 cancellation-prone spellings of removable singularities lose float precision as steps
-shrink and usually fail to stabilize. A relative-stopping rule or Richardson extrapolation
-would tighten both if it ever matters.
+shrink and usually fail to stabilize. Richardson extrapolation for `\lim` probes would
+tighten the remaining slow cases if it ever matters.
 
 ## Float semantics
 

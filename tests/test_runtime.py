@@ -25,6 +25,7 @@ from adhoc.runtime import (
     _agree,
     _as_float,
     _settled,
+    _FoldTailEstimator,
 )
 
 
@@ -301,11 +302,74 @@ def test_settled_float_tier_rejects_non_finite_deltas():
     assert _settled(0.5, 0.5)
     assert not _settled(float("nan"), 0.5)
     assert not _settled(float("inf"), float("inf"))
+    assert not _settled(float("inf"), 5.0)
+
+
+def test_settled_float_tier_scales_relatively_at_large_magnitude():
+    # Ticket #32: an absolute 1e-12 is below float64 resolution for large
+    # values (ulp at 1e9 is ~1e-7), so the plateau scales with magnitude —
+    # while O(1) and near-zero values keep the absolute floor.
+    assert _settled(1e9, 1e9 + 1e-4)  # relative: 1e-4 <= 1e-12 * 1e9
+    assert not _settled(1e9, 1e9 + 2.0)  # 2.0 > 1e-12 * 1e9
+    assert _settled(0.5, 0.5 + 5e-13)  # absolute floor unchanged
+    assert not _settled(0.5, 0.5 + 5e-12)
+    assert _settled(0.0, 5e-13)  # near zero stays absolute
+    assert not _settled(0.0, 5e-12)
 
 
 def test_agree_allows_two_plateau_radii_but_not_more():
     assert _agree(1.0, 1.5e-12 + 1.0)
     assert not _agree(1.0, 3e-12 + 1.0)
+
+
+def test_agree_scales_with_the_plateau_test():
+    # Ticket #32: each side may stop a relative tolerance from the truth, so
+    # the two-side bound scales the same way — O(1) behavior pinned above is
+    # unchanged, large-magnitude sides get the relative bound.
+    assert _agree(1e9, 1e9 + 1.5e-3)
+    assert not _agree(1e9, 1e9 + 3e-3)
+    assert not _agree(1.0, 2.0)
+
+
+def _drive_estimator(terms):
+    """Feed synthetic float terms through a fresh estimator; return the first
+    proposal (or None when it abstains the whole run)."""
+    est = _FoldTailEstimator()
+    acc = 0.0
+    for t in terms:
+        acc += t
+        got = est.observe(t, acc)
+        if got is not None:
+            return got
+    return None
+
+
+def test_tail_estimator_corrects_a_p_series():
+    # Pure 1/k^2 terms: the estimator must fire with a tail-corrected value
+    # far more accurate than the raw partial at that point.
+    got = _drive_estimator(1 / (k * k) for k in range(1, 200_000))
+    assert got is not None
+    assert abs(got - 1.6449340668482264) <= 1e-9
+
+
+def test_tail_estimator_uses_the_leibniz_midpoint():
+    got = _drive_estimator(((-1) ** k) / (k * k) for k in range(1, 200_000))
+    assert got is not None
+    assert abs(got + 0.8224670334241132) <= 1e-9
+
+
+def test_tail_estimator_abstains_without_a_boundable_shape():
+    # Geometric decay (exponential ratios), the harmonic tail (p = 1) and a
+    # divergent run must never arm — the raw plateau/cap owns those.
+    assert _drive_estimator(0.5 ** k for k in range(1, 500)) is None
+    assert _drive_estimator(1 / k for k in range(1, 5_000)) is None
+    assert _drive_estimator(float(k) for k in range(1, 500)) is None
+
+
+def test_tail_estimator_ignores_non_float_terms():
+    est = _FoldTailEstimator()
+    assert est.observe(1, 1) is None
+    assert est.observe("x", "x") is None
 
 
 def test_as_float_widens_and_rejects():

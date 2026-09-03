@@ -18,3 +18,4 @@ dev = ["pytest"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: long-running convergence tests (infinite zeta/product folds)"]

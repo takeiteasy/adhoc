@@ -77,6 +77,9 @@ statement to stderr — a window into the lowering.
 .venv/bin/python -m pytest
 ```
 
+The two heavyweight convergence tests are marked `slow`;
+`.venv/bin/python -m pytest -m "not slow"` runs the fast subset.
+
 ## Docs
 
 See [`docs/`](docs/) for the language reference, grammar, architecture, and numerics notes.

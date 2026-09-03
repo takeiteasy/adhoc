@@ -248,6 +248,39 @@ def test_infinite_zeta_demo_converges_within_display_precision():
     assert abs(float(out[2:]) - 1.6449340668482264) <= 1e-5
 
 
+@pytest.mark.slow
+def test_infinite_zeta_tail_estimate_beats_the_plateau(monkeypatch):
+    # Ticket #32: the tail estimator (not the raw plateau) stops zeta(2):
+    # with the term budget cut 10x, the corrected value is still ~1e-9
+    # accurate — the plateau alone would land ~1e-6 off after ~10^6 terms.
+    import adhoc.runtime as runtime
+    monkeypatch.setattr(runtime, "MAX_TERMS", 200_000)
+    out = last("\\sum(i=1..) 1/i^2")
+    assert abs(float(out[2:]) - 1.6449340668482264) <= 1e-9
+
+
+def test_infinite_neg_and_cubic_sums_converge(monkeypatch):
+    # The monotone path is sign-symmetric, and steeper decay fires earlier.
+    import adhoc.runtime as runtime
+    monkeypatch.setattr(runtime, "MAX_TERMS", 200_000)
+    out = last("\\sum(i=1..) -1/i^2")
+    assert abs(float(out[2:]) + 1.6449340668482264) <= 1e-9
+    out = last("\\sum(i=1..) 1/i^3")
+    assert abs(float(out[2:]) - 1.202056903159594) <= 1e-9
+
+
+def test_infinite_alternating_sum_uses_the_leibniz_bound(monkeypatch):
+    # Ticket #32: strictly alternating shrinking terms stop on the Leibniz
+    # tail bound with the midpoint correction — provably bounded, and the
+    # bound is magnitude-independent (the near-zero attempt: stopping reads
+    # the tail, never the partial's size).
+    import adhoc.runtime as runtime
+    monkeypatch.setattr(runtime, "MAX_TERMS", 200_000)
+    out = last("\\sum(i=1..) (-1)^i/i^2")
+    assert abs(float(out[2:]) + 0.8224670334241132) <= 1e-9
+
+
+@pytest.mark.slow
 def test_infinite_product_demo():
     # prod_{i>=1} (1 + 1/i^2) = sinh(pi)/pi ~ 3.67607791
     out = last("\\prod(i=1..) (1 + 1/i^2)")

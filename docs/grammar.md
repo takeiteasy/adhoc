@@ -376,13 +376,15 @@ outer environment.
 tier that stays exact (`\sum(i=1..10) i^2` is an exact integer all the way through). A
 lazy infinite range switches to approximate iteration: partial sums/products advance in
 the float tier until consecutive values stabilize within `CONVERGENCE_TOLERANCE`
-(`docs/numerics.md`), hard-capped at `MAX_TERMS`. The cap produces a typed error rather
+(relatively scaled; `docs/numerics.md`), hard-capped at `MAX_TERMS` — while infinite
+sums additionally stop early on a confirmed tail estimate (monotone-decay or Leibniz
+shapes with a bounded claimed error). The cap produces a typed error rather
 than returning a possibly-misleading partial result; so does any non-finite partial.
 
 **Limits are numeric only** — this is a calculator, not a CAS. `\lim(x=a) body` probes
 both sides with geometrically shrinking steps and never binds `x` to `a` itself. Each
 side must stabilize within `MAX_PROBES`; sides stabilizing further than twice the
-tolerance apart report `` limit does not exist: left and right estimates disagree ``
+(relatively scaled) tolerance apart report `` limit does not exist: left and right estimates disagree ``
 (jump discontinuities like `\lim(x=0) x < 0 ? -1 : 1`). A pole (`\lim(x=0) 1/x`)
 never stabilizes and reports probe exhaustion instead. Cancellation-prone spellings of
 removable singularities (e.g. `(x^2 - 1)/(x - 1)` near 1) lose float precision as steps

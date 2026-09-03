@@ -108,7 +108,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   the canonical name and register its short spelling in one statement; both spellings
   read and compare as the same binding.
 - Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
-  — approximate iteration in the float tier until values stabilize within tolerance,
+  — approximate iteration in the float tier until values stabilize within tolerance
+  (infinite sums additionally stop early on a confirmed tail estimate),
   erroring at the iteration cap rather than returning a misleading partial (`\sum(i=1..) i`
   errors; docs/numerics.md).
 - Numeric limits: `\lim(x=0) x/x` → `= 1.0` approximates by two-sided shrinking-step

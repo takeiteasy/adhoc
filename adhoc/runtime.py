@@ -37,11 +37,14 @@ assignment.
 ## Convergence
 
 Approximate iteration has exactly one mechanism (docs/numerics.md): drive observations
-until successive ones differ by at most `CONVERGENCE_TOLERANCE`, otherwise error at the
+until successive ones differ by at most `CONVERGENCE_TOLERANCE` (relatively scaled for
+large magnitudes), otherwise error at the
 cap (`MAX_TERMS` for fold terms, `MAX_PROBES` for `\\lim` probes) rather than return a
 possibly-misleading partial result. Two features ride it: `\\sum`/`\\prod` over a lazy
 infinite range (limit of partial sums/products) and `\\lim(x=a)` (two-sided shrinking-step
-probing that never evaluates at `a`). Both operate in the float tier — exact tiers would
+probing that never evaluates at `a`). Infinite sums get one earlier-only exit on top:
+a confirmed tail estimate for monotone-decay and alternating shapes
+(`_FoldTailEstimator`); products keep the plateau. Both operate in the float tier — exact tiers would
 either stall plateau detection behind exponentially-growing rationals or make the
 tolerance meaningless — while finite folds accumulate exactly like any other expression.
 
@@ -652,20 +655,177 @@ def _as_float(value: AdValue) -> float:
 def _settled(previous: AdValue, current: AdValue) -> bool:
     """The shared plateau test for every approximate iteration (infinite Σ/Π partials,
     `\\lim` probes): the magnitude of change since the last observation is within the
-    convergence tolerance. A non-finite float delta never settles."""
+    convergence tolerance, scaled relatively for large magnitudes. The `max(1, ...)`
+    floor keeps the absolute 1e-12 behavior for O(1) and near-zero values — only
+    large-magnitude iteration (where float64 ulps dwarf an absolute tolerance and
+    the old test could never fire) settles relatively. A non-finite float delta
+    never settles."""
     if isinstance(previous, float) or isinstance(current, float):
         delta = float(previous) - float(current)
-        return math.isfinite(delta) and abs(delta) <= CONVERGENCE_TOLERANCE
+        scale = max(1.0, abs(float(previous)), abs(float(current)))
+        return (math.isfinite(delta) and math.isfinite(scale)
+                and abs(delta) <= CONVERGENCE_TOLERANCE * scale)
     delta = nsub(previous, current)
     return -EXACT_CONVERGENCE_TOLERANCE <= Fraction(delta) <= EXACT_CONVERGENCE_TOLERANCE
 
 
 def _agree(left: float, right: float) -> bool:
-    """The `\\lim` two-sided agreement test, sized off the same tolerance: each side
-    stops within CONVERGENCE_TOLERANCE of its own plateau — up to that far from the
-    true limit even for a perfectly smooth body — so legitimate estimates may sit as
-    much as 2× the tolerance apart. Anything wider is a genuine disagreement."""
-    return abs(left - right) <= 2 * CONVERGENCE_TOLERANCE
+    """The `\\lim` two-sided agreement test, sized off the same (relatively scaled)
+    tolerance as the plateau test: each side stops within `tol · scale` of its own
+    plateau — up to that far from the true limit even for a perfectly smooth body —
+    so legitimate estimates may sit as much as 2× the tolerance apart. Anything wider
+    is a genuine disagreement."""
+    scale = max(1.0, abs(left), abs(right))
+    return math.isfinite(scale) and abs(left - right) <= 2 * CONVERGENCE_TOLERANCE * scale
+
+
+# Tail-estimation knobs for infinite-range folds (ticket #32). The raw
+# consecutive-partial plateau cannot see a slow tail (zeta(2)'s increments drop
+# under the tolerance a million terms before the tail does), so infinite folds
+# get a second, earlier-only exit: estimate the limit from the recent terms'
+# shape, claim a bounded error, and return only after a confirmation window
+# honors the claim. Anything unrecognized abstains — the raw plateau and the
+# cap error then behave exactly as before.
+_FOLD_TAIL_WINDOW = 8
+_FOLD_TAIL_MIN_TERMS = 16
+_FOLD_TAIL_STABLE_STEPS = 3
+_FOLD_TAIL_CONFIRM_TERMS = 24
+_FOLD_TAIL_ERROR_BUDGET = 256.0  # claimed accuracy, × CONVERGENCE_TOLERANCE
+_FOLD_TAIL_MIN_P = 1.05  # decay exponent must clear 1 with margin (else abstain)
+_FOLD_TAIL_MAX_SPREAD = 0.5  # ... and read consistently across the window
+_FOLD_TAIL_SAFETY = 4.0  # claimed error = SAFETY × modeled error
+
+
+class _FoldTailEstimator:
+    """Tail-based early exit for one infinite sum (`\\sum` only).
+
+    Fed each term's float value and the running float partial, it recognizes
+    two shapes in a sliding window of recent terms and proposes a corrected
+    limit with a claimed error bound:
+
+    - monotone terms decaying like `k^-p` (`1/i^2`, ...): the decay exponent
+      comes from consecutive term ratios, the tail from the integral-test
+      form `|t_k|·k/(p-1)`, and the proposal is the partial plus that tail.
+    - strictly alternating terms with shrinking magnitude: the Leibniz bound
+      (`|tail| <= |t_k|`) with the midpoint proposal `S_k - t_k/2`.
+
+    Deliberately sums-only: a product's log-space ratios would inherit the
+    body's own float-cancellation noise (`log(1 + 1/i^2)` keeps ~5 digits
+    once terms pass 1e-10, biasing the decay estimate invisibly to every
+    local check), so `\\prod` keeps the consecutive-partial plateau, which
+    stays correct there. Sum terms from exactly-rounded division keep full
+    precision at every magnitude, and the spread gate below additionally
+    rejects any shape whose decay reads inconsistently (exponentials,
+    cancellation-noisy bodies, regime changes).
+
+    Verify-before-return: an eligible proposal must hold for
+    `_FOLD_TAIL_STABLE_STEPS` consecutive terms to arm, then survive
+    `_FOLD_TAIL_CONFIRM_TERMS` further terms with the proposal moving no more
+    than twice the claimed error and the shape persisting — otherwise it
+    disarms and iteration resumes. The raw plateau always wins ties (it is
+    the stronger claim), and the cap error is untouched. Total: never raises,
+    returns a float proposal or None."""
+
+    def __init__(self):
+        self._recent: list[tuple[int, float]] = []
+        self._k = 0
+        self._stable = 0
+        self._armed: tuple[float, float, str] | None = None
+        self._confirm = 0
+
+    def _disarm(self) -> None:
+        self._stable = 0
+        self._armed = None
+        self._confirm = 0
+
+    def observe(self, term: AdValue, acc: AdValue) -> float | None:
+        """Offer one evaluated term and running partial; return a corrected
+        limit when the confirmation window completes, else None."""
+        if not isinstance(term, float) or not isinstance(acc, float):
+            self._recent.clear()
+            self._disarm()
+            return None
+        if not math.isfinite(term) or term == 0.0:
+            self._recent.clear()
+            self._disarm()
+            return None
+        self._k += 1
+        self._recent.append((self._k, term))
+        if len(self._recent) > _FOLD_TAIL_WINDOW:
+            self._recent.pop(0)
+        if self._k < _FOLD_TAIL_MIN_TERMS or len(self._recent) < _FOLD_TAIL_WINDOW:
+            return None
+        path = self._classify()
+        if path is None:
+            self._disarm()
+            return None
+        estimate = self._estimate(path, acc)
+        if estimate is None:
+            self._disarm()
+            return None
+        value, error = estimate
+        if self._armed is None:
+            budget = _FOLD_TAIL_ERROR_BUDGET * CONVERGENCE_TOLERANCE * max(1.0, abs(value))
+            if error <= budget:
+                self._stable += 1
+                if self._stable >= _FOLD_TAIL_STABLE_STEPS:
+                    self._armed = (value, error, path)
+                    self._confirm = 0
+            else:
+                self._stable = 0
+            return None
+        armed_value, armed_error, armed_path = self._armed
+        if path != armed_path or error > 4 * armed_error:
+            self._disarm()
+            return None
+        self._confirm += 1
+        if self._confirm >= _FOLD_TAIL_CONFIRM_TERMS:
+            proposal = value
+            if abs(value - armed_value) <= 2 * armed_error:
+                self._disarm()
+                return proposal
+            self._disarm()
+        return None
+
+    def _classify(self) -> str | None:
+        """Read the window's shape: monotone-decaying `pos`/`neg` terms or a
+        strictly alternating `alt` run with shrinking magnitude — else None."""
+        signs = [1.0 if t > 0 else -1.0 for _, t in self._recent]
+        mags = [abs(t) for _, t in self._recent]
+        if any(m == 0.0 or not math.isfinite(m) for m in mags):
+            return None
+        if all(signs[0] == s for s in signs):
+            if all(a > b for a, b in zip(mags, mags[1:])):
+                return "pos" if signs[0] > 0 else "neg"
+            return None
+        if all(s != u for s, u in zip(signs, signs[1:])
+               ) and all(a > b for a, b in zip(mags, mags[1:])):
+            return "alt"
+        return None
+
+    def _estimate(self, path: str, total: float) -> tuple[float, float] | None:
+        """A (proposal, claimed-error) pair for this term, or None when the
+        decay gates fail."""
+        if path == "alt":
+            _, t = self._recent[-1]
+            return total - t / 2, abs(t) / 2
+        # Monotone `k^-p` decay: per-step exponents from consecutive ratios
+        # (exact for a pure power law), median for robustness.
+        ratios = []
+        for (j_prev, t_prev), (j, t) in zip(self._recent, self._recent[1:]):
+            ratios.append(math.log(abs(t_prev) / abs(t)) / math.log(j / j_prev))
+        if min(ratios) <= _FOLD_TAIL_MIN_P:
+            return None
+        ordered = sorted(ratios)
+        p = ordered[len(ordered) // 2]
+        if ordered[-1] - ordered[0] > _FOLD_TAIL_MAX_SPREAD:
+            return None
+        _, t = self._recent[-1]
+        tail = abs(t) * self._k / (p - 1)
+        if path == "neg":
+            tail = -tail
+        error = _FOLD_TAIL_SAFETY * abs(tail) * max(ordered[-1] - ordered[0], 1 / self._k)
+        return total + tail, error
 
 
 class EvalError(Exception):
@@ -980,13 +1140,12 @@ class Engine:
         """`\\sum(i=a..b) body` / `\\prod(...)`: iterate the bound RangeValue, evaluating
         the compiled body once per term in a fresh frame `{i: term}`. Finite ranges
         accumulate exactly at the lowest exact tier; lazy infinite ranges switch to the
-        float tier and stop when successive partials stabilize within
-        CONVERGENCE_TOLERANCE — erroring at MAX_TERMS rather than returning a misleading
-        partial (docs/numerics.md).
-        
-        Improvement note: a plateau in consecutive partials can stop marginally early
-        for bodies whose value approaches 0 (the remaining tail then exceeds the
-        tolerance); a tail-aware or relative stopping rule would tighten that."""
+        float tier and stop at the first of two exits — the consecutive-partial
+        plateau (within CONVERGENCE_TOLERANCE, relatively scaled) or, for sums, a
+        confirmed tail estimate (a shape-read limit plus a bounded claimed error,
+        honored by a confirmation window) — erroring at MAX_TERMS rather than
+        returning a misleading partial (docs/numerics.md). Products keep the
+        plateau only (see _FoldTailEstimator)."""
         label = FOLD_LABELS.get(op_name, "\\sum")
         # The loop variable binds like a parameter: a protected name is a
         # redefinition error, never a shadow.
@@ -1000,6 +1159,9 @@ class Engine:
         acc: AdValue = unit
         infinite = value.end is None
         previous: AdValue | None = None
+        # Sums-only tail estimation (products keep the plateau — see
+        # _FoldTailEstimator); finite folds never estimate.
+        estimator = _FoldTailEstimator() if infinite and op_name == "add" else None
         count = 0
         for item in value:
             binding = _as_float(item) if infinite else item
@@ -1011,6 +1173,10 @@ class Engine:
                     self._fail(f"{label} diverged: partial value is not finite", sid)
                 if previous is not None and _settled(previous, acc):
                     return acc
+                if estimator is not None:
+                    early = estimator.observe(term, acc)
+                    if early is not None:
+                        return early
                 previous = acc
                 if count >= MAX_TERMS:
                     self._fail(f"{label} did not converge within {MAX_TERMS} terms", sid)
@@ -1020,7 +1186,8 @@ class Engine:
         """`\\lim(x=a) body`, numeric only: probe both sides with geometrically shrinking
         steps — never evaluating at `a` itself; the ulp guard halts each side when a
         step would round back onto the anchor. Each side must stabilize within
-        CONVERGENCE_TOLERANCE (same plateau test as infinite folds) inside MAX_PROBES;
+        CONVERGENCE_TOLERANCE (same relatively-scaled plateau test as infinite folds)
+        inside MAX_PROBES;
         sides stabilizing apart means the limit does not exist. Probes evaluate in the
         float tier like infinite-range folds (docs/numerics.md)."""
         try:
