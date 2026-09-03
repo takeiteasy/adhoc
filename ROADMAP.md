@@ -59,19 +59,18 @@ independent of it.
   forms, and fallback to the upper tiers for values with no single
   coefficient×atom form.
 - Algebraic numbers (roots of rational-coefficient polynomials).
-  **Done** — real algebraic values beyond the closed-form shape stay exact behind
+  **Done** — algebraic values beyond the closed-form shape stay exact behind
   the seam (adhoc/algebraic.py, backed by sympy; symbolic tried first), with exact
   equality/ordering on canonical forms and fallback to the RRA tier
-  for transcendental results. Real odd roots of negatives keep the
-  exact tiers' domain-error contract; real-branch selection rides the future
-  complex surface.
+  for transcendental results; complex algebraics are held the same way, and
+  odd roots of negatives take the real branch (below).
 - Recursive Real Arithmetic (RRA) fallback: `tolerance -> rational` functions.
   **Done** — every other real stays exact behind the seam (adhoc/rra.py, backed
   by sympy; symbolic tried first, then algebraic), with pointwise arithmetic
   that collapses back down when a result fits a lower tier (`(π + 1) − π` is
   the integer `1`), on-demand `tolerance -> rational` approximation sharing the
   convergence shape, exact equality/ordering on canonical forms, and the float
-  tier remaining only for explicitly-inexact values (float literals,
+  tier remaining only for explicitly-inexact values (float spellings,
   float-argument calls, IEEE non-finite values).
 - Display precision via iterative tolerance tightening (RRA tier only — exact rationals
   already display as `a/b`, decided and implemented in phase 0).
@@ -88,8 +87,15 @@ independent of it.
   check-assignment inherits it; float operands keep float-tier rules.
 - Numeric type surface: `int`, `real`, `rational`, `complex` literal syntax and
   promotion/coercion rules.
-  - Open: literal syntax for each, and int/int → rational-vs-real coercion rule.
-  - Open: `i` collision between imaginary-unit literal and conventional loop-binder variable.
+  **Done** — decimal literals are exact rationals (`0.5` is `1/2`; the float
+  spellings are the trailing-dot marker `1.` and any exponent form `5e-1`),
+  `int/int` stays the exact rational, and the exact complex tower is in: the
+  Gaussian tier (adhoc/gauss.py), complex admission through every exact gate,
+  the odd-root real branch for negative bases (`(-8)^(1/3)` is `-2`), the
+  complex principal otherwise (`(-2)^(1/2)` is `√2·i`), no complex-float tier
+  (float/complex mixing is a typed error), complex values unordered, and the
+  prelude surface `i`/`\i` (the one shadowable prelude name — scoped
+  shadowing resolves the loop-binder collision), `\complex`, `\re`, `\im`.
 
 ### phase 3 — collection types
 

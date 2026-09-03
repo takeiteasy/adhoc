@@ -94,7 +94,7 @@ def test_alias_declared_in_repl_persists_across_inputs(tmp_path):
 
 
 def test_dual_persists_and_reads_through_both_spellings(tmp_path):
-    out = run_repl("\\dual \\alpha, α = 3.14\nα\n\\alpha\n", tmp_path).stdout
+    out = run_repl("\\dual \\alpha, α = 3.14e0\nα\n\\alpha\n", tmp_path).stdout
     assert "ERROR" not in out
     assert "< = 3.14" in out
     assert out.count("= 3.14") == 3  # definition echo + both reads

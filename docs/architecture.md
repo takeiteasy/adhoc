@@ -14,12 +14,17 @@ adhoc/
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
 ├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
-│                 backed by sympy; only runtime.py dispatches into it)
-├── algebraic   — the real-algebraic tier behind the seam (roots beyond the
-│                 closed-form shape, backed by sympy; only runtime.py dispatches
-│                 into it)
+│                 real or pure-imaginary, backed by sympy; only runtime.py
+│                 dispatches into it)
+├── gauss       — the exact complex tier behind the seam (Gaussian rationals:
+│                 plain rational component arithmetic, no sympy; only
+│                 runtime.py and the exact tiers import it)
+├── algebraic   — the algebraic tier behind the seam (roots beyond the
+│                 closed-form shape, real or complex, backed by sympy; only
+│                 runtime.py dispatches into it)
 ├── rra         — the Recursive Real Arithmetic fallback behind the seam
-│                 (every other real as a tolerance->rational function, backed
+│                 (every other finite number, real or complex, as a
+│                 tolerance->rational function, backed
 │                 by sympy; only runtime.py dispatches into it)
 ├── compiler    — lowering: adhoc AST → Python source, one line per statement
 ├── driver      — compile/exec pairing, error mapping back through spans

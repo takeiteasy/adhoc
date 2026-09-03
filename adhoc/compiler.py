@@ -8,7 +8,9 @@ runtime-error spans narrow — a sub-expression's failure points at the sub-expr
 
 Lowering rules:
 
-- `NumLit` → `Constant` via `parse_literal` (int without `.`, float with). `StrLit` →
+- `NumLit` → a compile-time `Constant` for `int`/`float` tiers, `_e.lit(text, sid)`
+  for exact decimals (no source-safe literal exists for a `Fraction`, and generated
+  code never loads a bare name). `StrLit` →
   `Constant` likewise — a string is an ordinary atom, so this shape serves call
   arguments, operands, and everything else.
 - A bare-string *statement* lowers to `pass`: one generated line per statement keeps the
@@ -159,8 +161,16 @@ class _Lowerer:
 
     def expr(self, node: Node) -> pyast.expr:
         match node:
-            case NumLit(text=text):
-                return pyast.Constant(value=parse_literal(text))
+            case NumLit(text=text, span=span):
+                value = parse_literal(text)
+                if isinstance(value, int | float):
+                    # `int`/`float` constants embed at compile time — their repr
+                    # round-trips through unparse exactly. An exact decimal
+                    # (`0.5` is the rational 1/2) has no source-safe literal,
+                    # so it lowers through the seam instead of a bare name.
+                    return pyast.Constant(value=value)
+                sid = self._push(span)
+                return _call("lit", [pyast.Constant(text), pyast.Constant(sid)])
             case StrLit(text=text):
                 return pyast.Constant(value=text)
             case Var(ch=ch, span=span):

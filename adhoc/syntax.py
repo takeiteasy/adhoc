@@ -177,7 +177,8 @@ class Lambda(Node):
 class Assign(Node):
     """Statement-level `x = e` — declare-once-then-check. Binds a fresh name into
     the current frame; a name already bound in that frame compares by value and
-    prints `true`/`false`; a protected prelude name is rejected. Reads walk the
+    prints `true`/`false`; a protected prelude name is rejected (`i` excepted —
+    the one shadowable prelude name). Reads walk the
     chain, binds and compares stay frame-local — nothing ever rebinds an existing
     binding, so `x = 1; x = 1` is `true`, never an overwrite."""
 

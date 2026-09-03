@@ -105,17 +105,16 @@ def test_rra_display_is_truncated_digits_plus_ellipsis():
 
 
 def test_rra_exact_tier_domain_errors_are_typed():
-    # No complex tier and no exact-tier infinity: fractional powers of negative
-    # bases stay typed NumErrors (the float tier would yield NaN), and `1/0`
-    # shapes stay the same failure as `1/0`.
-    with pytest.raises(NumError, match="not a real number"):
-        npow(-2, Fraction(1, 2))
+    # The exact tiers have no infinity: `1/0` shapes stay typed errors.
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
         npow(0, Fraction(-1, 2))
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
         ndiv(nadd(PI_SYM, 1), 0)
-    with pytest.raises(NumError, match="defined only for positive"):
-        PRELUDE["ln"](nneg(nadd(PI_SYM, 1)))
+    # Complex results are values now: ln of a negative RRA stays exact, and
+    # fractional powers of negatives take the odd-root real branch or the
+    # complex principal (ticket #42).
+    assert isinstance(PRELUDE["ln"](nneg(nadd(PI_SYM, 1))), RRA)
+    assert nshow(npow(-2, Fraction(1, 2))) == "1.4142135623731...i"
 
 
 def test_rra_equality_is_exact():
@@ -274,7 +273,7 @@ def test_prec_wrong_arity_is_typed_at_call_span():
     with pytest.raises(EvalError, match=r"\\prec takes an integer"):
         last("\\prec(0)")
     with pytest.raises(EvalError, match=r"\\prec takes an integer"):
-        last("\\prec(5.0)")
+        last("\\prec(5.)")  # the float spelling stays off the exact path
 
 
 def test_prec_is_protected():

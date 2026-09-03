@@ -20,6 +20,25 @@
 2^(1/2);        -- the same √2, recognized through a rational exponent
 π + 1;          -- no single closed form → the RRA tier holds it exact
 
--- a float anywhere demotes the whole expression to the float tier
+-- decimals are exact too: a dotted literal is a rational read from its own
+-- digits (docs/numerics.md) — no binary-float drift, ever
 0.1 + 0.2;
 1/3 + 0.5;
+
+-- the float spellings are visible on purpose: the trailing-dot marker and
+-- any exponent form are the explicitly-inexact tier
+0.1e0 + 0.2;
+1/3 + 0.5e0;
+
+-- the exact complex tower: i (or \i) is the imaginary unit, and complex
+-- arithmetic stays exact all the way up
+i;
+i*i;            -- -1
+(2+3i)(2-3i);   -- 13, exactly
+\sqrt(-2);      -- √2·i, a symbolic complex value
+\ln(-1);        -- π·i
+(-8)^(1/3);     -- -2: odd roots of negatives take the real branch
+(-2)^(1/2);     -- √2·i: everything else takes the complex principal
+\re(2+3i);
+\im(2+3i);
+\complex(0.5, 0.25);   -- builds from components: 1/2+1/4i

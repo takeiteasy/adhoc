@@ -5,8 +5,8 @@ own values and the exact tiers, never with values above the seam (docs/numerics.
 
 ## Value shape
 
-A symbolic real is a **rational coefficient times exactly one recognized atom** —
-the strict shape the DESIGN tier list names:
+A symbolic value is a **rational coefficient times exactly one recognized atom** —
+the strict shape the DESIGN tier list names — real or pure-imaginary:
 
 - `πⁿ` — `π` itself and integer powers (`π·π` is `π²`, kept exact);
 - `√r` — square root of a positive rational, normalized by sympy (`√8` is `2√2`,
@@ -21,23 +21,28 @@ the strict shape the DESIGN tier list names:
 Values are stored as the canonical sympy expression itself: sympy's automatic
 simplification produces exactly these normal forms (`√2·√3` is `√6`, `(√2)²` is `2`,
 `π − π` is `0`, `e^(1/2)·e^(1/2)` is `e`), so structural equality on the stored
-expression decides the tier's equalities exactly.
+expression decides the tier's equalities exactly. A pure-imaginary value with a
+recognized real shape (`√2·i`, `π·i`) stores the full complex expression; a
+Gaussian rational (`2+3i`) collapses back to exact like any other rational
+(adhoc/gauss.py).
 
 ## The gate
 
 `classify` is the only admission route: a rational result collapses back to
-`int`/`Fraction`, a coefficient×atom result is admitted, and anything else raises.
+`int`/`Fraction`, a Gaussian rational to `Gaussian`, a coefficient×atom result
+(real or pure-imaginary) is admitted, and anything else raises.
 Two failure kinds, both internal — the seam converts them:
 
-- `Unrepresentable` — a real, finite value with no recognized closed form
-  (`π + 1/3`, `π·√2`, `1/π`, `2^(1/3)`). The strict single-term shape cannot hold
-  it, so the seam tries the algebraic tier next, then the RRA tier — only a
-  value of undecided reality reaches the float tier.
-- `DomainError` — the exact tiers have no infinity and there is no complex tier:
-  `√` of a negative, `ln(0)`, `tan(π/2)`, `0⁻ⁿ`. The seam turns the message into
-  its typed `NumError` with the caller's span. (The float tier keeps its own
-  pinned behavior for the same inputs — NaN for fractional powers of negatives,
-  `math.*`'s ValueError for domain errors.)
+- `Unrepresentable` — a finite value with no recognized closed form
+  (`π + 1/3`, `π·√2`, `1/π`, `2^(1/3)`, `1 + √2·i`). The strict single-term shape
+  cannot hold it, so the seam tries the algebraic tier next, then the RRA
+  tier — only a value of undecided reality reaches the float tier.
+- `DomainError` — the exact tiers have no infinity: `ln(0)`, `tan(π/2)`,
+  `0⁻ⁿ`. The seam turns the message into its typed `NumError` with the
+  caller's span. (The float tier keeps its own pinned behavior for the same
+  inputs — `math.*`'s ValueError for domain errors — and NaN for fractional
+  powers of negatives, where the exact tiers now return the real branch or
+  the complex principal.)
 
 ## Display
 
@@ -54,6 +59,8 @@ from fractions import Fraction
 import sympy
 import sympy.core.numbers as _symnums
 
+from .gauss import Gaussian, make, to_sympy
+
 # Significant digits shown before the ellipsis (DESIGN.md display examples).
 DISPLAY_DIGITS = 15
 
@@ -65,17 +72,18 @@ class Unrepresentable(Exception):
 
 
 class DomainError(Exception):
-    """An exact-tier domain failure — the exact tiers have no infinity and there
-    is no complex tier (`√` of a negative, `ln(0)`, `tan(π/2)`, `0⁻ⁿ`). Internal:
-    the seam converts the message into its typed `NumError`."""
+    """An exact-tier domain failure — the exact tiers have no infinity
+    (`ln(0)`, `tan(π/2)`, `0⁻ⁿ`). Internal: the seam converts the message into
+    its typed `NumError`."""
 
 
 @dataclass(frozen=True, eq=False)
 class Symbolic:
-    """A symbolic real in canonical sympy form. The expression is always a rational
+    """A symbolic value in canonical sympy form. The expression is always a rational
     coefficient times one recognized atom (never a bare rational — those collapse
-    back to exact before admission), real and finite. Structural equality on the
-    canonical form decides the tier's equalities exactly."""
+    back to exact before admission), real or pure-imaginary with a recognized real
+    shape, and finite. Structural equality on the canonical form decides the
+    tier's equalities exactly."""
 
     expr: sympy.Expr
 
@@ -121,14 +129,16 @@ PI = Symbolic(sympy.pi)
 E = Symbolic(sympy.E)
 
 
-def _to_expr(v: int | Fraction | Symbolic) -> sympy.Expr:
-    """An exact or symbolic ad number as a sympy expression (floats never reach
-    the tier — the seam demotes them before dispatch). The `.expr` duck-type
-    also covers algebraic-tier values (`adhoc/algebraic.py`) without importing
-    that module — tiers stay independent and only the seam dispatches across
-    them."""
+def _to_expr(v: int | Fraction | Gaussian | Symbolic) -> sympy.Expr:
+    """An exact, Gaussian or symbolic ad number as a sympy expression (floats
+    never reach the tier — the seam demotes them before dispatch). The `.expr`
+    duck-type also covers algebraic-tier values (`adhoc/algebraic.py`) without
+    importing that module — tiers stay independent and only the seam dispatches
+    across them."""
     if isinstance(v, Symbolic):
         return v.expr
+    if isinstance(v, Gaussian):
+        return to_sympy(v)
     if isinstance(v, Fraction):
         return sympy.Rational(v.numerator, v.denominator)
     expr = getattr(v, "expr", None)
@@ -138,12 +148,11 @@ def _to_expr(v: int | Fraction | Symbolic) -> sympy.Expr:
 
 
 def _check_domain(expr: sympy.Expr) -> None:
-    """Reject non-finite and non-real values — zoo/oo/nan have no exact-tier
-    representation, and there is no complex tier."""
+    """Reject non-finite values — zoo/oo/nan have no exact-tier representation.
+    Complex values are admitted (Gaussian rationals collapse, recognized
+    pure-imaginary shapes stay symbolic, the rest rises to the upper tiers)."""
     if expr.has(sympy.zoo, sympy.nan) or expr.is_finite is False:
         raise DomainError("the exact tiers have no infinity")
-    if expr.is_real is False:
-        raise DomainError("complex results are not supported")
 
 
 def _is_atom(expr: sympy.Expr) -> bool:
@@ -171,16 +180,18 @@ def _is_atom(expr: sympy.Expr) -> bool:
     return False
 
 
-def classify(expr: sympy.Expr) -> Fraction | Symbolic:
-    """The tier's only admission gate: a rational result collapses back to exact
-    (denominator 1 → `int`, matching the seam's own normalization — `√2·√2` is
-    the integer `2` again), a coefficient×atom result is admitted as-is (the
-    coefficient rides inside the sympy form), anything else raises
-    Unrepresentable — or DomainError for non-real/non-finite values."""
+def _collapse(expr: sympy.Expr) -> Fraction:
+    """A sympy rational as the collapsed exact value (denominator 1 → `int`,
+    matching the seam's own normalization)."""
+    v = Fraction(int(expr.p), int(expr.q))
+    return int(v) if v.denominator == 1 else v
+
+
+def _classify_real(expr: sympy.Expr) -> Fraction | Symbolic:
+    """The real coefficient×atom admission: a rational result collapses, a
+    recognized shape is admitted, anything else is Unrepresentable."""
     if expr.is_Rational:
-        v = Fraction(int(expr.p), int(expr.q))
-        return int(v) if v.denominator == 1 else v
-    _check_domain(expr)
+        return _collapse(expr)
     coeff, rest = expr.as_coeff_Mul()
     if isinstance(coeff, sympy.Rational) and coeff != 0 and _is_atom(rest):
         return Symbolic(expr)
@@ -188,32 +199,55 @@ def classify(expr: sympy.Expr) -> Fraction | Symbolic:
         "no recognized closed form; the upper tiers hold it")
 
 
-def combine(op: str, a: int | Fraction | Symbolic,
-            b: int | Fraction | Symbolic) -> Fraction | Symbolic:
+def classify(expr: sympy.Expr) -> Fraction | Gaussian | Symbolic:
+    """The tier's only admission gate: a rational result collapses back to exact
+    (denominator 1 → `int`, matching the seam's own normalization — `√2·√2` is
+    the integer `2` again), a Gaussian rational collapses to `Gaussian`, a real
+    coefficient×atom result is admitted as-is (the coefficient rides inside the
+    sympy form), as is a pure-imaginary value whose imaginary part has a
+    recognized real shape (`√2·i`, `π·i` — the full complex expression is
+    stored), and anything else raises Unrepresentable — or DomainError for
+    non-finite values."""
+    if expr.is_Rational:
+        return _collapse(expr)
+    _check_domain(expr)
+    re, im = expr.as_real_imag()
+    if isinstance(re, sympy.Rational) and isinstance(im, sympy.Rational):
+        return make(Fraction(int(re.p), int(re.q)),
+                    Fraction(int(im.p), int(im.q)))
+    if expr.is_real is True:
+        return _classify_real(expr)
+    if re.is_zero and im.is_real is True:
+        inner = _classify_real(im)
+        if isinstance(inner, Symbolic):
+            return Symbolic(expr)
+        return make(Fraction(0), inner)
+    raise Unrepresentable(
+        "no recognized closed form; the upper tiers hold it")
+
+
+def combine(op: str, a: int | Fraction | Gaussian | Symbolic,
+            b: int | Fraction | Gaussian | Symbolic) -> Fraction | Gaussian | Symbolic:
     """One symbolic-tier binary operation (`add`/`sub`/`mul`/`div`/`pow`) over
-    exact and/or symbolic operands. sympy does the algebra and normalization;
-    classify decides whether the result stays in the tier. Raises DomainError for
-    `1/0`-shaped inputs (`div` by zero, `0⁻ⁿ`) with the seam's canonical message,
-    and for fractional powers of negative bases (no complex tier)."""
+    exact, Gaussian and/or symbolic operands. sympy does the algebra and
+    normalization; classify decides whether the result stays in the tier.
+    Raises DomainError for `1/0`-shaped inputs (`div` by zero, `0⁻ⁿ`) with the
+    seam's canonical message. Fractional powers of negative bases now take the
+    complex path (`(-2)^(1/2)` is `√2·i`); odd-denominator rationals take the
+    real branch one layer up, at the seam (`ticket #42`)."""
     x, y = _to_expr(a), _to_expr(b)
     if op == "div" and y == 0:
         raise DomainError("division by zero")
-    if op == "pow" and x == 0 and y < 0:
+    if op == "pow" and x == 0 and y.is_real is True and y < 0:
         raise DomainError("division by zero")  # 0 to a negative power is 1/0
     raw = {"add": x + y, "sub": x - y, "mul": x * y, "div": x / y,
            "pow": x**y}[op]
-    try:
-        return classify(raw)
-    except DomainError:
-        if op == "pow":
-            raise DomainError(
-                "a negative number raised to a fractional power is not a real "
-                "number") from None
-        raise
+    return classify(raw)
 
 
-def negate(a: int | Fraction | Symbolic) -> Fraction | Symbolic:
-    """Unary minus: negating a coefficient×atom form stays one."""
+def negate(a: int | Fraction | Gaussian | Symbolic) -> Fraction | Gaussian | Symbolic:
+    """Unary minus: negating a coefficient×atom form stays one (complex shapes
+    included — the gate decides)."""
     return classify(-_to_expr(a))
 
 
@@ -231,21 +265,22 @@ _APPLY_FUNCS = {
 }
 
 
-def apply(name: str, arg: int | Fraction | Symbolic) -> Fraction | Symbolic:
-    """One prelude function over an exact or symbolic argument (`\\sqrt(2)`,
-    `\\sin(π/3)`, `\\ln(2)`): sympy evaluates exact closed forms
-    (`sin(π/3)` is `√3/2`, `tan(π/4)` collapses to `1`), and anything without a
+def apply(name: str, arg: int | Fraction | Gaussian | Symbolic) -> Fraction | Gaussian | Symbolic:
+    """One prelude function over an exact, Gaussian or symbolic argument
+    (`\\sqrt(2)`, `\\sin(π/3)`, `\\ln(2)`, `\\sqrt(-2)`): sympy evaluates exact
+    closed forms (`sin(π/3)` is `√3/2`, `tan(π/4)` collapses to `1`,
+    `sqrt(-2)` is `√2·i`, `ln(-1)` is `π·i`), and anything without a
     recognized closed form (`\\sin(1)`) raises Unrepresentable — the prelude
-    wrapper falls back to the float tier. Domain failures carry the function's
-    own message."""
+    wrapper falls through to the upper tiers, then the float tier. Domain
+    failures carry the function's own message."""
     try:
         return classify(_APPLY_FUNCS[name](_to_expr(arg)))
     except DomainError:
         raise DomainError(_DOMAIN_MESSAGES[name]) from None
 
 
-def structurally_equal(a: int | Fraction | Symbolic,
-                       b: int | Fraction | Symbolic) -> bool:
+def structurally_equal(a: int | Fraction | Gaussian | Symbolic,
+                        b: int | Fraction | Gaussian | Symbolic) -> bool:
     """Exact equality within the exact + symbolic tiers: canonical-form equality.
     Sound because the gate admits only canonical shapes — two values are equal
     iff their canonical expressions are (`√8` and `2√2` store identically), and a
@@ -258,8 +293,8 @@ _RELATIONS = {
 }
 
 
-def compare(op: str, a: int | Fraction | Symbolic,
-            b: int | Fraction | Symbolic) -> bool:
+def compare(op: str, a: int | Fraction | Gaussian | Symbolic,
+            b: int | Fraction | Gaussian | Symbolic) -> bool:
     """Exact ordering across the exact + symbolic tiers: sympy decides relational
     expressions between explicit numbers (`π < 22/7` is decided exactly, not
     float-compared), raising precision internally until the comparison is
@@ -276,7 +311,7 @@ def compare(op: str, a: int | Fraction | Symbolic,
             "gt": bool(positive), "ge": bool(positive)}[op]
 
 
-def from_sympy(value: sympy.Expr) -> Fraction | Symbolic:
+def from_sympy(value: sympy.Expr) -> Fraction | Gaussian | Symbolic:
     """The `\\py` boundary's half for sympy objects: values crossing back into ad
     go through the same gate the tier admits by — recognized closed forms convert,
     anything else is Unrepresentable (the seam names the type, never truncates)."""
@@ -285,12 +320,11 @@ def from_sympy(value: sympy.Expr) -> Fraction | Symbolic:
     return classify(value)
 
 
-def show(s: Symbolic) -> str:
-    """The symbolic display: 15 significant digits, expanded positionally (no
-    scientific notation — the float display's rule), trailing ellipsis. The value
-    is exact; the digits are a truncation, not the value (`π` shows as
-    `3.14159265358979...`)."""
-    magnitude = sympy.N(abs(s.expr), DISPLAY_DIGITS + 10)
+def _truncated(mag: sympy.Expr) -> str:
+    """A nonnegative real expression to 15 significant digits, expanded
+    positionally (no scientific notation — the float display's rule), no sign
+    and no ellipsis; the caller adds both."""
+    magnitude = sympy.N(mag, DISPLAY_DIGITS + 10)
     d = Decimal(str(magnitude))
     with localcontext() as ctx:
         ctx.prec = 60
@@ -300,5 +334,22 @@ def show(s: Symbolic) -> str:
     text = format(q, "f")
     if "." in text:
         text = text.rstrip("0").rstrip(".")
-    sign = "-" if s.expr.is_negative else ""
-    return f"{sign}{text}..."
+    return text
+
+
+def show(s: Symbolic) -> str:
+    """The symbolic display: 15 significant digits, expanded positionally (no
+    scientific notation — the float display's rule), trailing ellipsis. The value
+    is exact; the digits are a truncation, not the value (`π` shows as
+    `3.14159265358979...`). A complex value shows each side under the same
+    truncation (`√2·i` is `1.4142135623731...i`, `1 + √2·i` is
+    `1+1.4142135623731...i`)."""
+    re, im = s.expr.as_real_imag()
+    if im == 0:
+        sign = "-" if s.expr.is_negative else ""
+        return f"{sign}{_truncated(abs(s.expr))}..."
+    if re == 0:
+        return f"{_truncated(abs(im))}...i"
+    re_sign = "-" if re.is_negative else ""
+    im_sep = "-" if im.is_negative else "+"
+    return f"{re_sign}{_truncated(abs(re))}...{im_sep}{_truncated(abs(im))}...i"

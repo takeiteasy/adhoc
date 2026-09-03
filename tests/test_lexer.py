@@ -41,10 +41,26 @@ def test_numbers():
     assert kinds("3.14") == [Number, Eof]
 
 
-def test_trailing_dot_number_errors():
-    with pytest.raises(LexError) as e:
-        tokenize("1.")
-    assert "." in e.value.msg
+def test_trailing_dot_number_is_a_float_marker():
+    # `1.` is the explicit float literal (float 1.0); a second dot is still
+    # the range operator (ticket #42).
+    tokens = tokenize("1.")
+    assert [type(t).__name__ for t in tokens] == ["Number", "Eof"]
+    assert tokens[0].text == "1."
+    tokens = tokenize("1..10")
+    assert [type(t).__name__ for t in tokens] == ["Number", "DotDot", "Number",
+                                                  "Eof"]
+    assert tokens[0].text == "1"
+
+
+def test_decimal_and_exponent_literals():
+    tokens = tokenize("0.5 .5 5e-1 1.5e3")
+    assert [t.text for t in tokens if type(t).__name__ == "Number"] == [
+        "0.5", ".5", "5e-1", "1.5e3"]
+    # `2e` stays juxtaposition (`2*e`), never a broken float.
+    tokens = tokenize("2e")
+    assert [type(t).__name__ for t in tokens] == ["Number", "Ident", "Eof"]
+    assert tokens[0].text == "2"
 
 
 def test_ascii_and_unicode_idents():

@@ -23,8 +23,10 @@ compatibility. See [`docs/language.md`](docs/language.md) for what's real today,
 ## Status
 
 Core phase 0 plus phase-1 language: a REPL and script runner that evaluate arithmetic exactly
-(`1/3 + 1/3 + 1/3` is `1`, not `0.999...`), with assignment, caret-pointing
-error diagnostics, postfix application (`f(x)`), functions with local scoping, the lazy
+(`1/3 + 1/3 + 1/3` is `1`, not `0.999...`; `0.1 + 0.2` is exactly `3/10` — decimal
+literals are exact, with `1.`/`5e-1` the explicit float spellings), with assignment,
+caret-pointing error diagnostics, postfix application (`f(x)`), functions with local
+scoping, the lazy
 ternary conditional (`c ? a : b` — a parenthesized statement group is its multi-statement
 branch), real booleans with `\true`/`\false`,
 immutable bindings (`x = 1` binds once and compares thereafter — there is no
@@ -43,8 +45,12 @@ module members (docs/grammar.md). The implementation is pure Python:
 `ad` lowers to Python's own AST and runs on CPython. Ranges are lazy and support finite/infinite
 and inferred-step forms, and folds consume them: `\sum(i=1..10) i^2` → `385`, infinite ranges as
 limits of partial sums (`\sum(i=1..) 1/i^2`), and numeric `\lim(x=a)` — all sharing one
-tolerance-based convergence mechanism (docs/numerics.md). Everything else — logical operators,
-the rest of the numeric tower, collections, symbolic algebra, graphing — is on the roadmap, not
+tolerance-based convergence mechanism (docs/numerics.md). The numeric tower is complete:
+exact complex arithmetic (`(2+3i)(2-3i)` is `13`, `\ln(-1)` is `π·i`,
+`(-8)^(1/3)` is `-2`), algebraic numbers (`2^(1/3)` stays exact), and the RRA
+fallback (`π + 1`, `\sin(1+i)` — every finite value stays exact, with
+Richardson–Fitch equality). Everything else — logical operators, collections,
+symbolic algebra, graphing — is on the roadmap, not
 yet built. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it

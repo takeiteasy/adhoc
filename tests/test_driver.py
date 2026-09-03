@@ -179,7 +179,11 @@ def test_env_persists_across_executions():
 
 
 def test_float_literal_display_parity_through_driver():
-    assert last("0.5 + 0.5") == "= 1.0"
+    # Exact decimals collapse through the tower (`0.5 + 0.5` is the integer 1);
+    # the float spellings keep f64 display parity (ticket #42).
+    assert last("0.5 + 0.5") == "= 1"
+    assert last("1. + 1.") == "= 2.0"
+    assert last("5e-1 + 5e-1") == "= 1.0"
 
 
 def test_ranges_evaluate_display_and_can_be_bound():
@@ -210,7 +214,8 @@ def test_finite_folds_accumulate_exactly():
         ("\\sum(i=1..10) i^2", "= 385"),
         ("\\prod(j=1..5) j", "= 120"),
         ("\\sum(i=1,3..7) i", "= 16"),
-        ("\\sum(i=1..4) i*0.5", "= 5.0"),  # float literal promotes the term tier
+        ("\\sum(i=1..4) i*0.5", "= 5"),  # decimals are exact: rational terms, exact sum
+        ("\\sum(i=1..4) i*5e-1", "= 5.0"),  # float literal promotes the term tier
     ]
     for src, expected in checks:
         assert last(src, env) == expected, f"for {src}"
@@ -230,11 +235,16 @@ def test_unicode_fold_spellings_evaluate_identically():
 
 def test_fold_loop_variable_scopes_like_a_parameter():
     env: dict = {"k": 99}
-    assert last("\\sum(i=1..3) i*k", env) == "= 594"
+    assert last("\\sum(j=1..3) j*k", env) == "= 594"
     # The loop variable never leaks; the outer binding is untouched.
     assert set(env) == {"k"}
-    with pytest.raises(EvalError, match="`i` is not bound"):
-        run_source("i", {})
+    with pytest.raises(EvalError, match="`j` is not bound"):
+        run_source("j", {})
+    # The conventional binder name `i` shadows the imaginary unit inside the
+    # fold and restores it after (ticket #42's collision rule).
+    assert last("\\sum(i=1..3) i*k", env) == "= 594"
+    assert last("i") == "= i"
+    assert last("i*i") == "= -1"
 
 
 def test_infinite_geometric_sum_converges_to_one():
@@ -298,7 +308,7 @@ def test_non_converging_infinite_fold_errors_at_the_cap(monkeypatch):
 
 def test_infinite_fold_hitting_nan_errors_immediately():
     with pytest.raises(EvalError) as e:
-        run_source("\\sum(i=1..) 0.0/0.0")
+        run_source("\\sum(i=1..) 0./0.")
     assert e.value.msg == "\\sum diverged: partial value is not finite"
 
 
@@ -360,7 +370,7 @@ def test_prelude_py_function_aliases():
     # Exact arguments stay exact through the symbolic tier; float arguments stay
     # on the float tier.
     assert last("\\sqrt(2)") == "= 1.4142135623731..."
-    assert last("\\sqrt(2.0)") == "= 1.4142135623730951"
+    assert last("\\sqrt(2.)") == "= 1.4142135623730951"
     assert last("\\sin(0)") == "= 0"
     assert last("\\cos(0)") == "= 1"
     assert last("\\ln(1)") == "= 0"
@@ -558,7 +568,7 @@ def test_alias_bare_heads_report_usage():
 
 
 def test_dual_binds_one_name_under_two_spellings():
-    out = run_source("\\dual \\alpha, α = 3.14; α + \\alpha")
+    out = run_source("\\dual \\alpha, α = 3.14e0; α + \\alpha")
     assert out[0] == "\\alpha = 3.14"
     assert out[-1] == "= 6.28"
 
@@ -635,14 +645,20 @@ def test_radical_prefix_operator():
 
 def test_symbolic_domain_errors_are_typed_and_spanned():
     for src, msg in [
-        ("\\sqrt(-1)", "not a real number"),
-        ("√(-2)", "not a real number"),
         ("\\ln(0)", "defined only for positive"),
-        ("\\ln(-1)", "defined only for positive"),
         ("\\tan(π/2)", "odd multiples of pi/2"),
-        ("(-2)^(1/2)", "not a real number"),
         ("0^(-1/2)", "division by zero"),
     ]:
         with pytest.raises(EvalError, match=msg) as e:
             run_source(src)
         assert "internal error" not in e.value.msg, f"for {src}"
+
+
+def test_symbolic_complex_results_are_values():
+    # Fractional powers of negatives and ln of a negative are exact values
+    # now — the odd-root real branch and the complex principal (ticket #42).
+    assert last("\\sqrt(-1)") == "= i"
+    assert last("√(-2)") == "= 1.4142135623731...i"
+    assert last("\\ln(-1)") == "= 3.14159265358979...i"
+    assert last("(-2)^(1/2)") == "= 1.4142135623731...i"
+    assert last("(-8)^(1/3)") == "= -2"

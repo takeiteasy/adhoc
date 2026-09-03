@@ -6,9 +6,10 @@ own values and the exact tiers below it, never with values above the seam
 
 ## Value shape
 
-A real algebraic number that has no symbolic-tower closed form: roots of
-rational-coefficient polynomials beyond the coefficient×atom shape
-(`2^(1/3)`, `2^(1/4)`, `√2 + 2^(1/3)`, `(√2)^(1/2)` which arrives as `2^(1/4)`).
+An algebraic number — real or complex — that has no symbolic-tower closed
+form: roots of rational-coefficient polynomials beyond the coefficient×atom
+shape (`2^(1/3)`, `2^(1/4)`, `√2 + 2^(1/3)`, `(√2)^(1/2)` which arrives as
+`2^(1/4)`, `1 + √2·i`).
 Values are stored as the canonical sympy expression itself, the same
 Expr-wrapper pattern as `adhoc/symbolic.py`: sympy's automatic simplification
 produces the normal forms (`2^(1/3)^3` is `2`, `2^(1/3)^2` stores identically to
@@ -29,23 +30,23 @@ The symbolic tier is tried first — the seam dispatches into `symbolic.combine`
 before this module, and this module's `classify` is never asked about a
 coefficient×atom form in normal operation. Anything transcendental (`π + 1`,
 `π·√2`, `1/π`, `2^√2`) is not algebraic and raises `Unrepresentable`: the seam
-tries the RRA tier next, which holds every real. The tier is real-only: non-real results raise `DomainError`, and
-real odd roots of negatives keep the exact tiers' `DomainError` contract (the
-principal branch is complex; selecting the real branch is ticket #42's complex-
-surface work, not this tier's).
+tries the RRA tier next, which holds every real and every finite complex number.
+The tier holds complex algebraics too (`(-2)^(1/2)` arrives as `√2·i` when the
+symbolic tier has no single-term shape for it); real odd roots of negatives
+take the real branch one layer up, at the seam (ticket #42).
 
 ## The gate
 
 `classify` is the only admission route: a rational result collapses back to
-`int`/`Fraction`, a real algebraic result is admitted, and anything else raises.
+`int`/`Fraction`, a Gaussian rational to `Gaussian`, an algebraic result (real
+or complex) is admitted, and anything else raises.
 Two failure kinds, both internal — the seam converts them:
 
-- `Unrepresentable` — a real, finite value that is not algebraic (`π + 1`,
-  `2^√2`, `sin(1)`). The seam demotes it to the float tier.
-- `DomainError` — the exact tiers have no infinity and there is no complex tier:
-  non-finite values and non-real values (`√` of a negative, `(-2)^(1/2)`). The
-  seam turns the message into its typed `NumError` with the caller's span. (The
-  float tier keeps its own pinned behavior for the same inputs.)
+- `Unrepresentable` — a finite value that is not algebraic (`π + 1`,
+  `2^√2`, `sin(1)`). The seam tries the RRA tier next, then the float tier.
+- `DomainError` — the exact tiers have no infinity: non-finite values only.
+  The seam turns the message into its typed `NumError` with the caller's span.
+  (The float tier keeps its own pinned behavior for the same inputs.)
 
 ## Display
 
@@ -60,28 +61,30 @@ from fractions import Fraction
 
 import sympy
 
+from .gauss import Gaussian, make, to_sympy
+
 # Significant digits shown before the ellipsis — the symbolic tier's policy
 # (DESIGN.md display examples); ticket #40 governs RRA display, not this tier.
 DISPLAY_DIGITS = 15
 
 
 class Unrepresentable(Exception):
-    """A real, finite result that is not algebraic (`π + 2^(1/3)`, `2^√2`).
-    Internal: the seam tries the RRA tier next, which holds every real."""
+    """A finite result, real or complex, that is not algebraic (`π + 2^(1/3)`,
+    `2^√2`, `sin(1)`). Internal: the seam tries the RRA tier next, which holds
+    every finite number."""
 
 
 class DomainError(Exception):
-    """An exact-tier domain failure — the exact tiers have no infinity and there
-    is no complex tier (non-finite values, `√` of a negative, fractional powers
-    of negative bases). Internal: the seam converts the message into its typed
-    `NumError`."""
+    """An exact-tier domain failure — the exact tiers have no infinity
+    (non-finite values only). Internal: the seam converts the message into its
+    typed `NumError`."""
 
 
 @dataclass(frozen=True, eq=False)
 class Algebraic:
-    """A real algebraic number in canonical sympy form. The expression is never
-    a bare rational — those collapse back to exact before admission — and is
-    always real and finite. Language equality is `structurally_equal`
+    """An algebraic number in canonical sympy form, real or complex. The expression
+    is never a bare rational — those collapse back to exact before admission —
+    and is always finite. Language equality is `structurally_equal`
     (structural fast path plus minimal-polynomial fallback); Python `==`
     stays structural on purpose (a minpoly-based `__eq__` would break the
     hash contract for equal-valued different-expression pairs)."""
@@ -132,76 +135,74 @@ def _compare_reflected(op: str, a: Algebraic, b) -> bool:
 
 
 def _to_expr(v) -> sympy.Expr:
-    """An exact, symbolic or algebraic ad number as a sympy expression (floats
-    never reach the tier — the seam demotes them before dispatch). The `.expr`
-    duck-type covers both tier types without importing either — tiers stay
-    independent and only the seam dispatches across them."""
+    """An exact, Gaussian, symbolic or algebraic ad number as a sympy expression
+    (floats never reach the tier — the seam demotes them before dispatch). The
+    `.expr` duck-type covers all tier types without importing any of them —
+    tiers stay independent and only the seam dispatches across them."""
     expr = getattr(v, "expr", None)
     if isinstance(expr, sympy.Expr):
         return expr
+    if isinstance(v, Gaussian):
+        return to_sympy(v)
     if isinstance(v, Fraction):
         return sympy.Rational(v.numerator, v.denominator)
     return sympy.Integer(v)
 
 
 def _check_domain(expr: sympy.Expr) -> None:
-    """Reject non-finite and non-real values — zoo/oo/nan have no exact-tier
-    representation, and there is no complex tier."""
+    """Reject non-finite values — zoo/oo/nan have no exact-tier representation.
+    Complex algebraics are admitted (ticket #42)."""
     if expr.has(sympy.zoo, sympy.nan) or expr.is_finite is False:
         raise DomainError("the exact tiers have no infinity")
-    if expr.is_real is False:
-        raise DomainError("complex results are not supported")
 
 
-def classify(expr: sympy.Expr) -> Fraction | Algebraic:
+def classify(expr: sympy.Expr) -> Fraction | Gaussian | Algebraic:
     """The tier's only admission gate: a rational result collapses back to exact
     (denominator 1 → `int`, matching the seam's own normalization —
-    `2^(1/3)^3` is the integer `2` again), a real algebraic result is admitted,
-    anything else raises Unrepresentable — or DomainError for non-real/
-    non-finite values.
+    `2^(1/3)^3` is the integer `2` again), a Gaussian rational collapses to
+    `Gaussian`, an algebraic result (real or complex) is admitted, anything else
+    raises Unrepresentable — or DomainError for non-finite values.
 
     The symbolic tier is tried first by the seam; this gate assumes that order
     and does not special-case coefficient×atom forms. Admission requires
-    sympy to positively establish both algebraicity and reality
-    (`is_algebraic`/`is_real` strictly `True`): an undecided value falls to the
-    float tier rather than risk admitting something transcendental or complex.
+    sympy to positively establish algebraicity (`is_algebraic` strictly `True`)
+    and a decided reality (`is_real` strictly `True` or `False`): an undecided
+    value falls through rather than risk admitting something transcendental.
     """
     if expr.is_Rational:
         v = Fraction(int(expr.p), int(expr.q))
         return int(v) if v.denominator == 1 else v
     _check_domain(expr)
-    if expr.is_algebraic is True and expr.is_real is True:
+    re, im = expr.as_real_imag()
+    if isinstance(re, sympy.Rational) and isinstance(im, sympy.Rational):
+        return make(Fraction(int(re.p), int(re.q)),
+                    Fraction(int(im.p), int(im.q)))
+    if expr.is_algebraic is True and expr.is_real in (True, False):
         return Algebraic(expr)
     raise Unrepresentable(
-        "not a real algebraic number; the RRA tier holds it")
+        "not an algebraic number; the RRA tier holds it")
 
 
-def combine(op: str, a, b) -> Fraction | Algebraic:
+def combine(op: str, a, b) -> Fraction | Gaussian | Algebraic:
     """One algebraic-tier binary operation (`add`/`sub`/`mul`/`div`/`pow`) over
-    exact, symbolic and/or algebraic operands. sympy does the algebra and
-    normalization; classify decides whether the result stays in the tier.
+    exact, Gaussian, symbolic and/or algebraic operands. sympy does the algebra
+    and normalization; classify decides whether the result stays in the tier.
     Raises DomainError for `1/0`-shaped inputs (`div` by zero, `0⁻ⁿ`) with the
-    seam's canonical message, and for fractional powers of negative bases (no
-    complex tier — real-branch selection is ticket #42's work)."""
+    seam's canonical message. Fractional powers of negative bases take the
+    complex path; odd-denominator rationals take the real branch one layer up,
+    at the seam (ticket #42)."""
     x, y = _to_expr(a), _to_expr(b)
     if op == "div" and y == 0:
         raise DomainError("division by zero")
-    if op == "pow" and x == 0 and y < 0:
+    if op == "pow" and x == 0 and y.is_real is True and y < 0:
         raise DomainError("division by zero")  # 0 to a negative power is 1/0
     raw = {"add": x + y, "sub": x - y, "mul": x * y, "div": x / y,
            "pow": x**y}[op]
-    try:
-        return classify(raw)
-    except DomainError:
-        if op == "pow":
-            raise DomainError(
-                "a negative number raised to a fractional power is not a real "
-                "number") from None
-        raise
+    return classify(raw)
 
 
-def negate(a) -> Fraction | Algebraic:
-    """Unary minus: negating a real algebraic stays one (rational collapse
+def negate(a) -> Fraction | Gaussian | Algebraic:
+    """Unary minus: negating an algebraic stays one (rational collapse
     included — the gate decides)."""
     return classify(-_to_expr(a))
 
@@ -211,14 +212,15 @@ _DOMAIN_MESSAGES = {
 }
 
 
-def apply(name: str, arg) -> Fraction | Algebraic:
-    """One prelude function over an exact, symbolic or algebraic argument. Only
-    `sqrt` routes here (per the tower plan: `sin`/`cos`/`tan`/`ln` of a nonzero
-    algebraic are transcendental, so the seam sends those straight to the float
-    tier rather than paying for a gate that cannot admit them). A result that
-    stays algebraic (`\\sqrt(2^(1/3))` is `2^(1/6)`) is admitted; anything else
-    raises Unrepresentable and the seam falls back to float. Domain failures
-    carry the function's own message."""
+def apply(name: str, arg) -> Fraction | Gaussian | Algebraic:
+    """One prelude function over an exact, Gaussian, symbolic or algebraic
+    argument. Only `sqrt` routes here (per the tower plan: `sin`/`cos`/`tan`/
+    `ln` of a nonzero algebraic are transcendental, so the seam sends those
+    straight to the RRA tier rather than paying for a gate that cannot admit
+    them). A result that stays algebraic (`\\sqrt(2^(1/3))` is `2^(1/6)`,
+    `\\sqrt(-2)` is `√2·i` when the symbolic tier has no shape for it) is
+    admitted; anything else raises Unrepresentable and the seam falls through
+    to the RRA tier. Domain failures carry the function's own message."""
     if name != "sqrt":
         raise Unrepresentable(f"{name} of an algebraic is not algebraic")
     try:
@@ -228,15 +230,16 @@ def apply(name: str, arg) -> Fraction | Algebraic:
 
 
 def structurally_equal(a, b) -> bool:
-    """Exact equality within the exact + symbolic + algebraic tiers:
+    """Exact equality within the exact + Gaussian + symbolic + algebraic tiers:
     canonical-form equality with a minimal-polynomial fallback. The fast path
     is structural (`2^(1/3)^2` and `4^(1/3)` store identically, and a
     gate-passing algebraic never equals a rational); when sympy's automatic
     simplification leaves equal values stored differently (e.g. `(1+√2)^2`
-    vs `3+2√2`), the difference of two real algebraics is itself algebraic,
+    vs `3+2√2`), the difference of two algebraics is itself algebraic,
     so equality is decided by its minimal polynomial (`minpoly(a-b) == x`
-    iff `a == b`). A minimal-polynomial failure (transcendental difference
-    across the symbolic/algebraic boundary) means unequal, never a raise."""
+    iff `a == b` — complex differences included). A minimal-polynomial failure
+    (transcendental difference across the tier boundary) means unequal, never
+    a raise."""
     xa, xb = _to_expr(a), _to_expr(b)
     if xa == xb:
         return True
@@ -271,21 +274,20 @@ def compare(op: str, a, b) -> bool:
             "gt": bool(positive), "ge": bool(positive)}[op]
 
 
-def from_sympy(value: sympy.Expr) -> Fraction | Algebraic:
+def from_sympy(value: sympy.Expr) -> Fraction | Gaussian | Algebraic:
     """The `\\py` boundary's half for sympy objects that the symbolic tier did
-    not admit: real algebraic values convert, anything else is Unrepresentable
-    (the seam names the type, never truncates)."""
+    not admit: algebraic values (real or complex) convert, anything else is
+    Unrepresentable (the seam names the type, never truncates)."""
     if not isinstance(value, sympy.Expr):
         raise Unrepresentable("not a sympy expression")
     return classify(value)
 
 
-def show(s: Algebraic) -> str:
-    """The algebraic display: 15 significant digits, expanded positionally (no
-    scientific notation — the float display's rule), trailing ellipsis. The
-    value is exact; the digits are a truncation, not the value (`2^(1/3)` shows
-    as `1.25992104989487...`)."""
-    magnitude = sympy.N(abs(s.expr), DISPLAY_DIGITS + 10)
+def _truncated(mag: sympy.Expr) -> str:
+    """A nonnegative real expression to 15 significant digits, expanded
+    positionally (no scientific notation — the float display's rule), no sign
+    and no ellipsis; the caller adds both."""
+    magnitude = sympy.N(mag, DISPLAY_DIGITS + 10)
     d = Decimal(str(magnitude))
     with localcontext() as ctx:
         ctx.prec = 60
@@ -295,5 +297,21 @@ def show(s: Algebraic) -> str:
     text = format(q, "f")
     if "." in text:
         text = text.rstrip("0").rstrip(".")
-    sign = "-" if s.expr.is_negative else ""
-    return f"{sign}{text}..."
+    return text
+
+
+def show(s: Algebraic) -> str:
+    """The algebraic display: 15 significant digits, expanded positionally (no
+    scientific notation — the float display's rule), trailing ellipsis. The
+    value is exact; the digits are a truncation, not the value (`2^(1/3)` shows
+    as `1.25992104989487...`). A complex value shows each side under the same
+    truncation (`1 + √2·i` is `1+1.4142135623731...i`)."""
+    re, im = s.expr.as_real_imag()
+    if im == 0:
+        sign = "-" if s.expr.is_negative else ""
+        return f"{sign}{_truncated(abs(s.expr))}..."
+    if re == 0:
+        return f"{_truncated(abs(im))}...i"
+    re_sign = "-" if re.is_negative else ""
+    im_sep = "-" if im.is_negative else "+"
+    return f"{re_sign}{_truncated(abs(re))}...{im_sep}{_truncated(abs(im))}...i"

@@ -2,31 +2,40 @@
 
 Mirrors `num.rs` one-to-one (`nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg`/`neq`/`nshow`).
 Values map onto Python natives — Int→`int`, Rat→`fractions.Fraction`, Float→`float`,
+Gaussian→`adhoc/gauss.py`'s `Gaussian` (exact complex with rational components),
 Symbol→`adhoc/symbolic.py`'s `Symbolic` (a rational coefficient times one recognized
-closed-form atom, backed by sympy), Algebraic→`adhoc/algebraic.py`'s `Algebraic` (a
-real algebraic number with no symbolic closed form, backed by sympy) — and arithmetic
+closed-form atom, backed by sympy), Algebraic→`adhoc/algebraic.py`'s `Algebraic` (an
+algebraic number with no symbolic closed form, backed by sympy) — and arithmetic
 stays at the lowest tier that remains exact:
 
 1. `int` — arbitrary precision natively.
 2. `Fraction` — arbitrary precision rational; auto-normalized, and collapsed back to
    `int` whenever its denominator is 1, or display would print `"1/1"`-style values.
-3. `Symbolic` — closed-form irrationals (`√2`, `π`, `e²`, `ln(2)`, `sin(π/7)`, ...):
-   recognized coefficient×atom shapes stay exact (`√2·√2` collapses back to the
-   integer `2`); a real algebraic result with no recognized form falls to the
-   algebraic tier, a transcendental one to the float tier (adhoc/symbolic.py,
-   adhoc/algebraic.py, docs/numerics.md).
-4. `Algebraic` — real algebraic numbers beyond the single-term shape (`2^(1/3)`,
-   `2^(1/4)`, `√2 + 2^(1/3)`, ...): tried after the symbolic tier, exact with
-   decidable equality (structural fast path plus minimal-polynomial fallback);
-   anything not algebraic falls to the RRA tier
+3. `Gaussian` — exact complex with rational components (`2+3i`); a vanishing
+   imaginary part collapses back to `int`/`Fraction`, so display never prints
+   `"2+0i"`-style values (adhoc/gauss.py, docs/numerics.md).
+4. `Symbolic` — closed forms (`√2`, `π`, `e²`, `ln(2)`, `sin(π/7)`, `√2·i`,
+   `π·i`, ...): recognized coefficient×atom shapes, real or pure-imaginary,
+   stay exact (`√2·√2` collapses back to the integer `2`); an algebraic result
+   with no recognized form falls to the algebraic tier, a transcendental one
+   to the RRA tier (adhoc/symbolic.py, adhoc/algebraic.py, docs/numerics.md).
+5. `Algebraic` — algebraic numbers beyond the single-term shape (`2^(1/3)`,
+   `2^(1/4)`, `√2 + 2^(1/3)`, `1 + √2·i`, ...): tried after the symbolic tier,
+   exact with decidable equality (structural fast path plus
+   minimal-polynomial fallback, complex differences included); anything not
+   algebraic falls to the RRA tier
    (adhoc/algebraic.py, adhoc/rra.py, docs/numerics.md).
-5. `RRA` — every other real (`π + 1`, `π·√2`, `1/π`, `2^√2`, `sin(1)`, ...):
-   stored as the canonical sympy expression and approximated on demand as a
-   `tolerance -> rational` function; equality for any RRA-involved pair is the
-   Richardson–Fitch heuristic over those approximations (adhoc/rra.py).
-6. `float` — the explicitly-inexact tier: a float literal, a float-argument
-   call, or an IEEE non-finite value. Any float operand demotes the result to
-   float (the fast path); exact tiers never produce it.
+6. `RRA` — every other finite number, real or complex (`π + 1`, `π·√2`, `1/π`,
+   `2^√2`, `sin(1)`, `1 + π·i`, ...): stored as the canonical sympy expression
+   and approximated on demand as a `tolerance -> rational` function; equality
+   for any RRA-involved pair is the Richardson–Fitch heuristic over those
+   approximations — over the modulus when the difference is complex
+   (adhoc/rra.py).
+7. `float` — the explicitly-inexact tier: a float literal (trailing-dot `1.`
+   or exponent `5e-1` spelling), a float-argument call, or an IEEE non-finite
+   value. Any float operand demotes the result to float (the fast path);
+   exact tiers never produce it. There is no complex-float tier: mixing a
+   float with a complex value is a typed error.
 
 The `Engine` object is the seam's other half: every operation in generated code routes
 through it carrying a span id, which is what keeps runtime-error spans narrow (a
@@ -55,14 +64,17 @@ compare equal only to other strings. The conversion matrix (`_to_ad`) is deliber
 small:
 
 - bool → int (true becomes 1), int/float/Fraction pass through, `numbers.Rational`
-  collapses to Fraction/int, `Symbolic`/`Algebraic`/`RRA` pass through, recognized sympy
-  expressions convert through the symbolic tier's gate then the algebraic tier's
-  then the RRA tier's,
+  collapses to Fraction/int, `Gaussian`/`Symbolic`/`Algebraic`/`RRA` pass through,
+  recognized sympy expressions convert through the symbolic tier's gate then the
+  algebraic tier's then the RRA tier's,
   other `numbers.Real` widens to float,
   Decimal converts exactly via Fraction.
+- `complex` converts exactly: both components by exact decimal expansion
+  (`complex(0.5, 0.25)` is `1/2+1/4i`), collapsing through `make` — a vanishing
+  imaginary part returns the real. Non-finite components are a typed rejection.
 - `str` passes through as the value it already is — printable by `out`, bindable,
   concatenable; rejected by every other arithmetic operator.
-- complex, None, and everything else (lists, dicts, ...) are span-pointed rejections —
+- None, and everything else (lists, dicts, ...) are span-pointed rejections —
   no silent truncation.
 
 `Engine.py` resolves a dotted path like `math.sqrt` (longest importable module prefix,
@@ -94,32 +106,41 @@ not exist in the grammar — identifiers are one character):
 
 A built-in scope present in every session (`PRELUDE` below): symbolic constants
 (`\\pi`, `e` — exact symbolic reals, displaying with a trailing ellipsis), the
-non-finite floats (`\\inf`, `\\nan`), booleans (`\\true`, `\\false`), and the
-  function builtins (`\\sin`, `\\cos`, `\\tan`, `\\ln`, `\\sqrt`) — seam-native
-  `PreludeFn` callables that replaced the original float-tier `math.*` aliases in
-  place: exact arguments go through the symbolic tier (`\\sqrt(2)` stays `√2`),
-  algebraic `\\sqrt` arguments through the algebraic tier (`\\sqrt(2^(1/3))` is
-  `2^(1/6)`), anything real the lower tiers cannot hold through the RRA tier
-  (`\\sin(1)` stays exact),
-  everything else falls to the `math.*` float tier (`\\sqrt(-2.0)`). `\\prec(n)`
-  sets the RRA display precision (significant digits, default 15) as a
-  session-wide setting and returns the new value.
+imaginary unit (`i` and `\\i` — one prelude key, two spellings, an exact
+`Gaussian(0, 1)` displaying as `i`), the non-finite floats (`\\inf`, `\\nan`),
+booleans (`\\true`, `\\false`), and the function builtins (`\\sin`, `\\cos`,
+`\\tan`, `\\ln`, `\\sqrt`, plus `\\complex`, `\\re`, `\\im`) — seam-native
+`PreludeFn` callables that replaced the original float-tier `math.*` aliases in
+place: exact arguments go through the symbolic tier (`\\sqrt(2)` stays `√2`,
+`\\sqrt(-2)` is `√2·i`, `\\ln(-1)` is `π·i`), algebraic `\\sqrt` arguments
+through the algebraic tier (`\\sqrt(2^(1/3))` is `2^(1/6)`), anything finite
+the lower tiers cannot hold through the RRA tier (`\\sin(1)` stays exact),
+everything else falls to the `math.*` float tier (`\\sqrt(2.)`).
+`\\complex(re, im)` builds a complex value from two real components,
+`\\re`/`\\im` project the sides. `\\prec(n)` sets the RRA display precision
+(significant digits, default 15) as a session-wide setting and returns the new
+value.
 Unicode spellings of prelude names (`π`, `Σ`, `Π`) are not separate keys: the parser's
 alias map normalizes them to the canonical `\\`-name before evaluation, so `π` and
-`\\pi` are one name, not two (docs/grammar.md, `## Name aliases`); `√` is not a name
+`\\pi` are one name, not two (docs/grammar.md, `## Name aliases`); `i` and `\\i`
+are likewise one key reached as a `Var` and as a `BackslashRef`. `√` is not a name
 at all but the prefix-operator spelling of `\\sqrt(...)`. Prelude names
 are permanently protected — they can never be rebound or shadowed, so a parameter,
-local, or binder named like a prelude entry is a redefinition error.
+local, or binder named like a prelude entry is a redefinition error — with one
+exception: `i` may be bound anywhere, shadowing the unit in that scope (ticket
+#42's collision rule — the same clash as any other identifier, handled the same
+way). Both spellings resolve through the one key, so a shadow covers both: inside
+an `i`-binder body the unit is spelled `\\complex(0, 1)`.
 
 ## Bindings
 
 One rule everywhere (`Engine.assign`): `x = e` binds a fresh name into the current
 frame, or compares by value against a name already bound in that frame (echoing
-`true`/`false`; `1 = 1.0` is true — the tower, not the type). Reads walk the frame
+`true`/`false`; `1 = 1.` is true — the tower, not the type). Reads walk the frame
 chain, binds and compares stay frame-local, and no operation ever rebinds an existing
 binding — the language has no reassignment spelling and no declaration operator.
 Function definitions (`Engine.define`) are declarations: a protected or already-visible
-name is an error.
+name is an error. The one shadowable prelude name is `i` (see above).
 
 ## Pinned divergences from the rug/MPFR backing (docs/numerics.md)
 
@@ -127,14 +148,18 @@ name is an error.
   CPython's `/` would raise `ZeroDivisionError`.
 - Float exponentiation overflow saturates to signed infinity — MPFR has unbounded
   exponent range; CPython raises `OverflowError`.
-- Negative base with a fractional exponent yields NaN — MPFR semantics; CPython's `**`
-  would silently return a `complex`.
+- Negative base with a fractional exponent yields NaN on the float tier — MPFR
+  semantics; CPython's `**` would silently return a `complex`. The exact tiers
+  instead take the real branch for odd-denominator rationals (`(-8)^(1/3)` is
+  `-2`) and the complex principal otherwise (`(-2)^(1/2)` is `√2·i`).
 - Display never uses scientific notation: the shortest-round-trip `repr` is expanded
   positionally, matching `f64`'s `Display` (`10000000000000000.0`, `0.0000001`);
-  symbolic and algebraic reals show 15 significant digits plus a trailing
-  ellipsis (`π` is `3.14159265358979...`); RRA reals show the session
+  symbolic and algebraic values show 15 significant digits plus a trailing
+  ellipsis (`π` is `3.14159265358979...`); RRA values show the session
   precision's significant digits (default 15, tunable via `\\prec`) plus a
-  trailing ellipsis, tightened until successive approximations agree.
+  trailing ellipsis, tightened until successive approximations agree. Gaussian
+  rationals print whole (`2+3i`, `1/2-1/3i`); complex tier values print each
+  side truncated (`√2·i` is `1.4142135623731...i`).
 """
 
 from collections.abc import Sequence
@@ -145,20 +170,24 @@ import importlib
 import math
 import numbers
 import os
+import sympy
 import types
 from typing import Any, Callable, NoReturn
 
-from . import algebraic, rra, symbolic
+from . import algebraic, gauss, rra, symbolic
+from .gauss import Gaussian, make as _make_gaussian
+from .gauss import show as _show_gaussian
 from .span import Span
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
 
-AdValue = int | Fraction | float | bool | str | Symbolic | Algebraic | RRA
+AdValue = int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
 NOT_A_NUMBER = "operands must be numbers"
+COMPLEX_FLOAT_MIX = "complex values do not mix with floats"
 
 DEFAULT_FLOAT_PRECISION_BITS = 53
 
@@ -171,7 +200,13 @@ MAX_PROBES = 200
 
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod"}
 
-_NUMERIC_TYPES = (int, float, Fraction, Symbolic, Algebraic, RRA)
+_NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
+
+#: The one shadowable prelude name (ticket #42): `i` may be bound at any binding
+#: site, shadowing the imaginary unit in that scope — the collision between the
+#: unit literal and the conventional loop-binder variable, handled like any
+#: other identifier clash.
+SHADOWABLE_PRELUDE = frozenset({"i"})
 
 
 class PreludeFn:
@@ -191,15 +226,24 @@ class PreludeFn:
         return self.fn(*args)
 
 
+def _float_fall(name: str, float_fn: Callable, v: AdValue) -> AdValue:
+    """The float-tier fallback for a prelude argument the exact tiers cannot
+    hold — real values only: a complex value has no float tier and is a typed
+    rejection."""
+    if _is_complex(v):
+        raise NumError("the float tier cannot hold complex values")
+    return float_fn(_to_float(v))
+
+
 def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
     """Build one prelude function builtin: exact/symbolic arguments go through the
-    symbolic tier (`\\sqrt(2)` stays `√2`, `\\sin(π/3)` is `√3/2`, `\\ln(2)` stays
-    exact), algebraic `\\sqrt` arguments through the algebraic tier
-    (`\\sqrt(2^(1/3))` is `2^(1/6)`), anything real the lower tiers cannot hold
-    through the RRA tier (`\\sin(1)` stays exact), falling to the `math.*` float
-    tier only when the value is not an established real. Float arguments stay
-    entirely on the float tier. Exact-tier domain failures (`\\sqrt(-2)`,
-    `\\ln(0)`,
+    symbolic tier (`\\sqrt(2)` stays `√2`, `\\sqrt(-2)` is `√2·i`, `\\sin(π/3)` is
+    `√3/2`, `\\ln(2)` stays exact, `\\ln(-1)` is `π·i`), algebraic `\\sqrt`
+    arguments through the algebraic tier (`\\sqrt(2^(1/3))` is `2^(1/6)`),
+    anything finite the lower tiers cannot hold through the RRA tier (`\\sin(1)`
+    stays exact, complex results included), falling to the `math.*` float tier
+    only when the value is not an established real. Float arguments stay
+    entirely on the float tier. Exact-tier domain failures (`\\ln(0)`,
     `\\tan(π/2)`) are typed NumErrors at the call's span; the float tier keeps
     `math.*`'s own raising behavior (`\\sqrt(-2.0)` → ValueError, wrapped and
     spanned by `app`)."""
@@ -209,25 +253,25 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
             return float_fn(v)
         if isinstance(v, RRA):
             # An RRA argument is already beyond the lower tiers; the call stays
-            # real and finite, so the RRA tier holds it.
+            # finite — real or complex — so the RRA tier holds it.
             try:
                 return rra.apply(name, v)
             except rra.DomainError as e:
                 raise NumError(e.args[0])
             except rra.Unrepresentable:
-                return float_fn(_to_float(v))
+                return _float_fall(name, float_fn, v)
         if isinstance(v, Algebraic):
             # Only `sqrt` preserves algebraicity (`sin`/`cos`/`tan`/`ln` of a
             # nonzero algebraic are transcendental), so only it routes through
             # the algebraic gate — everything else goes to the RRA tier, which
-            # holds every real, before the float tier.
+            # holds every finite number, before the float tier.
             if name != "sqrt":
                 try:
                     return rra.apply(name, v)
                 except rra.DomainError as e:
                     raise NumError(e.args[0])
                 except rra.Unrepresentable:
-                    return float_fn(_to_float(v))
+                    return _float_fall(name, float_fn, v)
             try:
                 return algebraic.apply(name, v)
             except algebraic.Unrepresentable:
@@ -254,7 +298,7 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
         try:
             return rra.apply(name, v)
         except rra.Unrepresentable:
-            return float_fn(_to_float(v))
+            return _float_fall(name, float_fn, v)
         except rra.DomainError as e:
             raise NumError(e.args[0])
     return PreludeFn(name, call)
@@ -275,16 +319,70 @@ def _prec_call(v: AdValue) -> AdValue:
         raise NumError(e.args[0])
 
 
+def _complex_call(*args: AdValue) -> AdValue:
+    """The `\\complex(re, im)` constructor: an exact complex value from two
+    real components, the in-language spelling of the imaginary unit's tier.
+    Float components read through their shortest round-trip decimal — the
+    same rule the `\\py` boundary applies to a returned Python `complex` — so
+    `\\complex(0.5, 0.25)` is `1/2+1/4i`; complex components do not nest (a
+    typed error); a vanishing imaginary part collapses to the real."""
+    if len(args) != 2:
+        raise NumError("\\complex takes two components: \\complex(re, im)")
+    re_v, im_v = args
+    _reject_non_numeric(re_v, im_v)
+    if _is_complex(re_v) or _is_complex(im_v):
+        raise NumError("\\complex takes real components")
+    if isinstance(re_v, float) or isinstance(im_v, float):
+        if ((isinstance(re_v, float) and not math.isfinite(re_v))
+                or (isinstance(im_v, float) and not math.isfinite(im_v))):
+            raise NumError("\\complex takes finite components")
+        return _make_gaussian(Fraction(Decimal(repr(re_v))),
+                              Fraction(Decimal(repr(im_v))))
+    return _make_gaussian(re_v, im_v)
+
+
+def _project(v: AdValue, imag: bool) -> AdValue:
+    """The `\\re`/`\\im` projection: the real or imaginary side of a value.
+    A float is real (the side is the float itself, or 0.0 — the tier stays);
+    a Gaussian's sides are its components; any tier value projects through
+    sympy's `as_real_imag` with each side re-classified through the `\\py`
+    gates (`\\im(π·i)` is the symbolic `π`, `\\re(sin(1)+cos(1)·i)` stays
+    RRA)."""
+    _reject_non_numeric(v)
+    if isinstance(v, Gaussian):
+        return v.im if imag else v.re
+    if isinstance(v, float):
+        return 0.0 if imag else v
+    if isinstance(v, Symbolic | Algebraic | RRA):
+        if not _is_complex(v):
+            return 0 if imag else v
+        re, im = v.expr.as_real_imag()
+        return _sympy_to_ad(im if imag else re, type(v).__name__)
+    return 0 if imag else v  # int/Fraction are real
+
+
+def _re_call(v: AdValue) -> AdValue:
+    return _project(v, imag=False)
+
+
+def _im_call(v: AdValue) -> AdValue:
+    return _project(v, imag=True)
+
+
 # The prelude scope: built-in constants and function builtins, present in every
-# session (see the module docstring). `π`/`e` are exact symbolic reals; the function
-# builtins replaced the original float-tier `math.*` aliases in place — binding names
-# unchanged, exact arguments recognized through the symbolic tier (adhoc/symbolic.py,
-# docs/numerics.md), algebraic `sqrt` arguments through the algebraic tier, anything
-# real the lower tiers cannot hold through the RRA tier, everything else on the
-# `math.*` float tier. `\\prec` sets the RRA display precision and returns it.
+# session (see the module docstring). `π`/`e` are exact symbolic reals; `i` is
+# the exact imaginary unit, a Gaussian reached by both spellings (`i`, `\i`) —
+# the one prelude name a binder may shadow. The function builtins replaced the
+# original float-tier `math.*` aliases in place — binding names unchanged,
+# exact arguments recognized through the symbolic tier (adhoc/symbolic.py,
+# docs/numerics.md), algebraic `sqrt` arguments through the algebraic tier,
+# anything finite the lower tiers cannot hold through the RRA tier, everything
+# else on the `math.*` float tier. `\complex`/`\re`/`\im` build and project
+# complex values; `\prec` sets the RRA display precision and returns it.
 PRELUDE: dict[str, Any] = {
     "pi": symbolic.PI,
     "e": symbolic.E,
+    "i": _make_gaussian(0, 1),
     "inf": math.inf,
     "nan": math.nan,
     "true": True,
@@ -294,6 +392,9 @@ PRELUDE: dict[str, Any] = {
     "tan": _prelude_fn("tan", math.tan),
     "ln": _prelude_fn("ln", math.log),
     "sqrt": _prelude_fn("sqrt", math.sqrt),
+    "complex": PreludeFn("complex", _complex_call),
+    "re": PreludeFn("re", _re_call),
+    "im": PreludeFn("im", _im_call),
     "prec": PreludeFn("prec", _prec_call),
 }
 
@@ -334,6 +435,20 @@ def _is_float(v: AdValue) -> bool:
     return isinstance(v, float)
 
 
+def _is_complex(v: AdValue) -> bool:
+    """A decided non-real value — nonzero imaginary part at every tier. The
+    no-complex-float-tier rule's test: float mixing, ordering, range bounds,
+    `\\lim` anchors and float widening all reject these with typed errors
+    (there is no complex-float tier and no complex ordering)."""
+    if isinstance(v, Gaussian):
+        return True
+    if isinstance(v, Symbolic | Algebraic):
+        return v.expr.is_real is False
+    if isinstance(v, RRA):
+        return v.is_complex
+    return False
+
+
 def _to_float(v: AdValue) -> float:
     return float(v)
 
@@ -364,12 +479,14 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
     """The exact tiers' binary-op shim: dispatch into symbolic.combine first,
     then algebraic.combine, then rra.combine. A symbolic coefficient×atom result
     stays symbolic; a real algebraic result with no recognized closed form
-    (`2^(1/3)`, `√2 + 2^(1/3)`) stays algebraic; every other real
-    (`π + 1/3`, `π·√2`, `2^√2`) stays RRA — approximated on demand as a
-    `tolerance -> rational` function (adhoc/rra.py). Only a value of undecided
-    reality falls to the float tier. An exact-tier domain failure (`1/0`
-    shapes, fractional powers of negatives) becomes the seam's typed NumError
-    (the caller attaches the span)."""
+    (`2^(1/3)`, `√2 + 2^(1/3)`) stays algebraic; every other finite value —
+    real or complex (`π + 1/3`, `π·√2`, `2^√2`, `1 + π·i`) — stays RRA,
+    approximated on demand as a `tolerance -> rational` function (the modulus
+    when complex; adhoc/rra.py). A Gaussian rational result collapses back to
+    `Gaussian`/exact at the gates. Only a real value of undecided reality
+    falls to the float tier — a complex one has no float fallback and is a
+    typed error. An exact-tier domain failure (`1/0` shapes) becomes the
+    seam's typed NumError (the caller attaches the span)."""
     try:
         return symbolic.combine(op, a, b)
     except Unrepresentable:
@@ -385,6 +502,8 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
     try:
         return rra.combine(op, a, b)
     except rra.Unrepresentable:
+        if _is_complex(a) or _is_complex(b):
+            raise NumError("the float tier cannot hold complex values") from None
         return float_fallback()
     except rra.DomainError as e:
         raise NumError(e.args[0])
@@ -395,10 +514,14 @@ def nadd(a: AdValue, b: AdValue) -> AdValue:
         return a + b  # string + string concatenates; mixed never coerces
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
+        if _is_complex(a) or _is_complex(b):
+            raise NumError(COMPLEX_FLOAT_MIX)
         return _to_float(a) + _to_float(b)
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("add", a, b,
                                  lambda: _to_float(a) + _to_float(b))
+    if isinstance(a, Gaussian) or isinstance(b, Gaussian):
+        return gauss.add(a, b)
     if isinstance(a, Fraction) or isinstance(b, Fraction):
         return _normalize(Fraction(a) + Fraction(b))
     return a + b
@@ -407,10 +530,14 @@ def nadd(a: AdValue, b: AdValue) -> AdValue:
 def nsub(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
+        if _is_complex(a) or _is_complex(b):
+            raise NumError(COMPLEX_FLOAT_MIX)
         return _to_float(a) - _to_float(b)
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("sub", a, b,
                                  lambda: _to_float(a) - _to_float(b))
+    if isinstance(a, Gaussian) or isinstance(b, Gaussian):
+        return gauss.sub(a, b)
     if isinstance(a, Fraction) or isinstance(b, Fraction):
         return _normalize(Fraction(a) - Fraction(b))
     return a - b
@@ -419,10 +546,14 @@ def nsub(a: AdValue, b: AdValue) -> AdValue:
 def nmul(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
+        if _is_complex(a) or _is_complex(b):
+            raise NumError(COMPLEX_FLOAT_MIX)
         return _to_float(a) * _to_float(b)
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("mul", a, b,
                                  lambda: _to_float(a) * _to_float(b))
+    if isinstance(a, Gaussian) or isinstance(b, Gaussian):
+        return gauss.mul(a, b)
     if isinstance(a, Fraction) or isinstance(b, Fraction):
         return _normalize(Fraction(a) * Fraction(b))
     return a * b
@@ -431,10 +562,18 @@ def nmul(a: AdValue, b: AdValue) -> AdValue:
 def ndiv(a: AdValue, b: AdValue) -> AdValue:
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
+        if _is_complex(a) or _is_complex(b):
+            raise NumError(COMPLEX_FLOAT_MIX)
         return _fdiv(_to_float(a), _to_float(b))
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("div", a, b,
                                  lambda: _fdiv(_to_float(a), _to_float(b)))
+    if isinstance(a, Gaussian) or isinstance(b, Gaussian):
+        # A Gaussian divisor never vanishes (the imaginary part cannot), so the
+        # zero check only fires on a bare exact 0.
+        if b == 0:
+            raise NumError(DIVISION_BY_ZERO)
+        return gauss.div(a, b)
     divisor = Fraction(b)
     if divisor == 0:
         raise NumError(DIVISION_BY_ZERO)
@@ -464,19 +603,54 @@ def npow(a: AdValue, b: AdValue) -> AdValue:
             # the RRA tier.
             return _exact_combine("pow", a, n,
                                      lambda: _fpow(_to_float(a), float(n)))
+        if isinstance(a, Gaussian):
+            # `i²` is the integer -1, `(1+i)⁻³` an exact Gaussian — sympy
+            # stays for tier mixing only.
+            return gauss.pow_int(a, n)
         return _pow_exact_base(a, n)
     if _is_float(a) or _is_float(b):
+        if _is_complex(a) or _is_complex(b):
+            raise NumError(COMPLEX_FLOAT_MIX)
         return _fpow(_to_float(a), _to_float(b))
     # Non-integer exponent on exact, symbolic, algebraic or RRA operands: the
     # symbolic tier recognizes closed forms (`2^(1/2)` is `√2`, `8^(1/3)`
     # collapses to `2`), the algebraic tier real algebraic roots (`2^(1/3)`
-    # is `2^(1/3)`), the RRA tier every other real (`2^√2`), and only a value
-    # of undecided reality falls to the float tier. A negative base to a
-    # fractional power is a typed error here (no complex tier — real-branch
-    # selection is ticket #42's work) — the float tier's `_fpow` would yield
-    # NaN instead.
+    # is `2^(1/3)`), the RRA tier every other real, and complex results rise
+    # through the same gates (`(-2)^(1/2)` is `√2·i`, `(1+i)^(1/2)` is
+    # algebraic complex). A negative real base takes the odd-root split first
+    # (below). Only a real value of undecided reality falls to the float
+    # tier; the float tier itself keeps `_fpow`'s pinned NaN for the same
+    # inputs.
+    sign = _real_sign(a)
+    if sign == -1 and isinstance(b, Fraction) and b.denominator % 2 == 1:
+        # The odd-root real branch: `(-x)^(p/q)` in lowest terms with q odd
+        # is `(-1)^p · x^(p/q)` — the real value the complex principal branch
+        # would hide. The magnitude keeps its tier; the sign rides on top.
+        magnitude = nneg(a)
+        powered = _exact_combine(
+            "pow", magnitude, b,
+            lambda: _fpow(_to_float(magnitude), _to_float(b)))
+        return nneg(powered) if b.numerator % 2 else powered
     return _exact_combine("pow", a, b,
                              lambda: _fpow(_to_float(a), _to_float(b)))
+
+
+def _real_sign(v: AdValue) -> int | None:
+    """The sign of a real ad value — None for a complex one (and for floats,
+    which never reach it: the float branch handles them first). Exact
+    comparisons per tier; a gate-passing symbolic/algebraic/RRA value is
+    irrational and never zero."""
+    if _is_complex(v) or isinstance(v, float):
+        return None
+    if isinstance(v, (int, Fraction)):
+        return (v > 0) - (v < 0)
+    if isinstance(v, Symbolic):
+        return -1 if symbolic.compare("lt", v, 0) else 1
+    if isinstance(v, Algebraic):
+        return -1 if algebraic.compare("lt", v, 0) else 1
+    if isinstance(v, RRA):
+        return -1 if rra.compare("lt", v, 0) else 1
+    return None
 
 
 def _integer_exponent(v: AdValue) -> int | None:
@@ -524,9 +698,11 @@ def nneg(a: AdValue) -> AdValue:
     if isinstance(a, Symbolic):
         return symbolic.negate(a)  # negating a coefficient×atom form stays one
     if isinstance(a, Algebraic):
-        return algebraic.negate(a)  # negating a real algebraic stays one
+        return algebraic.negate(a)  # negating an algebraic stays one
     if isinstance(a, RRA):
-        return rra.negate(a)  # negating a real stays one
+        return rra.negate(a)  # negating a finite value stays one
+    if isinstance(a, Gaussian):
+        return gauss.neg(a)  # negating a Gaussian stays one (or collapses)
     return -a
 
 
@@ -539,15 +715,19 @@ def neq(a: AdValue, b: AdValue) -> bool:
     if not isinstance(a, _NUMERIC_TYPES) or not isinstance(b, _NUMERIC_TYPES):
         return a is b  # callables and other exotics compare by identity
     if _is_float(a) or _is_float(b):
+        if _is_complex(a) or _is_complex(b):
+            # A float is real; a complex value's imaginary part never vanishes.
+            return False
         return _to_float(a) == _to_float(b)
     if isinstance(a, RRA) or isinstance(b, RRA):
         # Richardson–Fitch heuristic (DESIGN `## exact arithmetic`): structural
         # identity first, then escalating `approximate` probes on the
-        # difference — equal while indistinguishable from zero (Schanuel's
-        # conjecture; an accepted limitation, not a proof). Covers any
-        # RRA-involved pair, including RRA vs exact (`sin(1)^2+cos(1)^2`
-        # equals `1` though sympy never simplifies it). A float operand takes
-        # the approximate float branch above.
+        # difference (on its modulus when complex) — equal while
+        # indistinguishable from zero (Schanuel's conjecture; an accepted
+        # limitation, not a proof). Covers any RRA-involved pair, including
+        # RRA vs exact (`sin(1)^2+cos(1)^2` equals `1` though sympy never
+        # simplifies it). A float operand takes the approximate float branch
+        # above.
         return rra.equal(a, b)
     if isinstance(a, Algebraic) or isinstance(b, Algebraic):
         # Exact, decided on canonical forms with a minimal-polynomial fallback
@@ -560,6 +740,10 @@ def neq(a: AdValue, b: AdValue) -> bool:
         # collapsed; `√2 = 2^(1/2)` stores identically; an atom never equals a
         # rational). A float operand takes the approximate float branch above.
         return symbolic.structurally_equal(a, b)
+    if isinstance(a, Gaussian) or isinstance(b, Gaussian):
+        if isinstance(a, Gaussian) and isinstance(b, Gaussian):
+            return a.re == b.re and a.im == b.im
+        return False  # a complex value never equals a real exact one
     return Fraction(a) == Fraction(b)
 
 
@@ -579,6 +763,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
         end = "" if v.end is None else nshow(v.end, digits)
         suffix = " (lazy, infinite)" if v.end is None else ""
         return f"<range {start}{middle}..{end}{suffix}>"
+    if isinstance(v, Gaussian):
+        return _show_gaussian(v)  # exact components, whole, no ellipsis
     if isinstance(v, Symbolic):
         return symbolic.show(v)  # exact value, truncated digits + ellipsis
     if isinstance(v, Algebraic):
@@ -634,18 +820,27 @@ def _show_float(f: float) -> str:
 
 
 def parse_literal(text: str) -> AdValue:
-    """Parse a number literal's source text (digit+, optionally `.digit+`). A literal
-    containing `.` is a float; otherwise an exact integer."""
-    if "." in text:
+    """Parse a number literal's source text into its tier. A plain digit run is
+    an exact integer; a dotted decimal without an exponent is an exact rational
+    read from its own digits (`0.5` is the rational 1/2 — decimals are exact;
+    `.5` likewise); the float spellings are the trailing-dot marker (`1.` is
+    the float 1.0, deliberately inexact) and any exponent form (`5e-1`,
+    `1.5e3`). A whole-value decimal collapses through the shared denominator-1
+    rule, so `2.0` is the integer `2`."""
+    if "e" in text or "E" in text or text.endswith("."):
         return float(text)
+    if "." in text:
+        return _normalize(Fraction(text))
     return int(text)
 
 
 def _as_float(value: AdValue) -> float:
     """Widen an ad number to the float tier for approximate iteration (infinite-range
-    folds and `\\lim` probes). Non-numerics are rejected with the seam's typed error so
-    the caller can attach a span."""
+    folds and `\\lim` probes). Non-numerics and complex values are rejected with the
+    seam's typed error so the caller can attach a span."""
     _reject_non_numeric(value)
+    if _is_complex(value):
+        raise NumError("a complex value cannot widen to float")
     try:
         return float(value)
     except OverflowError:
@@ -884,6 +1079,36 @@ def _resolve_dotted(path: str) -> Any:
     return getattr(builtins, path, _MISSING)
 
 
+def _complex_of(value: complex) -> AdValue:
+    """A Python `complex` as an exact ad value: both components read through
+    their shortest round-trip decimal (`complex(0.5, 0.25)` is `1/2+1/4i`) and
+    collapse through `make` — a vanishing imaginary part returns the real.
+    Non-finite components have no ad value."""
+    if not (math.isfinite(value.real) and math.isfinite(value.imag)):
+        raise NumError("cannot convert a non-finite complex to an ad value")
+    return _make_gaussian(Fraction(Decimal(repr(value.real))),
+                          Fraction(Decimal(repr(value.imag))))
+
+
+def _sympy_to_ad(expr: Any, type_name: str) -> AdValue:
+    """A sympy expression across the `\\py` boundary: the symbolic gate, then
+    the algebraic gate, then the RRA gate — anything still unconvertible is a
+    named rejection. Shared by `_to_ad` and the `\\re`/`\\im` projections."""
+    try:
+        return symbolic.from_sympy(expr)
+    except (Unrepresentable, DomainError):
+        pass
+    try:
+        return algebraic.from_sympy(expr)
+    except (algebraic.Unrepresentable, algebraic.DomainError):
+        pass
+    try:
+        return rra.from_sympy(expr)
+    except (rra.Unrepresentable, rra.DomainError):
+        raise NumError(
+            f"cannot convert a returned {type_name} to an ad value") from None
+
+
 def _to_ad(value: Any) -> Any:
     """The Python→ad half of the interop conversion matrix (see module docstring).
     Raises NumError with a matrix-specific message on everything without an ad
@@ -904,36 +1129,20 @@ def _to_ad(value: Any) -> Any:
         # Two-arg construction normalizes; the single-Rational-arg form copies
         # numerator/denominator verbatim on py3.12+.
         return _normalize(Fraction(int(value.numerator), int(value.denominator)))
-    if isinstance(value, Symbolic):
-        return value
-    if isinstance(value, Algebraic):
-        return value
-    if isinstance(value, RRA):
+    if isinstance(value, Gaussian | Symbolic | Algebraic | RRA):
         return value
     if type(value).__module__.startswith("sympy"):
         # A sympy object returned across the \py boundary: recognized closed forms
-        # convert through the symbolic tier's own gate, real algebraic numbers
-        # through the algebraic tier's, every other real through the RRA tier's
+        # convert through the symbolic tier's own gate, algebraic numbers through
+        # the algebraic tier's, every other finite number through the RRA tier's
         # (sympy rationals were already handled exactly above); anything else
         # is a named rejection.
-        try:
-            return symbolic.from_sympy(value)
-        except (Unrepresentable, DomainError):
-            pass
-        try:
-            return algebraic.from_sympy(value)
-        except (algebraic.Unrepresentable, algebraic.DomainError):
-            pass
-        try:
-            return rra.from_sympy(value)
-        except (rra.Unrepresentable, rra.DomainError):
-            raise NumError(
-                f"cannot convert a returned {type(value).__name__} to an ad value")
+        return _sympy_to_ad(value, type(value).__name__)
     if isinstance(value, str):
         # Already an ad value: bindable, concatenable, printable.
         return value
     if isinstance(value, complex):
-        raise NumError("complex results are not supported")
+        return _complex_of(value)
     if isinstance(value, numbers.Real):
         return float(value)
     raise NumError(f"cannot convert a returned {type(value).__name__} to an ad value")
@@ -967,11 +1176,25 @@ class Engine:
     def _fail(self, msg: str, sid: int) -> NoReturn:
         raise EvalError(msg, self.spans[sid])
 
+    def lit(self, text: str, sid: int) -> AdValue:
+        """A number literal's tier decision, lowered through the seam so the
+        generated source never loads a bare name — exact decimals (`0.5` is
+        the rational 1/2) have no source-safe Python literal. `parse_literal`
+        cannot fail on lexer-valid text; the sid keeps the
+        every-call-carries-a-span pattern."""
+        return parse_literal(text)
+
     def _protected(self, name: str) -> bool:
         """Prelude names are protected everywhere — the only protected set, since
         user bindings are immutable by the binding rule itself. Covers rebinding by
         `=`, function definition, and — at the definition/binder sites — parameters
-        and loop variables, so a protected name can never be shadowed."""
+        and loop variables, so a protected name can never be shadowed. The one
+        exception is `i`: the imaginary unit's spelling is the conventional
+        loop-binder name, so it binds like any identifier and shadows the unit
+        for both spellings (`i` and `\\i` read the one binding) — inside such a
+        scope the unit is spelled `\\complex(0, 1)`."""
+        if name in SHADOWABLE_PRELUDE:
+            return False
         return name in _PRELUDE_PROTECTED
 
     def _lookup(self, name: str) -> Any:
@@ -1066,6 +1289,8 @@ class Engine:
     def _compare(self, op, a, b, sid):
         try:
             _reject_non_numeric(a, b)
+            if _is_complex(a) or _is_complex(b):
+                raise NumError("complex values are not ordered")
             if isinstance(a, float) or isinstance(b, float):
                 a, b = float(a), float(b)
             elif isinstance(a, RRA) or isinstance(b, RRA):
@@ -1095,13 +1320,19 @@ class Engine:
     def range(self, start, second, end, sid):
         try:
             _reject_non_numeric(start)
+            if _is_complex(start):
+                raise NumError("range bounds must be real numbers")
             if second is None:
                 step = 1
             else:
                 _reject_non_numeric(second)
+                if _is_complex(second):
+                    raise NumError("range bounds must be real numbers")
                 step = nsub(second, start)
             if end is not None:
                 _reject_non_numeric(end)
+                if _is_complex(end):
+                    raise NumError("range bounds must be real numbers")
                 # A non-finite endpoint would iterate forever (or never start) in
                 # the finite-range loop; `a..` is the language's infinite form.
                 if isinstance(end, float) and not math.isfinite(end):
@@ -1192,9 +1423,11 @@ class Engine:
         float tier like infinite-range folds (docs/numerics.md)."""
         try:
             _reject_non_numeric(point_value)
+            if _is_complex(point_value):
+                raise NumError("\\lim approaches a real point")
+            anchor = _as_float(point_value)
         except NumError as e:
             self._fail(e.args[0], sid)
-        anchor = _as_float(point_value)
         if not math.isfinite(anchor):
             self._fail("\\lim approaches a finite point", sid)
         if self._protected(name):

@@ -14,9 +14,14 @@ written against — it should stay in lockstep with the code.
   (`## Groups`), and argument lists span lines comma-separated as they always have.
 - `--` starts a line comment, running to end of line; the newline that ends it is an
   ordinary newline token.
-- A **number literal** is a decimal integer or float: `3`, `0.5`, `12.34`. A `.` is only
-  consumed as part of a number when a digit follows it — `1.` lexes as `1`, then fails on the
-  lone `.`.
+- A **number literal** is an integer, an exact decimal, or a float spelling
+  (docs/numerics.md): `3` is an exact integer; a dotted decimal without an
+  exponent (`0.5`, `12.34`, `.5`) is an *exact rational* read from its own
+  digits; the float spellings are the trailing-dot marker (`1.` is the float
+  1.0, explicitly inexact) and any exponent form (`5e-1`, `1.5e3`, `2e3` — an
+  `e`/`E` not followed by an optional sign and a digit stays juxtaposition, so
+  `2e` is `2*e`). A `.` not consumed by a number is only ever the range
+  operator's first dot — `1..10` lexes `1`, `..`, `10`.
 - A **string literal** is `"…"`: characters up to the closing `"`, possibly spanning lines.
   Inside a literal exactly four escapes decode — `\"` (quote), `\\` (backslash), `\n`
   (newline), `\t` (tab) — and any other backslash pair is a lex error. Strings are full
@@ -305,7 +310,8 @@ scopes; assignments stay call-local. There is no self-name to recurse through �
 recursion goes through named defs or a fixpoint combinator (the Z form works eagerly).
 Lambdas display as `<λ(x)>` and compare by identity like other callables; they take
 positional arguments only, and a parameter named like a prelude constant is rejected
-at evaluation, exactly as for defs.
+at evaluation, exactly as for defs — with the one exception of `i` (see
+`## Assignment semantics`).
 
 **Body extent** follows the fold/limit rule: the body extends greedily over the rest
 of the current expression, up to the enclosing delimiter (`,` `)` `;`, end of
@@ -541,7 +547,7 @@ report their usage at evaluation, like `\py`.
 
 One rule everywhere (`x = e`, any statement context):
 
-- `x` protected (a prelude name) → error `` `pi` is protected ``
+- `x` protected (a prelude name, except `i`) → error `` `pi` is protected ``
 - `x` unbound in the current frame → **bind** it, prints `x = v`
 - `x` bound in the current frame → **compare** current value to `v`, prints `true` / `false`
 
@@ -551,6 +557,15 @@ simply are not equal). There is no reassignment operator and no declaration oper
 a binding is made once by the first `=` and can never be overwritten, only compared
 against (a paper page doesn't reassign either). To iterate on a value, bind a fresh
 name or compute inside a function, where every call starts from a fresh frame.
+
+**The `i` exception**: the imaginary unit's spelling is the conventional loop-binder
+name, so `i` is the one prelude name a binding may shadow — `i = 5` binds a fresh `i`,
+`\sum(i=1..3) i` uses it as the binder, `f(i) = i*i` takes it as a parameter, exactly
+like any other identifier. Both spellings read the one binding, so a shadow covers `i`
+and `\i` alike, and the shadow lifts when the scope ends (the unit is reachable inside
+as `\complex(0, 1)`). It is an ordinary identifier clash handled by the ordinary
+frame rules — not a hole in protection: `π` and every other prelude name stay
+unshadowable, and `\alias` still refuses to repurpose the `i` spelling.
 
 Frame locality: reads walk the chain (locals → enclosing → globals → prelude), but
 binds and compares are frame-local. Inside a body, `y = e` shadows a global `y` with a
@@ -575,22 +590,27 @@ equally final. Built-in names live in a prelude scope protected by the same mech
 |---|---|
 | `π` / `\pi` | the symbolic real π — exact; displays `3.14159265358979...` (docs/numerics.md) |
 | `e` | the symbolic real e — exact; displays `2.71828182845905...` |
+| `i` / `\i` | the imaginary unit — an exact complex value (`i` displays as `i`); the one prelude name a binding may shadow (see `## Assignment semantics`) |
 | `\inf` / `\nan` | the non-finite floats `Inf` / `NaN` — float tier only; the exact tiers have neither (`1/0` is a typed error). IEEE semantics, docs/numerics.md |
 | `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
-| `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`); algebraic `√` arguments through the algebraic tier (`\sqrt(2^(1/3))` is `2^(1/6)`); anything real the lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact); everything else falls to the `math.*` float tier. Display as `<fn \sqrt(x)>` |
+| `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`, `\sqrt(-2)` is `√2·i`, `\ln(-1)` is `π·i`); algebraic `√` arguments through the algebraic tier (`\sqrt(2^(1/3))` is `2^(1/6)`); anything finite the lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact, complex results included); everything else falls to the `math.*` float tier. Display as `<fn \sqrt(x)>` |
+| `\complex` | builds a complex value from two real components: `\complex(2, 3)` is `2+3i`, a vanishing imaginary part collapses to the real; float components read as their exact decimals |
+| `\re` / `\im` | project the real or imaginary side (`\re(2+3i)` is `2`, `\im(π·i)` is `π`); a float's imaginary side is `0.0` |
 | `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
 `π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is protected ``
-— diagnostics echo the canonical name, see `## Name aliases`), never shadows.
+— diagnostics echo the canonical name, see `## Name aliases`), never shadows — except
+`i`, the one shadowable prelude name (above).
 Unicode and ASCII spellings are the same value — `π` and `\pi` are one
-name, not two. The function builtins replaced the original float-tier `math.*` aliases
+name, not two, and `i` and `\i` are one name reached as a bare identifier and as a
+`\`-reference. The function builtins replaced the original float-tier `math.*` aliases
 in place: binding names unchanged, but exact closed forms stay exact
 (`√2 * √2` collapses back to the integer `2`); a result with no recognized closed form
 stays exact in the algebraic or RRA tier (`π + 1` is `4.14159265358979...`), and the float tier keeps
-`math.*`'s own behavior for float arguments (`\sqrt(2.0)` is `1.4142135623730951`).
+`math.*`'s own behavior for float arguments (`\sqrt(2.)` is `1.4142135623730951`).
 `√` is the prefix-operator spelling of `\sqrt(...)` — same evaluation, no separate
-name. Exact-tier domain failures are typed errors (`\sqrt(-1)`, `\ln(0)`,
+name. Exact-tier domain failures are typed errors (`\ln(0)`,
 `\tan(π/2)`); the float tier keeps `math.*`'s own raising (`\sqrt(-1.0)` →
 `ValueError`, wrapped and spanned).
 

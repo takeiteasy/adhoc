@@ -150,22 +150,39 @@ literals:
 - Function definitions (`f(x) = body`) are declarations, not checks: a protected or
   already-visible name is an error, since functions compare by identity and a check
   would be meaningless.
-- Built-in constants/functions (`π`/`\pi`, `e`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`) live in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same name, not two different ones. The function builtins are seam-native: exact arguments are recognized through the symbolic closed-form tier (`√2 * √2` collapses back to `2`), everything else falls to the `math.*` float tier.
-- Prelude names are **protected everywhere**, not shadowable — a function parameter, local binding, or fold/limit binder named `π` (or any other prelude name) is a redefinition error, not a local shadow. This keeps a prelude name's meaning fixed regardless of where it's read from, at the cost of a handful of single-character names (`π`, `e`) being permanently unavailable as ordinary variable names.
+- Built-in constants/functions (`π`/`\pi`, `e`, `i`/`\i`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`, `\complex`, `\re`, `\im`) live in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same name, not two different ones. The function builtins are seam-native: exact arguments are recognized through the symbolic closed-form tier (`√2 * √2` collapses back to `2`, `\sqrt(-2)` is `√2·i`), everything else rises through the exact tiers, and only non-established-reals fall to the `math.*` float tier.
+- Prelude names are **protected everywhere**, not shadowable — a function parameter, local binding, or fold/limit binder named `π` (or any other prelude name) is a redefinition error, not a local shadow. This keeps a prelude name's meaning fixed regardless of where it's read from, at the cost of a handful of single-character names (`π`, `e`) being permanently unavailable as ordinary variable names. The one exception is `i`: the imaginary unit's spelling is the conventional loop-binder name, so it shadows like any identifier (both spellings read the one binding, and the shadow lifts with the scope).
 
 ## numeric types
 
 ```
 > 3
 < = 3            -- int
+> 0.5
+< = 1/2           -- a decimal literal is an exact rational; 0.5e0 or 1. is float
 > 1/2
-< = 1/2           -- rational, displayed as a fraction; exact internally
+< = 1/2           -- int/int stays an exact rational; displayed as a fraction
 > 2 + 3i
-< = 2 + 3i         -- complex
+< = 2+3i         -- complex, exact
 ```
 
-- `int`, `real`, `rational`, `complex` are all supported as numeric literals/values; exact literal syntax and promotion/coercion rules (e.g. `int / int` → `rational` vs `real`) TBD — syntax-level placeholder for now.
-- Note: `i` is the conventional imaginary-unit literal in math notation, but `i` is also the conventional loop-binder variable (`Σ(i=1..10)...`) — worth resolving this collision when complex literal syntax is designed (e.g. scoped shadowing may just handle it, same as any other identifier clash).
+- Every numeric tier is a value: exact integers and rationals (a decimal
+  literal `0.5` is the rational `1/2`, read from its own digits; the float
+  spellings are the trailing-dot marker `1.` and any exponent form `5e-1`),
+  exact complex (`Gaussian` rationals, `2+3i`), symbolic closed forms
+  (real or pure-imaginary: `π`, `√2`, `π·i`), algebraic numbers (real or
+  complex), the RRA fallback (every other finite number), and the float tier
+  beneath as the explicitly-inexact one. Promotion runs upward automatically
+  (`int / int` is the exact rational; any float operand demotes to float —
+  except a complex operand, which is a typed error: there is no complex-float
+  tier), and results collapse back down whenever they can (`i²` is `-1`,
+  `(2+2i)/(1+i)` is `2`).
+- Negative bases split by exponent: `p/q` in lowest terms with `q` odd takes
+  the real branch (`(-8)^(1/3)` is `-2`), anything else the complex principal
+  (`(-2)^(1/2)` is `√2·i`); the float tier keeps its pinned NaN.
+- The `i` collision is resolved by ordinary scoped shadowing: `i` binds like
+  any identifier (`Σ(i=1..10)` keeps working), both spellings read the one
+  binding, and the unit is spelled `\complex(0, 1)` inside such a scope.
 
 ## execution modes
 

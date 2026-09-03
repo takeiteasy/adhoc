@@ -64,10 +64,19 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   there are no module values or dotted attribute access (docs/grammar.md,
   `## Modules and imports`).
 - Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`),
-  exact symbolic closed forms (`√2 * √2` is exactly `2`), exact real algebraic
-  numbers (`2^(1/3)` stays exact, displaying `1.25992104989487...`), and exact
-  Recursive Real Arithmetic (`π + 1` stays exact, displaying
-  `4.14159265358979...`; any error bound yields a rational within it).
+  exact decimals (`0.1 + 0.2` is exactly `3/10` — a dotted literal is a rational read
+  from its own digits; the float spellings are the trailing-dot marker `1.` and any
+  exponent form `5e-1`), exact symbolic closed forms (`√2 * √2` is exactly `2`),
+  exact algebraic numbers (`2^(1/3)` stays exact, displaying
+  `1.25992104989487...`), exact Recursive Real Arithmetic (`π + 1` stays exact,
+  displaying `4.14159265358979...`; any error bound yields a rational within it),
+  and the exact complex tower: `i`/`\i` is the imaginary unit, `(2+3i)(2-3i)` is
+  exactly `13`, `\sqrt(-2)` is `√2·i`, `\ln(-1)` is `π·i`, `\sin(1+i)` stays
+  exact, and `\complex(re, im)`/`\re`/`\im` build and project complex values.
+  Negative bases take the odd-root real branch (`(-8)^(1/3)` is `-2`) or the
+  complex principal (`(-2)^(1/2)` is `√2·i`); there is no complex-float tier
+  (mixing a float with a complex value is a typed error) and complex values are
+  not ordered.
 - Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
 - RRA display precision is tunable: `\prec(5)` shows `π + 1` as `4.1416...`;
   `\prec` takes an integer 1..1000, returns the new value, and is protected
@@ -85,14 +94,19 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   and a parenthesized statement group is its multi-statement branch form
   (docs/grammar.md, `## Conditionals`).
 - A protected prelude scope: `π`/`\pi` and `e` are exact symbolic reals (displaying with
-  a trailing ellipsis), `\inf`/`\nan` the non-finite floats, `\true`/`\false` the booleans,
+  a trailing ellipsis), `i`/`\i` the exact imaginary unit (the one prelude name a
+  binding may shadow — `i = 5` or `\sum(i=1..3) i` is an ordinary identifier clash,
+  docs/grammar.md, `## Assignment semantics`), `\inf`/`\nan` the non-finite floats,
+  `\true`/`\false` the booleans,
   and the `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function builtins — exact arguments go
-  through the symbolic closed-form tier (`\sqrt(2)` stays `√2`), algebraic `√`
-  arguments through the algebraic tier, anything real the lower tiers cannot
-  hold through the RRA tier (`\sin(1)` stays exact), everything else falls to
-  the `math.*` float tier — plus the `\prec` display-precision setting above.
-  Prelude names can never be rebound or shadowed, and unicode/ASCII spellings are one and
-  the same value (`π` and `\pi` are a single constant, via the name alias map). `√` is the
+  through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sqrt(-2)` is
+  `√2·i`), algebraic `√` arguments through the algebraic tier, anything finite the
+  lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact), everything
+  else falls to the `math.*` float tier — plus `\complex`/`\re`/`\im` for building
+  and projecting complex values and the `\prec` display-precision setting above.
+  Prelude names other than `i` can never be rebound or shadowed, and unicode/ASCII
+  spellings are one and the same value (`π` and `\pi` are a single constant, via the
+  name alias map). `√` is the
   prefix-operator spelling of `\sqrt(...)` — `√2 * √2` collapses back to the exact
   integer `2` (docs/numerics.md).
 - Lazy arithmetic ranges: `a..b` is an inclusive step-1 range, `a..` is infinite, and
@@ -152,7 +166,12 @@ later phases add bindings without touching the lexer.
   `1.25992104989487...`); RRA values display the `\prec` session precision
   instead (default 15: `π + 1` is `4.14159265358979...`). Each value is exact;
   only the digits are approximate —
-  the ellipsis says so (docs/numerics.md).
+  the ellipsis says so (docs/numerics.md). A complex value prints each side
+  under the same truncation.
+- Decimal literals are exact by design: `0.1` is the rational `1/10`, not the
+  float — an exact decimal read through binary-float machinery and back would
+  not be its own digits. When inexactness is wanted, the float spellings are
+  visible on purpose (`1.`, `5e-1`).
 - Caret columns are counted in *characters*, not terminal display width. A genuinely
   full-width or combining-mark identifier character will make the caret land a column or two
   off; ordinary unicode letters like `π` are unaffected (1 character, 1 column). Not worth a

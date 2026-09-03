@@ -102,16 +102,19 @@ def test_algebraic_display_is_truncated_digits_plus_ellipsis():
 
 
 def test_algebraic_exact_tier_domain_errors_are_typed():
-    # No complex tier and no exact-tier infinity: fractional powers of negative
-    # bases stay typed NumErrors (the float tier would yield NaN), and `0⁻ⁿ`
-    # stays the same failure as `1/0`. Real-branch selection for odd roots is
-    # ticket #42's work, not this tier's.
-    with pytest.raises(NumError, match="not a real number"):
-        npow(-2, Fraction(1, 2))
+    # The exact tiers have no infinity: `0⁻ⁿ` stays the same failure as
+    # `1/0`. Fractional powers of negatives are values now — the odd-root
+    # real branch and the complex principal (ticket #42).
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
         npow(0, Fraction(-1, 2))
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
         ndiv(CBRT2, 0)
+    # A negative algebraic base to an even-denominator power is the complex
+    # principal; an odd-denominator one takes the real branch: `(-∛2)^(1/3)`
+    # is `-2^(1/9)`, not `-∛2`.
+    assert nshow(npow(nsub(0, CBRT4), Fraction(1, 2))).endswith("...i")
+    assert neq(npow(nsub(0, CBRT2), Fraction(1, 3)),
+               nneg(npow(CBRT2, Fraction(1, 3))))
 
 
 def test_algebraic_equality_is_exact():
@@ -158,12 +161,12 @@ def test_as_float_widens_algebraic_reals():
 def test_prelude_sqrt_recognizes_algebraic_forms():
     # Only `sqrt` routes algebraic arguments through the gate (`sin`/`ln` of a
     # nonzero algebraic are transcendental — they go to the RRA tier, which
-    # holds every real).
+    # holds every finite number).
     assert PRELUDE["sqrt"](CBRT2) == alg(sympy.Integer(2) ** sympy.Rational(1, 6))
     assert isinstance(PRELUDE["sin"](CBRT2), RRA)
     assert isinstance(PRELUDE["ln"](CBRT2), RRA)
-    with pytest.raises(NumError, match="not a real number"):
-        PRELUDE["sqrt"](nsub(0, CBRT4))
+    # The complex principal branch is an algebraic complex value now.
+    assert isinstance(PRELUDE["sqrt"](nsub(0, CBRT4)), Algebraic)
 
 
 def test_to_ad_admits_real_algebraic_sympy_values():

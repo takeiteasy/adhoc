@@ -78,10 +78,15 @@ def test_none_return_rejects():
     assert e.value.msg == "the call returned nothing"
 
 
-def test_complex_return_rejects():
+def test_complex_return_converts_exactly():
+    # A Python complex crosses the \py boundary exactly: both components read
+    # through their shortest round-trip decimal and collapse (ticket #42).
+    assert last('\\py("complex")(1, 1)') == "= 1+i"
+    assert last('\\py("complex")(0.5, 0.25)') == "= 1/2+1/4i"
+    assert last('\\py("complex")(2, 0)') == "= 2"
     with pytest.raises(EvalError) as e:
-        run_source('\\py("complex")(1, 1)')
-    assert e.value.msg == "complex results are not supported"
+        last('\\py("complex")(1, \\py("float")("inf"))')
+    assert "non-finite complex" in e.value.msg
 
 
 def test_unsupported_type_return_rejects():
@@ -260,7 +265,10 @@ def test_string_kwarg_value_reaches_python(tmp_path, monkeypatch):
 
 
 def test_kwarg_names_may_contain_underscores():
-    assert last('\\py("round")(3.14159, \\ndigits=2)') == "= 3.14"
+    # The float spelling keeps the argument on the float tier, where
+    # `round(x, ndigits=)` returns a float (an exact decimal would round to
+    # an exact rational).
+    assert last('\\py("round")(3.14159e0, \\ndigits=2)') == "= 3.14"
 
 
 def test_kwarg_on_user_function_rejects():

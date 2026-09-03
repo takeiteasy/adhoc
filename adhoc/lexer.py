@@ -260,6 +260,23 @@ _SINGLE_CHAR_TOKENS = {
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
 
 
+def _take_exponent(entries: list[tuple[int, str]], n: int, j: int) -> int:
+    """Consume a float exponent (`e-3`, `E+6`, `e10`) at entry index `j`,
+    returning the index past it. An `e`/`E` not followed by an optional sign
+    and a digit is left alone — `2e` stays juxtaposition (`2*e`), never a
+    broken float."""
+    if j < n and entries[j][1] in "eE":
+        k = j + 1
+        if k < n and entries[k][1] in "+-":
+            k += 1
+        if k < n and entries[k][1].isascii() and entries[k][1].isdigit():
+            k += 1
+            while k < n and entries[k][1].isascii() and entries[k][1].isdigit():
+                k += 1
+            return k
+    return j
+
+
 def tokenize(src: str) -> list[Token]:
     """Tokenize source text. Token spans are byte offsets; entries carry (byte_off, char)
     pairs so scanning walks code points while spans stay in bytes."""
@@ -328,17 +345,33 @@ def tokenize(src: str) -> list[Token]:
             j = i
             while j < n and entries[j][1].isascii() and entries[j][1].isdigit():
                 j += 1
-            # Only consume `.` if a digit follows — `1.` lexes as `1` then errors on `.`.
-            if (
-                j < n
-                and entries[j][1] == "."
-                and j + 1 < n
-                and entries[j + 1][1].isascii()
-                and entries[j + 1][1].isdigit()
-            ):
-                j += 1
-                while j < n and entries[j][1].isascii() and entries[j][1].isdigit():
+            # A `.` with a digit after it is the fractional part (`3.14`, exact);
+            # a `.` with no digit after it is the explicit float marker (`1.`,
+            # the float 1.0) — unless a second dot follows, which is the range
+            # operator (`1..10` stays `1` + `..`).
+            if j < n and entries[j][1] == ".":
+                if (j + 1 < n and entries[j + 1][1].isascii()
+                        and entries[j + 1][1].isdigit()):
                     j += 1
+                    while j < n and entries[j][1].isascii() and entries[j][1].isdigit():
+                        j += 1
+                elif not (j + 1 < n and entries[j + 1][1] == "."):
+                    j += 1
+            j = _take_exponent(entries, n, j)
+            end = entries[j][0] if j < n else eof_off
+            tokens.append(Number(text=src[i:j], span=Span(pos, end)))
+            i = j
+            continue
+
+        if (c == "." and i + 1 < n and entries[i + 1][1].isascii()
+                and entries[i + 1][1].isdigit()):
+            # A leading-dot decimal (`.5`): exact, like every other dotted
+            # literal. A `.` followed by another `.` is still the range
+            # operator — that shape cannot reach this branch (not a digit).
+            j = i + 1
+            while j < n and entries[j][1].isascii() and entries[j][1].isdigit():
+                j += 1
+            j = _take_exponent(entries, n, j)
             end = entries[j][0] if j < n else eof_off
             tokens.append(Number(text=src[i:j], span=Span(pos, end)))
             i = j

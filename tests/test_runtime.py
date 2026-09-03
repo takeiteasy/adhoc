@@ -176,8 +176,17 @@ def test_small_magnitude_display_expands_positionally():
 def test_parse_literal_tiers_by_dot():
     assert parse_literal("42") == 42
     assert isinstance(parse_literal("42"), int)
-    assert parse_literal("0.5") == 0.5
-    assert isinstance(parse_literal("0.5"), float)
+    # Decimals are exact (ticket #42): a dotted literal is a rational read
+    # from its own digits, collapsing when whole; the float spellings are the
+    # trailing-dot marker and any exponent form.
+    assert parse_literal("0.5") == Fraction(1, 2)
+    assert isinstance(parse_literal("0.5"), Fraction)
+    assert parse_literal("2.0") == 2
+    assert parse_literal(".5") == Fraction(1, 2)
+    assert parse_literal("1.") == 1.0
+    assert isinstance(parse_literal("1."), float)
+    assert parse_literal("5e-1") == 0.5
+    assert isinstance(parse_literal("5e-1"), float)
 
 
 def test_range_value_is_lazy_and_inclusive():
@@ -454,12 +463,25 @@ def test_symbolic_without_closed_form_stays_rra():
 
 
 def test_symbolic_exact_tier_domain_errors_are_typed():
-    # No complex tier and no exact-tier infinity: fractional powers of negative
-    # bases and 0⁻ⁿ are typed NumErrors (the float tier would yield NaN).
-    with pytest.raises(NumError, match="not a real number"):
-        npow(-2, Fraction(1, 2))
+    # The exact tiers have no infinity: 0⁻ⁿ is a typed NumError (the float
+    # tier would yield NaN). Fractional powers of negatives are values now:
+    # the odd-root real branch and the complex principal (ticket #42).
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
         npow(0, Fraction(-1, 2))
+
+
+def test_negative_base_rational_powers():
+    # Odd-denominator exponents take the real branch; even-denominator ones
+    # the complex principal (ticket #42).
+    assert npow(-8, Fraction(1, 3)) == -2
+    assert npow(-8, Fraction(2, 3)) == 4
+    assert nshow(npow(-2, Fraction(1, 2))) == "1.4142135623731...i"
+    assert npow(Fraction(-1, 8), Fraction(1, 3)) == Fraction(-1, 2)
+    # A symbolic negative base takes the same real branch.
+    neg_pi_minus = nsub(-4, PI_SYM)
+    assert nshow(npow(neg_pi_minus, Fraction(1, 3))).startswith("-1.925")
+    # The float tier keeps its pinned NaN for the same shapes.
+    assert math.isnan(npow(-8.0, 0.5))
 
 
 def test_symbolic_equality_is_exact():
@@ -510,12 +532,33 @@ def test_prelude_builtins_recognize_exact_forms():
 
 
 def test_prelude_builtins_domain_errors():
-    with pytest.raises(NumError, match="not a real number"):
-        PRELUDE["sqrt"](-2)
+    # Domain failures stay typed; sqrt of a negative is a value now (ticket
+    # #42), so only ln(0)/tan(π/2) remain domain errors.
     with pytest.raises(NumError, match="defined only for positive"):
         PRELUDE["ln"](0)
     with pytest.raises(NumError, match="odd multiples of pi/2"):
         PRELUDE["tan"](ndiv(PI_SYM, 2))
+    # The float tier keeps math.*'s own raising behavior (wrapped and spanned
+    # by `app` at the engine layer).
+    with pytest.raises(ValueError, match="math domain error"):
+        PRELUDE["sqrt"](-2.0)
+
+
+def test_prelude_builtins_complex_values():
+    assert nshow(PRELUDE["sqrt"](-2)) == "1.4142135623731...i"
+    assert nshow(PRELUDE["ln"](-1)) == "3.14159265358979...i"
+    # sin of a complex argument: sin(1+i) = sin(1)·cosh(1) + i·cos(1)·sinh(1)
+    # — Richardson–Fitch decides the equality on the complex difference.
+    lhs = PRELUDE["sin"](nadd(1, PRELUDE["i"]))
+    rhs = nadd(
+        nmul(PRELUDE["sin"](1), _to_ad(sympy.cosh(1))),
+        nmul(nmul(PRELUDE["cos"](1), PRELUDE["i"]), _to_ad(sympy.sinh(1))))
+    assert neq(lhs, rhs)
+    assert not neq(lhs, nadd(PRELUDE["sin"](1), nmul(PRELUDE["cos"](1),
+                                                     PRELUDE["i"])))
+    # The projections split it exactly.
+    assert abs(float(PRELUDE["re"](lhs)) - math.sin(1) * math.cosh(1)) < 1e-12
+    assert abs(float(PRELUDE["im"](lhs)) - math.cos(1) * math.sinh(1)) < 1e-12
 
 
 def test_prelude_builtin_display():

@@ -6,13 +6,15 @@ values above the seam (docs/numerics.md).
 
 ## Value shape
 
-Every other real: a real number with no symbolic closed form and no algebraic
-representation — multi-term transcendental sums (`π + 1`, `π·√2`), reciprocals
-of atoms (`1/π`), transcendental powers (`2^√2`), and closed-form-free function
-results (`sin(1)`). Values are stored as the canonical sympy expression itself,
-the same Expr-wrapper pattern as `adhoc/symbolic.py` and `adhoc/algebraic.py`:
-structural identity is the fast equality path, and Richardson–Fitch
-(`equal` below: escalating `approximate` probes on the difference, equal
+Every other finite number, real or complex: a value with no symbolic closed
+form and no algebraic representation — multi-term transcendental sums
+(`π + 1`, `π·√2`), reciprocals of atoms (`1/π`), transcendental powers
+(`2^√2`), closed-form-free function results (`sin(1)`), and their complex
+kin (`sin(1) + cos(1)·i`, `1 + π·i`). Values are stored as the canonical
+sympy expression itself, the same Expr-wrapper pattern as
+`adhoc/symbolic.py` and `adhoc/algebraic.py`: structural identity is the
+fast equality path, and Richardson–Fitch (`equal` below: escalating
+`approximate` probes on the difference — on its modulus when complex, equal
 while indistinguishable from zero) decides the pairs sympy never
 simplifies (`sin(1)^2+cos(1)^2` vs `1`).
 
@@ -31,24 +33,26 @@ and this module's `classify` is never asked about a value either lower tier
 could hold in normal operation. Anything reaching here that is real and finite
 is admitted: unlike the strict shapes below, this tier has no rejection of
 form, only of domain. The float tier remains beneath as the explicitly-inexact
-tier (float literals, float-argument calls, IEEE non-finite values) — an RRA
-value mixed with a float still demotes to float, the fast O(1) path. The tier
-is real-only: non-real results raise `DomainError`, and non-finite values keep
-the exact tiers' domain-error contract (there is no exact-tier infinity).
+tier (trailing-dot/exponent float literals, float-argument calls, IEEE
+non-finite values) — an RRA value mixed with a float still demotes to float,
+the fast O(1) path (mixing a float with a complex value is a typed error —
+there is no complex-float tier). Non-finite values keep the exact tiers'
+domain-error contract (there is no exact-tier infinity).
 
 ## The gate
 
 `classify` is the only admission route: a rational result collapses back to
-`int`/`Fraction`, a real finite result is admitted, and anything else raises.
+`int`/`Fraction`, a Gaussian rational to `Gaussian`, a finite real or complex
+result is admitted, and anything else raises.
 Two failure kinds, both internal — the seam converts them:
 
-- `Unrepresentable` — sympy cannot establish the value as a real number (a free
-  symbol, an expression of undecided reality that will not evaluate). The seam
-  demotes it to the float tier.
-- `DomainError` — the exact tiers have no infinity and there is no complex tier:
-  non-finite values and non-real values. The seam turns the message into its
-  typed `NumError` with the caller's span. (The float tier keeps its own pinned
-  behavior for the same inputs.)
+- `Unrepresentable` — sympy cannot establish the value as a finite number (a
+  free symbol, an expression of undecided reality that will not evaluate). The
+  seam demotes real undecided values to the float tier; undecided complex
+  values are a typed error (there is no complex-float tier).
+- `DomainError` — the exact tiers have no infinity: non-finite values only.
+  The seam turns the message into its typed `NumError` with the caller's span.
+  (The float tier keeps its own pinned behavior for the same inputs.)
 
 ## Display
 
@@ -68,6 +72,8 @@ from fractions import Fraction
 import math
 
 import sympy
+
+from .gauss import Gaussian, make, to_sympy
 
 # Default significant digits shown before the ellipsis — the symbolic tier's
 # policy (DESIGN.md display examples). Tunable at runtime through the seam's
@@ -117,28 +123,33 @@ def set_precision(n: int) -> int:
 
 
 class Unrepresentable(Exception):
-    """A result sympy cannot establish as a real number (a free symbol, an
-    expression of undecided reality that will not evaluate). Internal: the seam
-    demotes it to the float tier."""
+    """A result sympy cannot establish as a finite number (a free symbol, an
+    expression that will not evaluate). Internal: the seam demotes real
+    undecided values to the float tier; undecided complex values are a typed
+    error."""
 
 
 class DomainError(Exception):
-    """An exact-tier domain failure — the exact tiers have no infinity and there
-    is no complex tier (non-finite values, non-real values such as `ln` of a
-    negative RRA). Internal: the seam converts the message into its typed
-    `NumError`."""
+    """An exact-tier domain failure — the exact tiers have no infinity
+    (non-finite values only). Internal: the seam converts the message into its
+    typed `NumError`."""
 
 
 @dataclass(frozen=True, eq=False)
 class RRA:
-    """A real number beyond the symbolic and algebraic tiers, in canonical sympy
-    form: the `tolerance -> rational` fallback. The expression is never a bare
-    rational — those collapse back to exact before admission — and is always
-    real and finite. Language equality is `equal` below (Richardson–Fitch);
-    Python `==` stays structural on purpose (an RF-based `__eq__` would break
-    the hash contract for equal-valued different-expression pairs)."""
+    """A number beyond the symbolic and algebraic tiers, real or complex, in
+    canonical sympy form: the `tolerance -> rational` fallback. The expression
+    is never a bare rational — those collapse back to exact before admission —
+    and is always finite. Language equality is `equal` below
+    (Richardson–Fitch); Python `==` stays structural on purpose (an RF-based
+    `__eq__` would break the hash contract for equal-valued
+    different-expression pairs)."""
 
     expr: sympy.Expr
+    # True when the stored expression is a decided non-real (or probed
+    # non-real): the seam's complex check reads this rather than re-deriving
+    # reality on every operation.
+    is_complex: bool = False
 
     def __float__(self) -> float:
         return float(self.expr)
@@ -186,87 +197,94 @@ def _compare_reflected(op: str, a: RRA, b) -> bool:
 
 
 def _to_expr(v) -> sympy.Expr:
-    """An exact, symbolic, algebraic or RRA ad number as a sympy expression
-    (floats never reach the tier — the seam demotes them before dispatch). The
-    `.expr` duck-type covers all three tier types without importing any of them
-    — tiers stay independent and only the seam dispatches across them."""
+    """An exact, Gaussian, symbolic, algebraic or RRA ad number as a sympy
+    expression (floats never reach the tier — the seam demotes them before
+    dispatch). The `.expr` duck-type covers all three tier types without
+    importing any of them — tiers stay independent and only the seam dispatches
+    across them."""
     expr = getattr(v, "expr", None)
     if isinstance(expr, sympy.Expr):
         return expr
+    if isinstance(v, Gaussian):
+        return to_sympy(v)
     if isinstance(v, Fraction):
         return sympy.Rational(v.numerator, v.denominator)
     return sympy.Integer(v)
 
 
 def _check_domain(expr: sympy.Expr) -> None:
-    """Reject non-finite and non-real values — zoo/oo/nan have no exact-tier
-    representation, and there is no complex tier."""
+    """Reject non-finite values — zoo/oo/nan have no exact-tier representation.
+    Complex values are admitted (ticket #42)."""
     if expr.has(sympy.zoo, sympy.nan) or expr.is_finite is False:
         raise DomainError("the exact tiers have no infinity")
-    if expr.is_real is False:
-        raise DomainError("complex results are not supported")
 
 
-def classify(expr: sympy.Expr) -> Fraction | RRA:
+def classify(expr: sympy.Expr) -> Fraction | Gaussian | RRA:
     """The tier's only admission gate: a rational result collapses back to exact
-    (denominator 1 → `int`, matching the seam's own normalization), a real
-    finite result is admitted, anything else raises Unrepresentable — or
-    DomainError for non-real/non-finite values.
+    (denominator 1 → `int`, matching the seam's own normalization), a Gaussian
+    rational collapses to `Gaussian`, a finite real or complex result is
+    admitted, anything else raises Unrepresentable — or DomainError for
+    non-finite values.
 
     The symbolic and algebraic tiers are tried first by the seam; this gate
     assumes that order and does not special-case their shapes. Admission
-    requires sympy to positively establish reality (`is_real` strictly `True`)
-    or a successful finite real evaluation when reality is undecided: anything
-    else falls to the float tier rather than risk admitting something complex.
+    requires sympy to positively establish reality (`is_real` strictly `True`),
+    decided non-reality (`is_real` strictly `False`), or a successful finite
+    evaluation when reality is undecided: anything else falls through rather
+    than risk admitting something formless.
     """
     if expr.is_Rational:
         v = Fraction(int(expr.p), int(expr.q))
         return int(v) if v.denominator == 1 else v
     _check_domain(expr)
+    re, im = expr.as_real_imag()
+    if isinstance(re, sympy.Rational) and isinstance(im, sympy.Rational):
+        return make(Fraction(int(re.p), int(re.q)),
+                    Fraction(int(im.p), int(im.q)))
     if expr.is_real is True:
         return RRA(expr)
+    if expr.is_real is False:
+        return RRA(expr, is_complex=True)
     # Undecided reality: probe with a finite-precision evaluation. A free
-    # symbol (or anything that will not evaluate to a real number) raises or
-    # comes back non-real, and stays Unrepresentable.
+    # symbol (or anything that will not evaluate to a finite number) raises or
+    # comes back formless, and stays Unrepresentable. A real probe is admitted
+    # as before; a finite non-real probe is admitted as complex.
     try:
         probe = expr.evalf(30)
     except Exception:
         raise Unrepresentable(
-            "not an established real number; the float tier approximates it"
+            "not an established number; the float tier approximates it"
         ) from None
     if probe.is_real is True and probe.is_finite is not False:
         return RRA(expr)
+    if (probe.is_real is False and probe.is_finite is not False
+            and probe.is_number is not False):
+        return RRA(expr, is_complex=True)
     raise Unrepresentable(
-        "not an established real number; the float tier approximates it")
+        "not an established number; the float tier approximates it")
 
 
-def combine(op: str, a, b) -> Fraction | RRA:
+def combine(op: str, a, b) -> Fraction | Gaussian | RRA:
     """One RRA-tier binary operation (`add`/`sub`/`mul`/`div`/`pow`) over exact,
-    symbolic, algebraic and/or RRA operands. sympy does the algebra and
-    normalization; classify decides whether the result stays in the tier.
+    Gaussian, symbolic, algebraic and/or RRA operands. sympy does the algebra
+    and normalization; classify decides whether the result stays in the tier.
     Raises DomainError for `1/0`-shaped inputs (`div` by zero, `0⁻ⁿ`) with the
-    seam's canonical message, and for fractional powers of negative bases (no
-    complex tier — real-branch selection is ticket #42's work)."""
+    seam's canonical message. Fractional powers of negative bases take the
+    complex path; odd-denominator rationals take the real branch one layer up,
+    at the seam (ticket #42)."""
     x, y = _to_expr(a), _to_expr(b)
     if op == "div" and y == 0:
         raise DomainError("division by zero")
-    if op == "pow" and x == 0 and y < 0:
+    if op == "pow" and x == 0 and y.is_real is True and y < 0:
         raise DomainError("division by zero")  # 0 to a negative power is 1/0
     raw = {"add": x + y, "sub": x - y, "mul": x * y, "div": x / y,
            "pow": x**y}[op]
-    try:
-        return classify(raw)
-    except DomainError:
-        if op == "pow":
-            raise DomainError(
-                "a negative number raised to a fractional power is not a real "
-                "number") from None
-        raise
+    return classify(raw)
 
 
-def negate(a) -> Fraction | RRA:
-    """Unary minus: negating a real stays one (rational collapse included — the
-    gate decides)."""
+def negate(a) -> Fraction | Gaussian | RRA:
+    """Unary minus: negating a finite value stays one (rational collapse
+    included — the gate decides)."""
     return classify(-_to_expr(a))
 
 
@@ -284,12 +302,13 @@ _APPLY_FUNCS = {
 }
 
 
-def apply(name: str, arg) -> Fraction | RRA:
-    """One prelude function over an exact, symbolic, algebraic or RRA argument
-    that the lower tiers could not hold (`\\sin(1)`, `\\ln(π + 1)`). sympy
-    evaluates the call and anything real and finite is admitted; anything else
-    raises Unrepresentable and the seam falls back to float. Domain failures
-    carry the function's own message."""
+def apply(name: str, arg) -> Fraction | Gaussian | RRA:
+    """One prelude function over an exact, Gaussian, symbolic, algebraic or RRA
+    argument that the lower tiers could not hold (`\\sin(1)`, `\\ln(π + 1)`).
+    sympy evaluates the call and anything finite (real or complex) is admitted;
+    anything else raises Unrepresentable and the seam falls back to float (real
+    undecided values) or a typed error (complex ones — there is no
+    complex-float tier). Domain failures carry the function's own message."""
     try:
         return classify(_APPLY_FUNCS[name](_to_expr(arg)))
     except DomainError:
@@ -325,7 +344,11 @@ def approximate(v: RRA, tolerance: int | Fraction | float) -> Fraction:
         dps = approx_digits + 20
     previous: Fraction | None = None
     for _ in range(_MAX_APPROX_STEPS):
-        current = Fraction(Decimal(str(expr.evalf(dps))))
+        # `chop=True` drops the signed-zero imaginary residue a complex-typed
+        # expression's evalf carries (`0.46 - 0.e-42*I`) — the modulus probes
+        # in `equal` feed exactly such shapes, and a genuinely tiny real value
+        # chopping to 0 still agrees within any larger tolerance.
+        current = Fraction(Decimal(str(expr.evalf(dps, chop=True))))
         if previous is not None and abs(current - previous) <= tol / 2:
             return current
         previous = current
@@ -363,13 +386,14 @@ _RF_TOLERANCES: tuple[Fraction, ...] = (
 
 def equal(a, b) -> bool:
     """Richardson–Fitch equality for any RRA-involved pair (RRA vs RRA, RRA
-    vs symbolic/algebraic/exact): structural identity first, an exact shortcut
-    when the difference simplifies to a rational, otherwise escalating
-    `approximate` probes on the difference — equal iff it stays within each
-    tolerance, unequal at the first distinguishable probe. Total: probe
-    failures (undecided reality, approximation budget) report unequal, never
-    raise. A float operand never reaches here — the seam demotes float
-    equality to the float tier before dispatch."""
+    vs symbolic/algebraic/Gaussian/exact): structural identity first, an exact
+    shortcut when the difference simplifies to a rational, otherwise escalating
+    `approximate` probes on the difference — on its modulus when the difference
+    is not real — equal iff it stays within each tolerance, unequal at the
+    first distinguishable probe. Total: probe failures (undecided reality,
+    approximation budget) report unequal, never raise. A float operand never
+    reaches here — the seam demotes float equality to the float tier before
+    dispatch (float/complex pairs compare unequal one layer up, at the seam)."""
     xa, xb = _to_expr(a), _to_expr(b)
     if xa == xb:
         return True
@@ -378,7 +402,10 @@ def equal(a, b) -> bool:
         return True
     if diff.is_Rational:
         return False  # nonzero rational difference, decided exactly
-    probe = RRA(diff)
+    mag = diff if diff.is_real is True else sympy.Abs(diff)
+    if mag.is_Rational:
+        return False  # nonzero rational modulus, decided exactly
+    probe = RRA(mag)
     for tol in _RF_TOLERANCES:
         try:
             q = approximate(probe, tol)
@@ -410,10 +437,11 @@ def compare(op: str, a, b) -> bool:
             "gt": bool(positive), "ge": bool(positive)}[op]
 
 
-def from_sympy(value: sympy.Expr) -> Fraction | RRA:
+def from_sympy(value: sympy.Expr) -> Fraction | Gaussian | RRA:
     """The `\\py` boundary's half for sympy objects that neither the symbolic
-    nor the algebraic tier admitted: real finite values convert, anything else
-    is Unrepresentable (the seam names the type, never truncates)."""
+    nor the algebraic tier admitted: finite values (real or complex) convert,
+    anything else is Unrepresentable (the seam names the type, never
+    truncates)."""
     if not isinstance(value, sympy.Expr):
         raise Unrepresentable("not a sympy expression")
     return classify(value)
@@ -456,17 +484,66 @@ def _stable_prefix(a: str, b: str) -> str:
     return prefix
 
 
+def _assemble_complex(re_text: str, im_text: str) -> str:
+    """Two truncated side-texts (signs included, no ellipses) as one complex
+    display: `1+3.14159265358979...i`, `1-3.14159265358979...i`,
+    `3.14159265358979...i`."""
+    if re_text in ("0", "-0"):
+        return f"{im_text}...i"
+    if im_text.startswith("-"):
+        return f"{re_text}...-{im_text[1:]}...i"
+    return f"{re_text}...+{im_text}...i"
+
+
+def _show_complex(re: sympy.Expr, im: sympy.Expr, target: int) -> str:
+    """The complex display: each side under the session-precision truncation,
+    tightened as a pair — successive approximations of both sides must render
+    identically before those digits print, else the longest agreed prefixes
+    print (graceful degrade, never a display error)."""
+    previous: tuple[str, str] | None = None
+    best: tuple[str, str] = ("", "")
+    for round_ in range(_MAX_SHOW_ROUNDS):
+        guard = 2 + 3 * round_
+        tol = Fraction(1, 10 ** (target + guard))
+        try:
+            pair = (_format_digits(approximate(RRA(re), tol), target),
+                    _format_digits(approximate(RRA(im), tol), target))
+        except DomainError:
+            break
+        if pair == previous:
+            return _assemble_complex(*pair)
+        if previous is not None:
+            cand = (_stable_prefix(previous[0], pair[0]),
+                    _stable_prefix(previous[1], pair[1]))
+            if len(cand[0]) + len(cand[1]) > len(best[0]) + len(best[1]):
+                best = cand
+        previous = pair
+    if (best[0] and best[1]
+            and any(ch.isdigit() for ch in best[0] + best[1])):
+        return _assemble_complex(*best)
+    if previous is not None:
+        return _assemble_complex(*previous)
+    # Unreachable in practice (both sides are finite reals the gate admitted);
+    # fall back to single high-precision evalfs rather than raising out of
+    # display.
+    return _assemble_complex(
+        _format_digits(Fraction(Decimal(str(sympy.N(re, target + 10)))), target),
+        _format_digits(Fraction(Decimal(str(sympy.N(im, target + 10)))), target))
+
+
 def show(s: RRA, digits: int | None = None) -> str:
     """The RRA display: session-precision significant digits, expanded
     positionally (no scientific notation — the float display's rule), trailing
     ellipsis. The value is exact; the digits are a truncation, not the value
-    (`π + 1` shows as `4.14159265358979...` at the default precision).
+    (`π + 1` shows as `4.14159265358979...` at the default precision, `1 + π·i`
+    as `1+3.14159265358979...i`).
 
     Iterative tightening: successive `approximate` observations at tightening
     tolerances (each ~1000x tighter, from a 2-digit guard) must render
     identically to the full target before those digits print. When no two
     successive observations agree within the round budget, the longest agreed
-    prefix prints instead — degrade, never a display error. An explicit
+    prefix prints instead — degrade, never a display error. Complex values
+    tighten both sides as a pair (`_show_complex`). An explicit
     `digits` overrides the session precision for that call only (the seam's
     `nshow` threading); out-of-range values raise `DomainError`."""
     if digits is None:
@@ -477,6 +554,9 @@ def show(s: RRA, digits: int | None = None) -> str:
         if not MIN_PRECISION_DIGITS <= digits <= MAX_PRECISION_DIGITS:
             raise DomainError("\\prec takes an integer 1..1000")
         target = digits
+    re, im = s.expr.as_real_imag()
+    if im != 0:
+        return _show_complex(re, im, target)
     previous_text: str | None = None
     previous_approx: Fraction | None = None
     best_prefix = ""

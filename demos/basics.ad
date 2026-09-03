@@ -47,7 +47,7 @@ r > 0 ? r : -r;
 -- (`x = 1` again echoes true) — there is no reassignment spelling at all
 -- (a function definition swallows the semicolon-separated statements after it
 -- on its own line into its body, so one def per line keeps scripts sane)
-φ = 1.6180339887498948;
+φ = 1.6180339887498948e0;   -- the exponent form is the float spelling
 φ;
 
 -- name aliases: Σ is \sum by seed; \alias declares your own short spelling.
