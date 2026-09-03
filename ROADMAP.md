@@ -75,6 +75,10 @@ independent of it.
   float-argument calls, IEEE non-finite values).
 - Display precision via iterative tolerance tightening (RRA tier only — exact rationals
   already display as `a/b`, decided and implemented in phase 0).
+  **Done** — successive approximations must agree to the session target before
+  those digits print (longest agreed prefix otherwise), with `\prec(n)` setting
+  the target (significant digits, 1..1000, default 15) through the single
+  `nshow` path for REPL and script mode.
 - Equality testing: exact for rational/algebraic tiers; Richardson-Fitch heuristic (Schanuel's
   conjecture) for RRA tier — accepted limitation, not a bug to fix.
 - Numeric type surface: `int`, `real`, `rational`, `complex` literal syntax and

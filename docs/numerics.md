@@ -146,10 +146,22 @@ is the integer `1`, never an RRA value), and only `\sqrt` of a symbolic
 argument additionally routes through the algebraic gate (`\sqrt(√2)` is
 `2^(1/4)`) — every other closed-form-free builtin result is transcendental and
 goes straight here. The tier is real-only like the ones below it, and display
-reuses the same interim policy — 15 significant digits plus a trailing
-ellipsis (`π + 1` is `4.14159265358979...`). Iterative tightening is ticket
-#40's work; Richardson–Fitch equality is ticket #41's — both build on
-`approximate`, neither lives here.
+prints the session precision's significant digits plus a trailing ellipsis
+(default 15: `π + 1` is `4.14159265358979...`), tightened iteratively (below).
+Richardson–Fitch equality is ticket #41's work — it builds on `approximate`
+but lives outside this module.
+
+Display tightening shares the convergence shape with a caller-supplied
+target: successive `approximate` observations at tightening tolerances (each
+~1000x tighter, from a 2-digit guard, up to six rounds) must render
+identically to the full target before those digits print; when no two
+successive observations agree, the longest agreed prefix prints instead —
+degrade, never a display error. `\prec(n)` sets the session target
+(significant digits, 1..1000, RRA tier only — symbolic and algebraic display
+stay fixed at 15, floats keep shortest-round-trip, exact rationals keep
+`a/b`); it returns the new value, is protected like every prelude name, and
+reaches display through the single `nshow` path, so REPL and script mode
+agree.
 
 ## Convergence: one mechanism, two riders
 
@@ -229,12 +241,15 @@ is reserved for values that are already inexact or truncated: showing an *exact*
 through decimal machinery would be a category error — `1/3` never leaves the rational
 tier, per the tower's own "stay at the lowest tier that remains exact" rule.
 
-Symbolic, algebraic and RRA reals print as **15 significant digits, expanded
+Symbolic and algebraic reals print as **15 significant digits, expanded
 positionally, plus a trailing ellipsis** (`π` is `3.14159265358979...`, `√2` is
-`1.4142135623731...`, `-π` is `-3.14159265358979...`, `π + 1` is
-`4.14159265358979...`) — the DESIGN display examples verbatim. The value is exact; the
-digits are a truncation, and the ellipsis says so. (Iterative
-tolerance-tightening display for the RRA tier is its own ticket.)
+`1.4142135623731...`, `-π` is `-3.14159265358979...`) — the DESIGN display
+examples verbatim. RRA reals print the same way at the session precision
+(default 15: `π + 1` is `4.14159265358979...`; `\prec(5)` makes it
+`4.1416...`), except the digits are proven stable first: successive
+`approximate` observations at tightening tolerances must agree to the full
+target, otherwise the longest agreed prefix prints. The value is exact; the
+digits are a truncation, and the ellipsis says so.
 
 Floats print via Python's shortest-round-trip `repr` (`"1.0"`, `"1.4142135623730951"`),
 with two adjustments so output matches `f64` `Display`: scientific notation is expanded
@@ -275,5 +290,6 @@ way, and the compiler/driver layers above are unaffected by each addition,
 which is the entire point of the seam. The RRA tier's first payoff is already
 visible: former float fallbacks like `π + 1`, `π·√2`, `2^√2` and `\sin(1)` are
 exact now, while values of undecided reality are the only thing that still
-reaches the float tier. Iterative display tightening (ticket #40) and
-Richardson–Fitch equality (ticket #41) build on `approximate` next.
+reaches the float tier. Iterative display tightening with the `\prec`
+precision setting is in (above); Richardson–Fitch equality (ticket #41)
+builds on `approximate` next.

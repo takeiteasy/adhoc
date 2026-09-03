@@ -7,7 +7,10 @@ import sympy
 from adhoc.algebraic import classify as alg_classify
 from adhoc.driver import run_source
 from adhoc.rra import DomainError as RRADomainError
-from adhoc.rra import RRA, approximate, classify, to_function
+from adhoc.rra import RRA, approximate, classify, get_precision, set_precision
+from adhoc.rra import show as rra_show
+from adhoc.rra import to_function
+from adhoc.runtime import EvalError
 from adhoc.runtime import (
     DIVISION_BY_ZERO,
     PRELUDE,
@@ -190,3 +193,100 @@ def test_rra_exact_arithmetic():
     assert last("x = π + 1; x = 4") == "false"
     assert last("π + 1 > 4") == "= true"
     assert last("(π + 1) - π") == "= 1"
+
+
+@pytest.fixture(autouse=True)
+def _reset_display_precision():
+    before = get_precision()
+    yield
+    set_precision(before)
+
+
+def test_tightening_proves_default_digits():
+    # Iterative tightening agrees with the known expansions at the default
+    # precision — two successive approximations must render identically.
+    assert nshow(nadd(PI_SYM, 1)) == "4.14159265358979..."
+    assert rra_show(nadd(PI_SYM, 1), 30) == \
+        "4.14159265358979323846264338328..."
+    assert rra_show(nadd(PI_SYM, 1), 30).startswith("4.14159265358979")
+
+
+def test_prec_sets_session_precision():
+    assert PRELUDE["prec"](5) == 5
+    assert get_precision() == 5
+    assert nshow(nadd(PI_SYM, 1)) == "4.1416..."
+    assert PRELUDE["prec"](15) == 15
+    assert nshow(nadd(PI_SYM, 1)) == "4.14159265358979..."
+
+
+def test_prec_single_digit_and_longer():
+    PRELUDE["prec"](1)
+    assert nshow(nadd(PI_SYM, 1)) == "4..."
+    assert nshow(nneg(nadd(PI_SYM, 1))) == "-4..."
+    PRELUDE["prec"](30)
+    assert nshow(nadd(PI_SYM, 1)) == \
+        "4.14159265358979323846264338328..."
+
+
+def test_prec_validation_is_typed():
+    for bad in (0, -3, 1001, 1.5, True, "x"):
+        with pytest.raises(NumError, match=r"\\prec takes an integer"):
+            PRELUDE["prec"](bad)
+    assert get_precision() == 15  # a rejected call changes nothing
+    with pytest.raises(RRADomainError, match=r"\\prec takes an integer"):
+        set_precision(0)
+    with pytest.raises(RRADomainError, match=r"\\prec takes an integer"):
+        rra_show(nadd(PI_SYM, 1), 0)
+
+
+def test_prec_wrong_arity_is_typed_at_call_span():
+    with pytest.raises(EvalError, match="prec"):
+        last("\\prec()")
+    with pytest.raises(EvalError, match="prec"):
+        last("\\prec(5, 6)")
+    with pytest.raises(EvalError, match=r"\\prec takes an integer"):
+        last("\\prec(0)")
+    with pytest.raises(EvalError, match=r"\\prec takes an integer"):
+        last("\\prec(5.0)")
+
+
+def test_prec_is_protected():
+    with pytest.raises(EvalError, match="is protected"):
+        last("\\prec = 5")
+    assert last("\\prec") == "= <fn \\prec(x)>"
+
+
+def test_prec_returns_bindable_int():
+    assert run_source("x = \\prec(5)") == ["x = 5"]
+    assert run_source("x = \\prec(5); x = 5") == ["x = 5", "true"]
+
+
+def test_prec_applies_to_later_statements_parity():
+    # One nshow path: a setting earlier in the same unit governs later
+    # statements in REPL and script mode alike.
+    assert run_source("\\prec(5); π + 1") == ["= 5", "= 4.1416..."]
+    assert run_source("\\prec(5); x = π + 1") == ["= 5", "x = 4.1416..."]
+
+
+def test_other_tiers_ignore_prec():
+    PRELUDE["prec"](5)
+    assert nshow(PI_SYM) == "3.14159265358979..."
+    assert nshow(CBRT2) == "1.25992104989487..."
+    assert nshow(4.1416) == "4.1416"
+    assert nshow(Fraction(1, 3)) == "1/3"
+
+
+def test_nshow_explicit_digits_override_only_that_call():
+    total = nadd(PI_SYM, 1)
+    assert nshow(total, 5) == "4.1416..."
+    assert get_precision() == 15  # the session value is untouched
+    assert nshow(total) == "4.14159265358979..."
+    assert nshow(total, 30).startswith("4.14159265358979323846")
+
+
+def test_large_precision_degrades_gracefully_never_errors():
+    PRELUDE["prec"](100)
+    text = nshow(ndiv(1, PI_SYM))
+    assert text.endswith("...")
+    assert text.startswith("0.31830988618379067153")
+    assert len(text) > 100

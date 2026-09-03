@@ -52,9 +52,13 @@ Two failure kinds, both internal — the seam converts them:
 
 ## Display
 
-`show` prints 15 significant digits, expanded positionally, with a trailing
-ellipsis — the same interim policy as the symbolic and algebraic tiers. The
-iterative tolerance-tightening display is ticket #40's work, never this tier's.
+`show` prints the session precision's significant digits (default 15, tunable
+via the seam's `\\prec` setting), expanded positionally, with a trailing
+ellipsis — the same interim policy as the symbolic and algebraic tiers, but
+with iteratively tightened tolerance behind it: successive `approximate`
+observations at tightening tolerances must agree to the full target before
+those digits print, otherwise the longest agreed prefix prints (graceful
+degrade, never a display error).
 """
 
 from collections.abc import Callable
@@ -65,14 +69,51 @@ import math
 
 import sympy
 
-# Significant digits shown before the ellipsis — the symbolic tier's policy
-# (DESIGN.md display examples); ticket #40 governs RRA display tightening, not
-# this tier.
+# Default significant digits shown before the ellipsis — the symbolic tier's
+# policy (DESIGN.md display examples). Tunable at runtime through the seam's
+# `\prec` setting; `show` reads the session value below, never this constant
+# directly.
 DISPLAY_DIGITS = 15
+
+# Bounds for the `\prec` display-precision setting (significant digits).
+MIN_PRECISION_DIGITS = 1
+MAX_PRECISION_DIGITS = 1000
+
+# Session display precision for this tier (significant digits). Module-global
+# so the single `nshow` path serves REPL and script mode identically; tests
+# save/restore it around cases that change it.
+_PRECISION_DIGITS = DISPLAY_DIGITS
+
+# Outer tightening budget for `show`: successive `approximate` observations at
+# tightening tolerances (each ~1000x tighter) must agree to the full target.
+# Six rounds from a 2-guard start covers ordinary values in 2-3 rounds; the
+# rest is headroom for rounding-boundary cases before graceful degrade.
+_MAX_SHOW_ROUNDS = 6
 
 # Precision-escalation budget for `approximate`: each step roughly doubles the
 # working digits, so ten steps from a ~35-digit start covers absurd tolerances.
 _MAX_APPROX_STEPS = 10
+
+
+def get_precision() -> int:
+    """Current session display precision for this tier (significant digits)."""
+    return _PRECISION_DIGITS
+
+
+def set_precision(n: int) -> int:
+    """Set the session display precision, validating the `\\prec` range.
+
+    Accepts an exact integer (bools rejected — they are not numeric operands
+    anywhere in the language); anything else or anything outside
+    `MIN_PRECISION_DIGITS..MAX_PRECISION_DIGITS` raises `DomainError`, which
+    the seam converts to its typed `NumError` at the call's span."""
+    if isinstance(n, bool) or not isinstance(n, int):
+        raise DomainError("\\prec takes an integer 1..1000")
+    if not MIN_PRECISION_DIGITS <= n <= MAX_PRECISION_DIGITS:
+        raise DomainError("\\prec takes an integer 1..1000")
+    global _PRECISION_DIGITS
+    _PRECISION_DIGITS = n
+    return n
 
 
 class Unrepresentable(Exception):
@@ -341,20 +382,97 @@ def from_sympy(value: sympy.Expr) -> Fraction | RRA:
     return classify(value)
 
 
-def show(s: RRA) -> str:
-    """The RRA interim display: 15 significant digits, expanded positionally (no
-    scientific notation — the float display's rule), trailing ellipsis. The
-    value is exact; the digits are a truncation, not the value (`π + 1` shows
-    as `4.14159265358979...`). Iterative tightening is ticket #40's work."""
-    magnitude = sympy.N(abs(s.expr), DISPLAY_DIGITS + 10)
-    d = Decimal(str(magnitude))
+def _format_digits(value: Fraction, digits: int) -> str:
+    """Render a rational approximation to `digits` significant digits,
+    expanded positionally (no scientific notation — the float display's rule).
+    No ellipsis; the caller adds it. Rounding follows the shared quantize
+    policy (half-even via the local context)."""
+    if value == 0:
+        return "0"
+    sign = "-" if value < 0 else ""
+    mag = abs(value)
     with localcontext() as ctx:
-        ctx.prec = 60
-        # Quantize to the 15th significant digit (adjusted() is the exponent of
-        # the most significant digit), then expand positionally.
-        q = d.quantize(Decimal(1).scaleb(d.adjusted() - DISPLAY_DIGITS + 1))
+        ctx.prec = max(60, digits + 20)
+        d = Decimal(mag.numerator) / Decimal(mag.denominator)
+        # Quantize to the target significant digit (adjusted() is the exponent
+        # of the most significant digit), then expand positionally.
+        q = d.quantize(Decimal(1).scaleb(d.adjusted() - digits + 1))
     text = format(q, "f")
     if "." in text:
         text = text.rstrip("0").rstrip(".")
-    sign = "-" if s.expr.is_negative else ""
+    return f"{sign}{text}"
+
+
+def _stable_prefix(a: str, b: str) -> str:
+    """Longest common leading text of two formatted numbers, trimmed to a
+    valid numeric prefix (no dangling sign or decimal point). Every digit in
+    the shared prefix rendered identically from two ~1000x-apart tolerances,
+    so it is the proved-stable run — used only for graceful degrade when
+    full-target agreement never arrives."""
+    n = min(len(a), len(b))
+    i = 0
+    while i < n and a[i] == b[i]:
+        i += 1
+    prefix = a[:i].rstrip(".")
+    if prefix in ("", "-", "+"):
+        return ""
+    return prefix
+
+
+def show(s: RRA, digits: int | None = None) -> str:
+    """The RRA display: session-precision significant digits, expanded
+    positionally (no scientific notation — the float display's rule), trailing
+    ellipsis. The value is exact; the digits are a truncation, not the value
+    (`π + 1` shows as `4.14159265358979...` at the default precision).
+
+    Iterative tightening: successive `approximate` observations at tightening
+    tolerances (each ~1000x tighter, from a 2-digit guard) must render
+    identically to the full target before those digits print. When no two
+    successive observations agree within the round budget, the longest agreed
+    prefix prints instead — degrade, never a display error. An explicit
+    `digits` overrides the session precision for that call only (the seam's
+    `nshow` threading); out-of-range values raise `DomainError`."""
+    if digits is None:
+        target = _PRECISION_DIGITS
+    else:
+        if isinstance(digits, bool) or not isinstance(digits, int):
+            raise DomainError("\\prec takes an integer 1..1000")
+        if not MIN_PRECISION_DIGITS <= digits <= MAX_PRECISION_DIGITS:
+            raise DomainError("\\prec takes an integer 1..1000")
+        target = digits
+    previous_text: str | None = None
+    previous_approx: Fraction | None = None
+    best_prefix = ""
+    for round_ in range(_MAX_SHOW_ROUNDS):
+        guard = 2 + 3 * round_
+        tol = Fraction(1, 10 ** (target + guard))
+        try:
+            current = approximate(s, tol)
+        except DomainError:
+            break
+        text = _format_digits(current, target)
+        if previous_text is not None and text == previous_text:
+            return f"{text}..."
+        if previous_text is not None:
+            prefix = _stable_prefix(previous_text, text)
+            if len(prefix) > len(best_prefix):
+                best_prefix = prefix
+        previous_text, previous_approx = text, current
+    if best_prefix and any(ch.isdigit() for ch in best_prefix):
+        return f"{best_prefix}..."
+    if previous_text:
+        return f"{previous_text}..."
+    # Unreachable in practice (`approximate` fails only on domain errors the
+    # gate already excludes); fall back to a single high-precision evalf
+    # rather than raising out of display.
+    magnitude = sympy.N(abs(s.expr), target + 10)
+    d = Decimal(str(magnitude))
+    with localcontext() as ctx:
+        ctx.prec = max(60, target + 20)
+        q = d.quantize(Decimal(1).scaleb(d.adjusted() - target + 1))
+    text = format(q, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    sign = "-" if previous_approx is not None and previous_approx < 0 else (
+        "-" if s.expr.is_negative else "")
     return f"{sign}{text}..."

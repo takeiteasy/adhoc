@@ -96,7 +96,9 @@ non-finite floats (`\\inf`, `\\nan`), booleans (`\\true`, `\\false`), and the
   algebraic `\\sqrt` arguments through the algebraic tier (`\\sqrt(2^(1/3))` is
   `2^(1/6)`), anything real the lower tiers cannot hold through the RRA tier
   (`\\sin(1)` stays exact),
-  everything else falls to the `math.*` float tier (`\\sqrt(-2.0)`).
+  everything else falls to the `math.*` float tier (`\\sqrt(-2.0)`). `\\prec(n)`
+  sets the RRA display precision (significant digits, default 15) as a
+  session-wide setting and returns the new value.
 Unicode spellings of prelude names (`π`, `Σ`, `Π`) are not separate keys: the parser's
 alias map normalizes them to the canonical `\\`-name before evaluation, so `π` and
 `\\pi` are one name, not two (docs/grammar.md, `## Name aliases`); `√` is not a name
@@ -124,8 +126,10 @@ name is an error.
   would silently return a `complex`.
 - Display never uses scientific notation: the shortest-round-trip `repr` is expanded
   positionally, matching `f64`'s `Display` (`10000000000000000.0`, `0.0000001`);
-  symbolic, algebraic and RRA reals show 15 significant digits plus a trailing
-  ellipsis (`π` is `3.14159265358979...`).
+  symbolic and algebraic reals show 15 significant digits plus a trailing
+  ellipsis (`π` is `3.14159265358979...`); RRA reals show the session
+  precision's significant digits (default 15, tunable via `\\prec`) plus a
+  trailing ellipsis, tightened until successive approximations agree.
 """
 
 from collections.abc import Sequence
@@ -251,13 +255,28 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
     return PreludeFn(name, call)
 
 
+def _prec_call(v: AdValue) -> AdValue:
+    """The `\\prec(n)` display-precision setting: set the RRA tier's session
+    precision (significant digits) and return the new value. A session-wide
+    setting with a side effect, so the single `nshow` path serves REPL and
+    script mode identically. Exact integers 1..1000 only (bools rejected like
+    every other numeric operand); anything else is the seam's typed NumError
+    at the call's span."""
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise NumError("\\prec takes an integer 1..1000")
+    try:
+        return rra.set_precision(v)
+    except rra.DomainError as e:
+        raise NumError(e.args[0])
+
+
 # The prelude scope: built-in constants and function builtins, present in every
 # session (see the module docstring). `π`/`e` are exact symbolic reals; the function
 # builtins replaced the original float-tier `math.*` aliases in place — binding names
 # unchanged, exact arguments recognized through the symbolic tier (adhoc/symbolic.py,
 # docs/numerics.md), algebraic `sqrt` arguments through the algebraic tier, anything
 # real the lower tiers cannot hold through the RRA tier, everything else on the
-# `math.*` float tier.
+# `math.*` float tier. `\\prec` sets the RRA display precision and returns it.
 PRELUDE: dict[str, Any] = {
     "pi": symbolic.PI,
     "e": symbolic.E,
@@ -270,6 +289,7 @@ PRELUDE: dict[str, Any] = {
     "tan": _prelude_fn("tan", math.tan),
     "ln": _prelude_fn("ln", math.log),
     "sqrt": _prelude_fn("sqrt", math.sqrt),
+    "prec": PreludeFn("prec", _prec_call),
 }
 
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
@@ -532,7 +552,7 @@ def neq(a: AdValue, b: AdValue) -> bool:
     return Fraction(a) == Fraction(b)
 
 
-def nshow(v: AdValue | str) -> str:
+def nshow(v: AdValue | str, digits: int | None = None) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, AdFunction):
@@ -543,9 +563,9 @@ def nshow(v: AdValue | str) -> str:
     if isinstance(v, str):
         return _show_str(v)
     if isinstance(v, RangeValue):
-        start = nshow(v.start)
-        middle = f",{nshow(v.second)}" if v.second is not None else ""
-        end = "" if v.end is None else nshow(v.end)
+        start = nshow(v.start, digits)
+        middle = f",{nshow(v.second, digits)}" if v.second is not None else ""
+        end = "" if v.end is None else nshow(v.end, digits)
         suffix = " (lazy, infinite)" if v.end is None else ""
         return f"<range {start}{middle}..{end}{suffix}>"
     if isinstance(v, Symbolic):
@@ -553,7 +573,13 @@ def nshow(v: AdValue | str) -> str:
     if isinstance(v, Algebraic):
         return algebraic.show(v)  # exact value, truncated digits + ellipsis
     if isinstance(v, RRA):
-        return rra.show(v)  # exact value, truncated digits + ellipsis
+        # Exact value, tightened digits + ellipsis: an explicit `digits`
+        # overrides the session precision for that call only, otherwise the
+        # `\prec` session value governs (one path for REPL and script mode).
+        try:
+            return rra.show(v, digits)
+        except rra.DomainError as e:
+            raise NumError(e.args[0])
     if isinstance(v, PreludeFn):
         return f"<fn \\{v.name}(x)>"
     if callable(v) and not isinstance(v, _NUMERIC_TYPES):

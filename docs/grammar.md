@@ -576,6 +576,7 @@ equally final. Built-in names live in a prelude scope protected by the same mech
 | `\inf` / `\nan` | the non-finite floats `Inf` / `NaN` — float tier only; the exact tiers have neither (`1/0` is a typed error). IEEE semantics, docs/numerics.md |
 | `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
 | `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`); algebraic `√` arguments through the algebraic tier (`\sqrt(2^(1/3))` is `2^(1/6)`); anything real the lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact); everything else falls to the `math.*` float tier. Display as `<fn \sqrt(x)>` |
+| `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
 `π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is protected ``
@@ -615,8 +616,6 @@ non-numeric values never compare equal unless identical — strings by content.
 
 Logical operators, collections (sets will take the `{}` spelling — it is deliberately
 unused today; see `## Groups`),
-the
-RRA tier of the exact-arithmetic tower (int/rational/symbolic/algebraic are in),
 symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
 rule's check is the only equality today, and ticket #41 tracks equality semantics for
