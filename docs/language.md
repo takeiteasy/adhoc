@@ -63,7 +63,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   callables, values through the conversion matrix); member selection is mandatory and
   there are no module values or dotted attribute access (docs/grammar.md,
   `## Modules and imports`).
-- Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`).
+- Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`),
+  exact symbolic closed forms (`√2 * √2` is exactly `2`), and exact real algebraic
+  numbers (`2^(1/3)` stays exact, displaying `1.25992104989487...`).
 - Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
 - User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
   semicolon-sequenced bodies, first-class function values, and recursion.
@@ -107,8 +109,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 
 ## Not yet implemented
 
-Everything phase 2 onward: logical operators, tensors/arrays/sets, the rest of the
-exact-arithmetic tower (symbolic closed forms, algebraic numbers, RRA), symbolic algebra
+Everything phase 2 onward: logical operators, tensors/arrays/sets, the RRA tier of the
+exact-arithmetic tower (symbolic closed forms and algebraic numbers are in), symbolic algebra
 (`\expr`/`\solve`/...), metaprogramming, and graphing. See `ROADMAP.md` and the tracker for
 status.
 

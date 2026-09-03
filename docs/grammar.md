@@ -616,7 +616,8 @@ non-numeric values never compare equal unless identical — strings by content.
 Logical operators, collections (sets will take the `{}` spelling — it is deliberately
 unused today; see `## Groups`),
 the
-exact-arithmetic tower beyond int/rational/float, symbolic algebra, graphing.
+RRA tier of the exact-arithmetic tower (int/rational/symbolic/algebraic are in),
+symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
 rule's check is the only equality today, and ticket #41 tracks equality semantics for
 the symbolic engine. User-declarable *operator* spellings ride the phase-4 custom

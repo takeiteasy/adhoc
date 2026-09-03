@@ -373,13 +373,14 @@ def test_symbolic_display_is_truncated_digits_plus_ellipsis():
 
 
 def test_symbolic_without_closed_form_falls_to_float():
-    # The strict single-term shape: π + 1, π·√2, 1/π and 2^(1/3) have no
-    # coefficient×atom form — the float tier stands in for the algebraic/RRA
-    # tiers until they land.
+    # The strict single-term shape: π + 1, π·√2 and 1/π have no
+    # coefficient×atom form and are transcendental (not algebraic either) —
+    # the float tier stands in for the RRA tier until it lands
+    # (docs/numerics.md). Real algebraic results without a closed form
+    # (`2^(1/3)`) stay exact in the algebraic tier (tests/test_algebraic.py).
     assert nadd(PI_SYM, 1) == 4.141592653589793
     assert nmul(PI_SYM, SQRT2) == 4.442882938158366
     assert ndiv(1, PI_SYM) == 0.3183098861837907
-    assert npow(2, Fraction(1, 3)) == 1.2599210498948732
     assert npow(PI_SYM, -1) == 0.3183098861837907
 
 

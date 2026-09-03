@@ -24,21 +24,26 @@ Values are Python natives plus one tier type:
   `"1/1"` instead of `"1"` (or rather `1`, since a collapsed rational *is* an int).
 - `adhoc/symbolic.py`'s `Symbolic` — a rational coefficient times exactly one recognized
   closed-form atom, stored as the canonical sympy expression (see below).
+- `adhoc/algebraic.py`'s `Algebraic` — a real algebraic number with no symbolic
+  closed form (`2^(1/3)`, `2^(1/4)`, `√2 + 2^(1/3)`), stored as the canonical
+  sympy expression (see below).
 - `float` — the fallback once an operation can't stay exact (a float literal, a
-   non-integer exponent with no closed form), a 53-bit double just like the design's
+   transcendental result with no closed form), a 53-bit double just like the design's
    default mantissa width. gmpy2 types can slot behind the same functions later without
    touching anything above the seam.
 
 Arithmetic stays at the lowest tier that remains exact: any `float` operand demotes the
-result to `float`; otherwise any `Symbolic` operand dispatches into the symbolic tier
-(whose own non-representable results demote to `float` in turn); otherwise any
+result to `float`; otherwise any `Symbolic` or `Algebraic` operand dispatches into the
+exact tiers (symbolic tried first; a non-algebraic result demotes to `float` in turn);
+otherwise any
 `Fraction` promotes both operands to exact rationals; otherwise plain integer arithmetic.
 
 `npow` keeps an exact base exact for integer exponents (including negative ones — `2^-1`
 is the exact rational `1/2`, and `0^-n` raises the typed division-by-zero failure, the
 same failure as `1/0`, not a separate untyped error); a non-integer exponent tries the
-symbolic tier first (`2^(1/2)` is `√2`, `8^(1/3)` collapses to `2`) and falls to
-`float` when no closed form exists.
+symbolic tier first (`2^(1/2)` is `√2`, `8^(1/3)` collapses to `2`), then the algebraic
+tier (`2^(1/3)` stays `2^(1/3)`, `(√2)^(1/2)` arrives as `2^(1/4)`), and falls to
+`float` when the result is transcendental (`2^√2`).
 
 Every failure mode in this module is a typed `NumError`, not a generic exception — that's
 what lets the REPL and script driver catch "arithmetic failed" specifically and attach the
@@ -68,11 +73,13 @@ across exact + symbolic values is decided exactly too (`π < 22/7` is `true` —
 settles relational expressions between explicit numbers, not float-compares them).
 
 The **strict single-term shape** is deliberate: a value like `π + 1`, `π·√2` or `1/π`
-has no coefficient×atom form, so the gate rejects it and the seam **falls to the float
+has no coefficient×atom form and is transcendental (not algebraic either), so the gate
+rejects it and the seam **falls to the float
 tier** (`π + 1` is `4.141592653589793`). The float tier is the current stand-in for the
-algebraic and RRA tiers above this one — when those land, these values stop being
+RRA tier above this one — when it lands, these values stop being
 approximated. Until then, a float result mixed among exact values is the visible sign
-that the symbolic tier could not hold the value.
+that neither exact tier could hold the value. Real algebraic results without a closed
+form (`2^(1/3)`, `√2 + 2^(1/3)`) stay exact in the algebraic tier instead.
 
 Domain failures are typed `NumError`s — the exact tiers have no infinity and there is no
 complex tier:
@@ -89,6 +96,27 @@ The `√` prefix operator rewrites to a `\sqrt(...)` application at parse time
 the gate (`\sqrt(2)` stays `√2`, `\ln(2)` stays exact), arguments with no closed form
 fall to the float tier (`\sin(1)` is `0.8414709848078965`), and float arguments stay
 entirely on the float tier (`\sqrt(2.0)` is `1.4142135623730951`).
+
+## Algebraic numbers (tier 4)
+
+`adhoc/algebraic.py` implements the tier above symbolic closed forms (DESIGN.md,
+`## exact arithmetic (internals)`): real algebraic numbers with no recognized
+closed form are kept exact as the canonical sympy expression — sympy holds the
+classic minimal-polynomial + isolating-interval representation behind the seam,
+so this module never inspects it directly.
+
+The seam tries the symbolic tier first and this tier second: `2^(1/3)` and
+`2^(1/4)` stay exact, `(√2)^(1/2)` arrives as `2^(1/4)`, multi-term sums like
+`√2 + 2^(1/3)` stay exact, and integer powers collapse back down
+(`2^(1/3)^3` is the integer `2`). Transcendental results (`π + 2^(1/3)`,
+`2^√2`) are not algebraic and fall to the float tier. Equality and ordering are
+exact, decided on canonical forms like the symbolic tier's; only `\sqrt` routes
+algebraic arguments through the gate (`\sqrt(2^(1/3))` is `2^(1/6)` —
+`\sin`/`\ln` of a nonzero algebraic are transcendental, so those go straight to
+the float tier). The tier is real-only: fractional powers of negatives keep the
+exact tiers' typed "not a real number" failure (real-branch selection is future
+complex-surface work), and display reuses the symbolic policy — 15 significant
+digits plus a trailing ellipsis.
 
 ## Convergence: one mechanism, two riders
 
@@ -189,7 +217,7 @@ through `_to_ad`:
 | `decimal.Decimal` | exact `Fraction`/`int` via its string-exact value |
 | any other `numbers.Rational` | normalized `Fraction`/`int` (constructed from numerator/denominator explicitly — py3.12+'s single-Rational-arg constructor copies them unnormalized) |
 | `Symbolic` (an ad symbolic real passed through Python) | passes through |
-| a sympy expression (`\py("sympy.sqrt")(2)`) | recognized closed forms convert through the tier's own gate (`sympy.sqrt(2)` arrives as `√2`; sympy rationals convert exactly via the row above); anything else rejected |
+| a sympy expression (`\py("sympy.sqrt")(2)`) | recognized closed forms convert through the symbolic tier's gate (`sympy.sqrt(2)` arrives as `√2`), real algebraic values through the algebraic tier's (`sympy.cbrt(2)` arrives exact); sympy rationals convert exactly via the row above; anything else rejected |
 | any other `numbers.Real` (incl. numpy floats) | widened to `float` |
 | `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
 | `complex` | rejected — no complex tier yet |
@@ -202,8 +230,9 @@ typed "operands must be numbers" failure at the operator's span.
 
 ## What later phases add here
 
-The symbolic closed-form tier is in (above). Algebraic numbers and the RRA fallback
-become new cases in this module's dispatch the same way — the compiler/driver layers
-above are unaffected by their addition, which is the entire point of the seam. The
-algebraic tier's first payoff is already visible: today's float fallbacks for values like
-`π + 1`, `π·√2` and `2^(1/3)` become exact there.
+The symbolic closed-form tier is in (above), as is the algebraic tier. The RRA fallback
+becomes a new case in this module's dispatch the same way — the compiler/driver layers
+above are unaffected by its addition, which is the entire point of the seam. The
+algebraic tier's first payoff is already visible: former float fallbacks like
+`2^(1/3)` and `(√2)^(1/2)` are exact now, while transcendental values like `π + 1`
+and `π·√2` wait on RRA.

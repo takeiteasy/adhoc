@@ -59,6 +59,12 @@ independent of it.
   forms, and float fallback (the stand-in for the tiers below) for values with no single
   coefficient×atom form.
 - Algebraic numbers (roots of rational-coefficient polynomials).
+  **Done** — real algebraic values beyond the closed-form shape stay exact behind
+  the seam (adhoc/algebraic.py, backed by sympy; symbolic tried first), with exact
+  equality/ordering on canonical forms and float fallback (the stand-in for the
+  RRA tier) for transcendental results. Real odd roots of negatives keep the
+  exact tiers' domain-error contract; real-branch selection rides the future
+  complex surface.
 - Recursive Real Arithmetic (RRA) fallback: `tolerance -> rational` functions.
 - Display precision via iterative tolerance tightening (RRA tier only — exact rationals
   already display as `a/b`, decided and implemented in phase 0).

@@ -583,12 +583,13 @@ def test_symbolic_exact_equality_and_order():
 
 
 def test_symbolic_without_closed_form_falls_to_float():
-    # The strict single-term shape: π + 1, π·√2 and 2^(1/3) have no
-    # coefficient×atom form — the float tier approximates them until the
-    # algebraic/RRA tiers land (docs/numerics.md).
+    # The strict single-term shape: π + 1, π·√2 and 1/π have no
+    # coefficient×atom form and are transcendental (not algebraic either) —
+    # the float tier approximates them until the RRA tier lands
+    # (docs/numerics.md). `2^(1/3)` stays exact in the algebraic tier
+    # (tests/test_algebraic.py).
     assert last("π + 1") == "= 4.141592653589793"
     assert last("π √2") == "= 4.442882938158366"
-    assert last("2^(1/3)") == "= 1.2599210498948732"
     assert last("1/π") == "= 0.3183098861837907"
 
 

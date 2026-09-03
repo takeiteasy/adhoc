@@ -124,11 +124,17 @@ E = Symbolic(sympy.E)
 
 def _to_expr(v: int | Fraction | Symbolic) -> sympy.Expr:
     """An exact or symbolic ad number as a sympy expression (floats never reach
-    the tier — the seam demotes them before dispatch)."""
+    the tier — the seam demotes them before dispatch). The `.expr` duck-type
+    also covers algebraic-tier values (`adhoc/algebraic.py`) without importing
+    that module — tiers stay independent and only the seam dispatches across
+    them."""
     if isinstance(v, Symbolic):
         return v.expr
     if isinstance(v, Fraction):
         return sympy.Rational(v.numerator, v.denominator)
+    expr = getattr(v, "expr", None)
+    if isinstance(expr, sympy.Expr):
+        return expr
     return sympy.Integer(v)
 
 
