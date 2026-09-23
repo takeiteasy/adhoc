@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from types import CodeType
 
 from .runtime import parse_literal
+from .expression import ExpressionValue
 from .span import Span
 from .syntax import (
     Assign,
@@ -58,6 +59,8 @@ from .syntax import (
     NoOp,
     NumLit,
     PyImport,
+    Quote,
+    Eval,
     Range,
     Seq,
     StrLit,
@@ -96,6 +99,7 @@ class Compiled:
     spans: tuple[Span, ...]
     line_spans: dict[int, Span]
     definitions: dict[int, "CompiledBody"] = field(default_factory=dict)
+    quotes: dict[int, ExpressionValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,7 @@ class CompiledBody:
     code: CodeType
     spans: tuple[Span, ...]
     definitions: dict[int, "CompiledBody"]
+    quotes: dict[int, ExpressionValue]
 
 
 def _call(method: str, args: list[pyast.expr]) -> pyast.expr:
@@ -127,6 +132,7 @@ class _Lowerer:
     def __init__(self):
         self.spans: list[Span] = []
         self.definitions: dict[int, CompiledBody] = {}
+        self.quotes: dict[int, ExpressionValue] = {}
 
     def _push(self, span: Span) -> int:
         self.spans.append(span)
@@ -178,6 +184,17 @@ class _Lowerer:
 
     def expr(self, node: Node) -> pyast.expr:
         match node:
+            case Quote(body=body, source=source, span=span):
+                sid = self._push(span)
+                self.quotes[sid] = ExpressionValue(body, source)
+                return _call("quote", [pyast.Constant(sid)])
+            case Eval(value=value, bindings=bindings, span=span):
+                sid = self._push(span)
+                names = pyast.Constant(tuple(kw.name for kw in bindings))
+                spellings = pyast.Constant(tuple(kw.spelling for kw in bindings))
+                values = pyast.Tuple(elts=[self.expr(kw.value) for kw in bindings], ctx=pyast.Load())
+                return _call("eval_expr", [self.expr(value), names, values, spellings,
+                                           pyast.Constant(sid)])
             case NumLit(text=text, span=span):
                 value = parse_literal(text)
                 if isinstance(value, int | float):
@@ -308,7 +325,7 @@ def compile_program(node: Node) -> Compiled:
     code = compile(source, "<adhoc>", "exec")
     line_spans = {i + 1: s.span for i, s in enumerate(stmts)}
     return Compiled(source=source, code=code, spans=tuple(lowerer.spans), line_spans=line_spans,
-                    definitions=lowerer.definitions)
+                    definitions=lowerer.definitions, quotes=lowerer.quotes)
 
 
 def _compile_body(node: Node) -> CompiledBody:
@@ -334,4 +351,14 @@ def _compile_body(node: Node) -> CompiledBody:
         lines.append(pyast.unparse(pyast.fix_missing_locations(assignment)))
     tree = pyast.parse("\n".join(lines))
     tree = pyast.fix_missing_locations(tree)
-    return CompiledBody(compile(tree, "<adhoc>", "exec"), tuple(lowerer.spans), lowerer.definitions)
+    return CompiledBody(compile(tree, "<adhoc>", "exec"), tuple(lowerer.spans),
+                        lowerer.definitions, lowerer.quotes)
+
+
+def compile_expression(node: Node) -> CompiledBody:
+    lowerer = _Lowerer()
+    assignment = pyast.Assign(
+        targets=[pyast.Name(id="_result", ctx=pyast.Store())], value=lowerer.expr(node))
+    tree = pyast.Module(body=[assignment], type_ignores=[])
+    code = compile(pyast.fix_missing_locations(tree), "<adhoc>", "exec")
+    return CompiledBody(code, tuple(lowerer.spans), lowerer.definitions, lowerer.quotes)

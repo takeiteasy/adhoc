@@ -186,11 +186,12 @@ from . import algebraic, gauss, rra, symbolic
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
+from .expression import ExpressionValue, show as show_expression
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
 
-AdValue = int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA
+AdValue = int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA | ExpressionValue
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -215,7 +216,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"let"})
+RESERVED_NAMES = frozenset({"let", "expr", "eval"})
 
 
 class PreludeFn:
@@ -728,6 +729,8 @@ def nneg(a: AdValue) -> AdValue:
 
 
 def neq(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, ExpressionValue) or isinstance(b, ExpressionValue):
+        return a == b if isinstance(a, ExpressionValue) and isinstance(b, ExpressionValue) else False
     if isinstance(a, str) or isinstance(b, str):
         # Value equality for string×string (the re-assignment check binds no names, so
         # this is its only equality surface — the language has no == operator); a
@@ -769,6 +772,8 @@ def neq(a: AdValue, b: AdValue) -> bool:
 
 
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
+    if isinstance(v, ExpressionValue):
+        return f"\\expr({show_expression(v.node)})"
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, AdFunction):
@@ -1067,10 +1072,11 @@ class _FoldTailEstimator:
 class EvalError(Exception):
     """A runtime failure with its message and, when known, the offending span."""
 
-    def __init__(self, msg: str, span: Span | None = None):
+    def __init__(self, msg: str, span: Span | None = None, source: str | None = None):
         super().__init__(msg)
         self.msg = msg
         self.span = span
+        self.source = source
 
 
 _MISSING = object()
@@ -1092,7 +1098,8 @@ class AdFunction:
             frame[self.name] = self
         child = Engine(frame, self.body.spans, self.body.definitions, self.closure,
                        self.closure.modules,
-                       self.closure.base_dir, self.closure.import_chain)
+                       self.closure.base_dir, self.closure.import_chain,
+                       quotes=self.body.quotes)
         try:
             scope = {"_e": child}
             exec(self.body.code, scope)
@@ -1158,7 +1165,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction):
+    if isinstance(value, AdFunction | ExpressionValue):
         return value
     if isinstance(value, RangeValue):
         return value
@@ -1200,10 +1207,12 @@ class Engine:
 
     def __init__(self, env: dict[str, Any], spans: Sequence[Span], definitions=None,
                  parent=None, modules: dict | None = None,
-                 base_dir: str | None = None, import_chain: tuple[str, ...] = ()):
+                 base_dir: str | None = None, import_chain: tuple[str, ...] = (),
+                 quotes: dict[int, ExpressionValue] | None = None):
         self.env = env
         self.spans = spans
         self.definitions = definitions or {}
+        self.quotes = quotes or {}
         self.parent = parent
         # The session's module registry (absolute path -> module environment) and the
         # directory relative to which `\import` resolves files. Both ride on the root
@@ -1218,6 +1227,30 @@ class Engine:
 
     def _fail(self, msg: str, sid: int) -> NoReturn:
         raise EvalError(msg, self.spans[sid])
+
+    def quote(self, sid: int) -> ExpressionValue:
+        return self.quotes[sid]
+
+    def eval_expr(self, value: Any, names: tuple[str, ...], values: tuple[Any, ...],
+                  spellings: tuple[str | None, ...], sid: int) -> Any:
+        if not isinstance(value, ExpressionValue):
+            self._fail("`\\eval` needs an expression value", sid)
+        for name, spelling in zip(names, spellings):
+            if self._protected(name):
+                self._fail(f"`{_display_name(name, spelling)}` is protected", sid)
+        from .compiler import compile_expression
+
+        body = compile_expression(value.node)
+        child = Engine(dict(zip(names, values)), body.spans, body.definitions, self,
+                       self.modules, self.base_dir, self.import_chain, quotes=body.quotes)
+        scope = {"_e": child}
+        try:
+            exec(body.code, scope)
+        except EvalError as e:
+            if e.source is None:
+                e.source = value.source
+            raise
+        return scope["_result"]
 
     def lit(self, text: str, sid: int) -> AdValue:
         """A number literal's tier decision, lowered through the seam so the
@@ -1275,6 +1308,8 @@ class Engine:
                        "\\dual \\alpha, α = 3.14", sid)
         if name == "let":
             self._fail(f"`{label}` binds a fresh name: \\let name = expr", sid)
+        if name in ("expr", "eval"):
+            self._fail(f"`{label}` needs a parenthesized argument", sid)
         if name in ("fn", "λ"):
             self._fail(f"`{label}` takes a parenthesized parameter list: \\λ(x) body "
                        "(ASCII spelling \\fn(x) body)", sid)
@@ -1407,7 +1442,7 @@ class Engine:
         frame. Scoping mirrors AdFunction.__call__: reads of other names fall through
         to the parent chain, writes stay local to this iteration."""
         child = Engine(bindings, body.spans, body.definitions, self,
-                       self.modules, self.base_dir, self.import_chain)
+                       self.modules, self.base_dir, self.import_chain, quotes=body.quotes)
         scope = {"_e": child}
         try:
             exec(body.code, scope)
@@ -1642,7 +1677,7 @@ class Engine:
         module_env: dict = {}
         engine = Engine(module_env, unit.spans, unit.definitions, None,
                         self.modules, os.path.dirname(resolved),
-                        self.import_chain + (resolved,))
+                        self.import_chain + (resolved,), quotes=unit.quotes)
         self.modules[resolved] = _IMPORTING
         g: dict = {"_e": engine}
         try:

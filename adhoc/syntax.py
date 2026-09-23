@@ -54,6 +54,18 @@ class StrLit(Node):
 
 
 @dataclass(frozen=True)
+class Quote(Node):
+    body: Node
+    source: str = field(compare=False)
+
+
+@dataclass(frozen=True)
+class Eval(Node):
+    value: Node
+    bindings: tuple["KwArg", ...]
+
+
+@dataclass(frozen=True)
 class Var(Node):
     ch: str
     spelling: str | None = field(default=None, compare=False)

@@ -115,7 +115,7 @@ No longer gated on a future evaluation engine — the mechanism is quoting and r
 AST enum directly (`match`-and-rebuild), the same way any other Rust code manipulates a typed
 tree.
 
-- `\expr(...)` / `` `(...) `` quoting, `\eval(e, binding...)`.
+- `\expr(...)` / `` `(...) `` quoting and `\eval(e, binding...)` are implemented.
 - `\solve`, `\simplify`, `\expand`, `\factor` as AST rewriting over expression values.
   - Open: full semantics of what these can actually handle — currently syntax-level only in
     the design.

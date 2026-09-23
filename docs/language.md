@@ -138,11 +138,15 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Numeric limits: `\lim(x=0) x/x` → `= 1.0` approximates by two-sided shrinking-step
   probing without ever evaluating at the anchor. Disagreeing one-sided limits (jump
   discontinuities) report `` limit does not exist ``.
+- Expression values: `q = \expr(x^2 - 4)` or ``q = `(x^2 - 4)`` stores a quoted AST;
+  `\eval(q, x=3)` returns `5`. Bindings evaluate in the caller's scope and remain local to
+  that evaluation. Other names resolve where `\eval` runs. Values display as parseable
+  `\expr(...)` text; errors inside them point to their original source.
 
 ## Not yet implemented
 
-Everything phase 2 onward: logical operators, tensors/arrays/sets, symbolic algebra
-(`\expr`/`\solve`/...), metaprogramming, and graphing. See `ROADMAP.md` and the tracker for
+Logical operators, tensors/arrays/sets, symbolic rewriting and solving
+(`\solve`/`\simplify`/...), metaprogramming, and graphing. See `ROADMAP.md` and the tracker for
 status.
 
 ## The `\` sigil, briefly

@@ -18,7 +18,7 @@ def render_parse_error(source: str, e: ParseError) -> str:
 
 def render_eval_error(source: str, e: EvalError) -> str:
     if e.span is not None:
-        return render(source, LABEL, e.msg, e.span)
+        return render(e.source if e.source is not None else source, LABEL, e.msg, e.span)
     return f"< {LABEL} {e.msg}\n"
 
 

@@ -38,6 +38,7 @@ written against — it should stay in lockstep with the code.
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
 - Operators: `+ - * / ^ < > <= >= = .. ( ) , ? :`. Statement separator: `;`.
+  A backtick starts the quote form `` `(expression) ``.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
   conditional and `:` closes it
@@ -89,7 +90,9 @@ kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | lambda | radical ;
+              | lambda | radical | quote ;
+quote      ::= "\\expr" "(" expr ")" | "`" "(" expr ")" ;
+eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
 sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 ```
@@ -97,6 +100,13 @@ lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 `\let` is a statement form. Its variable form is legal wherever a statement is legal;
 its function form is top-level (including a group that flattens at top level). A bare
 or misplaced `\let` is an error, and incomplete forms enter the REPL continuation path.
+
+`\expr` and `` ` `` quote one expression without evaluating it. `\eval` evaluates an
+expression value with optional named bindings. Binding values evaluate in the caller's
+scope before the quoted expression runs. Other names read from the scope of the `\eval`
+call; the bindings are local to that evaluation. Protected names cannot be bound, except
+`i` under the usual rule. Expression values print as parseable `\expr(...)` text, and the
+binding rule compares them by AST structure and canonical names.
 
 `sep` inside a group's `sequence` is a newline run or a single `;` — blank lines are
 free, `;;` is an error. A trailing `;` after the last statement is tolerated (`1;` and

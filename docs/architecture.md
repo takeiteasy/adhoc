@@ -12,6 +12,7 @@ adhoc/
 ├── syntax      — frozen AST dataclasses, each node carries its own Span and optional
 │                 non-semantic source spelling
 ├── parser      — precedence climbing over docs/grammar.md
+├── expression  — frozen expression values and parseable display
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
 ├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
@@ -78,6 +79,12 @@ Name-bearing AST nodes also retain an optional written spelling with `compare=Fa
 Canonical fields remain the only inputs to lookup, protection, recursion, and value
 identity; spelling fields travel to the compiler and engine solely for diagnostics and
 fresh declaration echoes.
+
+Quoted values carry their frozen AST and original source. Quotation lowers to a lookup in
+the compiled unit's quote table. `\eval` lowers to an engine call that compiles the stored
+expression through the same lowering path and runs it in a child frame. Binding values
+evaluate in the caller before that frame is created. Errors from the stored AST retain its
+source for caret rendering, including across REPL inputs.
 
 
 ## Engine notes

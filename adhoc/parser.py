@@ -65,6 +65,7 @@ would clobber that inner node's own (narrower) span with the paren-inclusive one
 """
 
 from .lexer import (
+    Backtick,
     Backslash,
     Colon,
     Comma,
@@ -115,6 +116,8 @@ from .syntax import (
     NoOp,
     NumLit,
     PyImport,
+    Quote,
+    Eval,
     Range,
     Seq,
     StrLit,
@@ -137,7 +140,7 @@ class IncompleteInput(ParseError):
     "parsing failed" can catch ParseError and get the same msg/span fields."""
 
 
-_ATOM_STARTERS = (Number, Ident, Backslash, LParen, Str, Radical)
+_ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, Str, Radical)
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
 # a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
@@ -155,8 +158,10 @@ def _spelling(tok: Ident | Backslash) -> str:
 
 
 class _Parser:
-    def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None):
+    def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None,
+                 source: str = ""):
         self.tokens = tokens
+        self.source = source
         self.pos = 0
         # Working alias map: the session's map (if given) layered over the seed.
         # `\alias`/`\dual` declarations mutate this dict; parse_program merges it
@@ -740,7 +745,7 @@ class _Parser:
     # A parenthesized lambda in head position applies: `(\fn(x) x)(5)`. Unparenthesized,
     # the greedy body has already consumed any trailer (`\fn(x) x(5)` is a lambda whose
     # body is the call/product `x(5)`).
-    _NAMEISH = (Var, BackslashRef, Call, Lambda)
+    _NAMEISH = (Var, BackslashRef, Call, Lambda, Eval)
 
     # Special forms recognized in postfix position (DESIGN.md "equality and =", case 3):
     # a closed list of builtins whose first argument is a binding, not a general
@@ -798,14 +803,43 @@ class _Parser:
             rparen = self.expect(RParen, "`)`")
             node = Call(head=node, args=args, kwargs=kwargs,
                         span=node.span.to(rparen.span))
+            if isinstance(node.head, BackslashRef) and node.head.name == "eval":
+                if len(node.args) != 1:
+                    raise ParseError("`\\eval` takes one expression value followed by bindings",
+                                     node.span)
+                node = Eval(value=node.args[0], bindings=node.kwargs, span=node.span)
             if (
-                isinstance(node.head, BackslashRef)
+                isinstance(node, Call)
+                and isinstance(node.head, BackslashRef)
                 and node.head.name == "py"
                 and (len(node.args) != 1 or node.kwargs)
             ):
                 raise ParseError(
                     f"`{self._form_label(node.head)}` takes exactly one argument", node.span)
         return node
+
+    def _quote(self, head: Token) -> Quote:
+        self.expect(LParen, "`(`")
+        body = self.expr()
+        self.expect(RParen, "`)`")
+        if not self._quotable(body):
+            raise ParseError("quotes contain one expression, not statements", body.span)
+        return Quote(body=body, source=self.source, span=head.span.to(self.tokens[self.pos - 1].span))
+
+    @staticmethod
+    def _quotable(node: Node) -> bool:
+        from dataclasses import fields
+
+        if isinstance(node, (Assign, FuncDef, Seq, Import, PyImport, NoOp)):
+            return False
+        for field in fields(node):
+            value = getattr(node, field.name)
+            if isinstance(value, Node) and not _Parser._quotable(value):
+                return False
+            if isinstance(value, tuple) and any(isinstance(item, Node) and
+                                                not _Parser._quotable(item) for item in value):
+                return False
+        return True
 
     def _fold_head(self, node: Node) -> BinOperator | None:
         """The fold operator when `node` is a fold head, else None. Heads are always
@@ -912,11 +946,17 @@ class _Parser:
                 self.advance()
                 return self._name_node(tok.ch, tok.span)
             case Backslash():
+                if tok.name == "expr" and isinstance(self.peek2(), LParen):
+                    self.advance()
+                    return self._quote(tok)
                 if tok.name in _LAMBDA_HEADS and isinstance(self.peek2(), LParen):
                     self.advance()
                     return self._lambda(tok)
                 self.advance()
                 return BackslashRef(name=tok.name, span=tok.span, spelling=_spelling(tok))
+            case Backtick():
+                self.advance()
+                return self._quote(tok)
             case Radical():
                 # `√` is the prefix spelling of `\sqrt(...)`: the operand parses at
                 # the unary level (so `√2^2` reads √(2²), `2^√2` works, `√2·3` is
@@ -978,7 +1018,7 @@ def parse_program(src: str, aliases: dict[str, str] | None = None) -> Node:
         raise IncompleteInput(e.msg, e.span) from e
     except LexError as e:
         raise ParseError(e.msg, e.span) from e
-    parser = _Parser(tokens, aliases)
+    parser = _Parser(tokens, aliases, src)
     node = parser.program()
     if aliases is not None:
         aliases.update(parser.aliases)

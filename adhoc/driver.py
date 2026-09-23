@@ -31,7 +31,7 @@ def execute(compiled: Compiled, env: dict, modules: dict | None = None,
     once per session."""
     g: dict = {}
     g["_e"] = Engine(env, compiled.spans, compiled.definitions,
-                     modules=modules, base_dir=base_dir)
+                     modules=modules, base_dir=base_dir, quotes=compiled.quotes)
     try:
         exec(compiled.code, g)  # noqa: S102 - generated from our own AST only
     except EvalError as e:

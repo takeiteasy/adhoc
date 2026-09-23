@@ -1,0 +1,11 @@
+-- Quotations preserve expressions until explicit evaluation.
+q = \expr(x^2 - 4)
+\eval(q, x=3)
+
+-- The backtick form produces the same expression value.
+r = `(x^2 - 4)
+q = r
+
+-- Unspecified names resolve at the evaluation site.
+y = 5
+\eval(`(x+y), x=2)

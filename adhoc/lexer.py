@@ -177,6 +177,13 @@ class Question(Token):
 
 
 @dataclass(frozen=True)
+class Backtick(Token):
+    @property
+    def describe(self) -> str:
+        return "backtick"
+
+
+@dataclass(frozen=True)
 class LParen(Token):
     @property
     def describe(self) -> str:
@@ -244,6 +251,7 @@ class Eof(Token):
 
 
 _SINGLE_CHAR_TOKENS = {
+    "`": Backtick,
     "+": Plus,
     "-": Minus,
     "*": Star,
