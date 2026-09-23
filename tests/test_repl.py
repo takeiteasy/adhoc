@@ -115,6 +115,13 @@ def test_alias_survives_incomplete_then_completed_input(tmp_path):
     assert "< = 3" in out
 
 
+def test_let_continuation_completes_and_persists(tmp_path):
+    out = run_repl("\\let x =\n1\nx\n", tmp_path).stdout
+    assert "... " in out
+    assert "< x = 1" in out
+    assert "< = 1" in out
+
+
 def test_unclosed_group_continues_then_evaluates(tmp_path):
     # An open paren gathers lines under the `... ` continuation prompt until the
     # matching `)`, then the whole group evaluates. The REPL prints only the last

@@ -104,3 +104,9 @@ def test_comparisons_return_booleans_and_reject_arithmetic():
     assert run_source("2 >= 2", env) == ["= true"]
     with pytest.raises(EvalError, match="booleans are not numbers"):
         run_source("(1 < 2) + 1", env)
+
+
+def test_function_results_preserve_booleans():
+    env = define("f(x) = x < 2")
+    assert run_source("f(1)", env) == ["= true"]
+    assert run_source("f(3)", env) == ["= false"]

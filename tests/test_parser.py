@@ -372,7 +372,7 @@ def test_identical_to_char_is_a_lex_error():
 
 def test_double_eq_is_two_eq_tokens():
     # `k == 3` lexes as two `=`: the statement rule consumes the first, the second
-    # is an unexpected token — there is no declaration spelling to fall into.
+    # is an unexpected token.
     with pytest.raises(ParseError, match="unexpected token `=`"):
         parse_program("x == 5")
 
@@ -387,6 +387,54 @@ def test_const_is_an_ordinary_unbound_name():
             pass
         case _:
             pytest.fail(f"expected a BackslashRef, got {node.lhs!r}")
+
+
+def test_let_variable_is_fresh_only_assignment():
+    node = parse_program("\\let α = 1")
+    assert isinstance(node, Assign)
+    assert node.name == "α"
+    assert node.value == NumLit(text="1", span=Span(10, 11))
+    assert node.fresh_only is True
+    assert node.spelling == "α"
+    assert node.span == Span(0, 11)
+
+
+def test_let_function_uses_the_function_definition_shape():
+    node = parse_program("\\let f(x) = x + 1")
+    assert isinstance(node, FuncDef)
+    assert node.name == "f"
+    assert node.params == ("x",)
+    assert node.body == BinOp(
+        op=B.ADD,
+        lhs=Var(ch="x", span=Span(12, 13)),
+        rhs=NumLit(text="1", span=Span(16, 17)),
+        span=Span(12, 17),
+    )
+    assert node.spelling == "f"
+    assert node.span == Span(0, 17)
+
+
+def test_let_canonicalizes_aliases():
+    node = parse_program("\\let π = 1")
+    assert isinstance(node, Assign)
+    assert node.name == "pi"
+    assert node.spelling == "π"
+
+
+def test_let_incomplete_and_malformed_forms():
+    for source in ("\\let", "\\let x", "\\let x ="):
+        with pytest.raises(IncompleteInput):
+            parse_program(source)
+    with pytest.raises(ParseError, match="binds a fresh name"):
+        parse_program("\\let = 1")
+    with pytest.raises(ParseError, match="reserved statement form"):
+        parse_program("\\dual \\let, α = 1")
+
+
+def test_let_function_definition_is_top_level_only():
+    for source in ("f() = \\let g() = 1", "r = (\\let g() = 1)"):
+        with pytest.raises(ParseError, match="function definitions are top-level"):
+            parse_program(source)
 
 
 def test_incomplete_def_offers_continuation():
@@ -553,7 +601,7 @@ def test_ternary_binds_looser_than_everything_else():
 
 
 def test_ternary_branches_are_lazy_ifexprs():
-    # Same AST as \if, so parenthesized sequence branches work identically.
+    # Parenthesized sequence branches are lazy and keep their own statement frame.
     node = parse_program("x > 0 ? (y = x^2; y + 1) : 0")
     assert isinstance(node, IfExpr)
     assert isinstance(node.then_branch, Seq)

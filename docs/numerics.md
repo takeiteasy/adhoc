@@ -282,7 +282,9 @@ rejected anywhere a finite number is required:
 
 - Assign-or-check `=` is IEEE-strict: NaN never equals itself, so `x = \nan` always
   prints `false` even when `x` is NaN (matching MPFR/rug). Comparisons are all
-  `false` on NaN, also per IEEE. There is no direct NaN test today.
+  `false` on NaN, also per IEEE. Use `\isnan(x)`, `\isinf(x)`, and `\isfinite(x)`
+  to inspect the float tier: exact-tier values are finite, so `\isnan` and `\isinf`
+  are false and `\isfinite` is true for them.
 - Conditions must be booleans — no numeric truthiness. `\nan ? 1 : 2` is a typed
   error exactly like `0 ? 1 : 2` (docs/grammar.md, `## Conditionals`).
 - Range bounds must be finite and real: `1..\inf` and `\inf..3` are typed errors —
@@ -342,6 +344,10 @@ through `_to_ad`:
 | `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
 | `complex` | exact `Gaussian` — both components read through their shortest round-trip decimal (`complex(0.5, 0.25)` is `1/2+1/4i`) and collapse through `make` (a vanishing imaginary part returns the real); non-finite components are rejected |
 | anything else (list, dict, ndarray, ...) | rejected — names the type, never truncates silently |
+
+Internal prelude callables and user-defined functions already return ad values, so their
+boolean results stay booleans; the `bool` → `int` row applies to Python callables crossing
+`\py`.
 
 A callee raising maps to a spanned error at the call (`sqrt: ValueError: math domain
 error`), keeping the REPL alive like every other typed failure. Callables themselves are

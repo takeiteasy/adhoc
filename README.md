@@ -29,11 +29,11 @@ caret-pointing error diagnostics, postfix application (`f(x)`), functions with l
 scoping, the lazy
 ternary conditional (`c ? a : b` — a parenthesized statement group is its multi-statement
 branch), real booleans with `\true`/`\false`,
-immutable bindings (`x = 1` binds once and compares thereafter — there is no
-reassignment or declaration spelling), name aliases (`Σ` is `\sum`; declare your
+immutable bindings (`x = 1` binds once and compares thereafter; `\let x = 1`
+marks a fresh binding), name aliases (`Σ` is `\sum`; declare your
 own with `\alias`, or define both spellings at once with `\dual \alpha, α = 3.14`;
 diagnostics and fresh echoes keep the spelling you wrote),
-a protected prelude scope (`π`, `\sqrt`, `\sin`, ... — `π` and `√2` stay exact as
+a protected prelude scope (`π`, `\sqrt`, `\sin`, `\isnan`, `\isinf`, `\isfinite`, ... — `π` and `√2` stay exact as
 symbolic reals, and `√2 * √2` collapses back to the integer `2`),
 and the `\py("math.sqrt")(2)` escape
 hatch into Python — full trust, native conversion

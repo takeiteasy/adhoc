@@ -55,6 +55,14 @@ def test_bool_becomes_int():
     assert last('\\py("bool")(0)') == "= 0"
 
 
+def test_internal_boolean_results_stay_booleans():
+    assert last("\\isnan(\\nan)") == "= true"
+    env: dict = {}
+    run_source("f() = 1 < 2", env)
+    assert run_source("f()", env) == ["= true"]
+    assert last('\\py("bool")(1)') == "= 1"
+
+
 def test_fraction_passthrough_stays_exact():
     assert last('\\py("fractions.Fraction")(1, 3)') == "= 1/3"
 

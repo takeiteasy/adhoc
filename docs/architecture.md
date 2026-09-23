@@ -87,10 +87,10 @@ fresh declaration echoes.
   string statement lowers to `pass` — it produces no output but keeps the one-line-per-
   statement invariant the table depends on.
 - Variables never become Python name loads or stores — reads go through `_e.var`, writes
-  through `_e.assign` (bind-or-compare; globals are single-assignment). Function calls create a
-  local frame with global read-through; body writes use `_e.assign` and never escape. The user
-  environment is a plain dict kept separate from exec globals. Callables and strings bind like
-  any other value.
+  through `_e.assign` (bind-or-compare; `\let` selects the fresh-only mode). Function calls
+  create a local frame with global read-through; body writes use `_e.assign` and never escape.
+  The user environment is a plain dict kept separate from exec globals. Callables and strings
+  bind like any other value.
 - Application lowers to `_e.app(head, args, kwargs, sid, spelling)` with dynamic juxtaposition:
   callable heads apply (kwargs pass through as native Python keyword arguments); a
   non-callable head with one positional argument and no kwargs falls back to
@@ -106,7 +106,8 @@ fresh declaration echoes.
   environment), the import base directory, and the in-progress import chain ride on
   the root engine and are inherited by every child frame and imported module engine,
   which is what makes re-imports cached, cycles typed errors, and nested resolution
-  relative to the importing file.
+  relative to the importing file. Internal prelude and user-function results preserve
+  boolean values; Python `\py` results still use the external conversion matrix.
 - Range construction lowers to `_e.range(start, second, end, sid)`. `RangeValue` stores
   numeric endpoints and step without materializing values; iteration computes each next
   value through the numeric seam.

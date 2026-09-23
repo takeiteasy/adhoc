@@ -29,7 +29,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   including user-defined function names, use the backslash sigil (`\fact`).
 - Assignment (`x = 1`) with declare-once-then-check semantics: a fresh name binds and
   echoes the spelling written at that occurrence; `x = 1` again *compares*, printing
-  `true`/`false` — there is no reassignment and no declaration operator, every binding
+  `true`/`false`. `\let x = 1` is the explicit fresh-only spelling, and the top-level
+  `\let f(x) = body` form reuses the fresh-only function definition path. Every binding
   is immutable (docs/grammar.md, `## Assignment semantics`).
 - Multi-character variables use the same backslash sigil as multi-character functions:
   `\bar = 100; \foo = 200; \foobar = \foo\bar`.
@@ -90,6 +91,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   ternary consumes them, and `\true`/`\false` are bound constants. There
   is no numeric truthiness — a number is never a condition (`0 ? 1 : 2` is a typed
   error).
+- Non-finite tests are protected prelude callables: `\isnan(x)`, `\isinf(x)`, and
+  `\isfinite(x)` test the float tier; exact-tier values are finite. Non-numeric
+  arguments are typed errors.
 - Lazy conditionals: the ternary `c ? a : b` is the one conditional — only the selected
   branch evaluates. It is right-associative with the loosest expression precedence,
   and a parenthesized statement group is its multi-statement branch form
@@ -99,12 +103,13 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   binding may shadow — `i = 5` or `\sum(i=1..3) i` is an ordinary identifier clash,
   docs/grammar.md, `## Assignment semantics`), `\inf`/`\nan` the non-finite floats,
   `\true`/`\false` the booleans,
-  and the `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function builtins — exact arguments go
-  through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sqrt(-2)` is
+  and the `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function builtins — exact arguments
+  go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sqrt(-2)` is
   `√2·i`), algebraic `√` arguments through the algebraic tier, anything finite the
   lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact), everything
-  else falls to the `math.*` float tier — plus `\complex`/`\re`/`\im` for building
-  and projecting complex values and the `\prec` display-precision setting above.
+  else falls to the `math.*` float tier. The `\isnan`/`\isinf`/`\isfinite` predicates
+  test float non-finiteness and treat exact tiers as finite. `\complex`/`\re`/`\im`
+  build and project complex values, and `\prec` is the display-precision setting above.
   Prelude names other than `i` can never be rebound or shadowed, and unicode/ASCII
   spellings are one and the same value (`π` and `\pi` are a single constant, via the
   name alias map). `√` is the

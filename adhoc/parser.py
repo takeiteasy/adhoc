@@ -2,7 +2,7 @@
 precedence table in docs/grammar.md:
 
     program     ::= statement (";" statement)* ;
-    statement   ::= func-def | string | identifier "=" expr | expr ;
+    statement   ::= func-def | let-stmt | string | name "=" expr | expr ;
     expr        ::= ternary ;
     ternary     ::= range ("?" ternary ":" ternary)? ;   -- the lazy conditional
     additive    ::= multiplicative (("+" | "-") multiplicative)* ;
@@ -33,7 +33,9 @@ juxtaposition, docs/grammar.md). Strings are values: one alone may still be a st
 are ordinary atoms — `"a" + "b"` concatenates, and a string reaching any other operator
 fails as the usual typed "strings are not numbers" at evaluation. The function
 definition shape `f(x) = body` is recognized at statement level and parsed into `FuncDef`;
-function bodies may contain semicolon-separated statements.
+function bodies may contain semicolon-separated statements. `\\let name = expr` is the
+fresh-only spelling of an assignment; `\\let f(params) = body` reuses the top-level
+function-definition path.
 
 Two builtin heads are *special forms* (DESIGN.md, "equality and =" case 3): their first
 argument is a binding, not an application argument. `\\sum`/`\\prod`/`Σ`/`Π` parse
@@ -92,7 +94,7 @@ from .lexer import (
     UnterminatedString,
     tokenize,
 )
-from .runtime import PRELUDE
+from .runtime import PRELUDE, RESERVED_NAMES
 from .span import Span
 from .syntax import (
     Assign,
@@ -162,14 +164,17 @@ class _Parser:
         self.aliases = dict(ALIAS_SEED)
         if aliases:
             self.aliases.update(aliases)
-        # Names a spelling declaration may not repurpose: the prelude. It is the
-        # only protected set — user bindings are immutable by the binding rule
-        # itself, not by declaration.
-        self.protected = frozenset(PRELUDE)
+        # Names a spelling declaration may not repurpose: the prelude and reserved
+        # statement forms.
+        self.protected = frozenset(PRELUDE) | RESERVED_NAMES
         # Statement nesting depth: `\alias`/`\dual` are top-level directives —
         # declaring one inside a function body or group would take effect at
         # parse time whether or not the body ever runs.
         self.depth = 0
+        # A group at the start of a top-level statement is flattened, so it admits
+        # top-level `\let` function definitions; expression-position groups do not.
+        self._statement_start = 0
+        self._top_level_statement = False
         # Set by `_skip_newlines`, reset by statement lists around each
         # statement: "a line break was consumed since the last statement ended".
         self._nl = False
@@ -247,7 +252,9 @@ class _Parser:
     # either); two adjacent `;` stay an error, blank lines are free.
     def program(self) -> Node:
         self._skip_newlines()
-        statements = [self.statement()]
+        self._top_level_statement = True
+        self._statement_start = self.pos
+        statements = [self.statement(allow_let_function=True)]
         while True:
             sep = False
             while isinstance(self.peek(), Newline):
@@ -259,7 +266,8 @@ class _Parser:
                 self._skip_newlines()
             if not sep or isinstance(self.peek(), Eof):
                 break
-            statements.append(self.statement())
+            self._statement_start = self.pos
+            statements.append(self.statement(allow_let_function=True))
         if not isinstance(self.peek(), Eof):
             found = self.peek().describe
             raise self.error_at_current(f"unexpected token {found}")
@@ -268,12 +276,12 @@ class _Parser:
         span = statements[0].span.to(statements[-1].span)
         return Seq(statements=tuple(statements), span=span)
 
-    # statement ::= func-def | string
-    #             | identifier "=" expr | expr ;
+    # statement ::= func-def | let-stmt | string
+    #             | name "=" expr | expr ;
     # Statement heads are line-bound: the two-token looks aheads (peek2) see the
     # token immediately after the head, so a statement head and its syntax belong
     # on one line. Mid-statement, expression parsing continues across lines.
-    def statement(self) -> Node:
+    def statement(self, allow_let_function: bool = False) -> Node:
         tok = self.peek()
         if isinstance(tok, Str) and isinstance(self.peek2(), Semi | Eof | Newline):
             # A string alone is a statement — ignored like a comment (docs/grammar.md).
@@ -293,6 +301,8 @@ class _Parser:
             and isinstance(self.peek2(), (Ident, Backslash))
         ):
             return self._spelling_statement(tok.name)
+        if isinstance(tok, Backslash) and tok.name == "let":
+            return self._let_statement(allow_let_function)
         if isinstance(tok, Backslash):
             # `\fn(params)` is a lambda — never a definition named `fn`
             # (`\fn(x) = …` dies inside the lambda parse on the stray `=`).
@@ -385,6 +395,11 @@ class _Parser:
                 "`\\dual` pairs a canonical name with exactly one short spelling: "
                 "\\dual \\alpha, α = 3.14")
         canonical_tok, canonical = names[0]
+        if canonical == "let":
+            raise ParseError(
+                "`\\let` is a reserved statement form",
+                canonical_tok.span,
+            )
         canonical_display = f"\\{canonical}" if len(canonical) > 1 else canonical
         for short_tok, short in names[1:]:
             if not isinstance(short_tok, Ident):
@@ -423,6 +438,40 @@ class _Parser:
         value = self.expr()
         return Assign(name=canonical, value=value, span=head.span.to(value.span),
                       spelling=spelling)
+
+    def _let_statement(self, allow_let_function: bool) -> Node:
+        head = self.advance()
+        self._skip_newlines()
+        name_tok = self.peek()
+        if not isinstance(name_tok, (Ident, Backslash)):
+            raise self.error_at_current(
+                "`\\let` binds a fresh name: \\let name = expr")
+        if isinstance(name_tok, Backslash) and name_tok.name == "let":
+            raise ParseError(
+                "`\\let` cannot bind its own keyword",
+                head.span.to(name_tok.span),
+            )
+        self.advance()
+        name = (self._canonical(name_tok.ch) if isinstance(name_tok, Ident)
+                else name_tok.name)
+        spelling = _spelling(name_tok)
+        if isinstance(self.peek(), LParen):
+            if not allow_let_function:
+                raise ParseError(
+                    "`\\let` function definitions are top-level: \\let f(x) = body",
+                    head.span.to(name_tok.span),
+                )
+            self.advance()
+            params, param_spellings = self._func_params()
+            self.expect(Eq, "`=`")
+            body = self._func_body()
+            return FuncDef(name=name, params=params, body=body,
+                           span=head.span.to(body.span), spelling=spelling,
+                           param_spellings=param_spellings)
+        self.expect(Eq, "`=`")
+        value = self.expr()
+        return Assign(name=name, value=value, fresh_only=True,
+                      span=head.span.to(value.span), spelling=spelling)
 
     def _collect_name_list(self) -> list[tuple[Token, str]]:
         """Comma-separated name spellings (Ident or Backslash tokens) with their
@@ -484,7 +533,7 @@ class _Parser:
         return Seq(statements=tuple(body_stmts),
                    span=body_stmts[0].span.to(body_stmts[-1].span))
 
-    # func-def ::= identifier "(" params? ")" "=" statement (";" statement)* ;
+    # func-def ::= name "(" params? ")" "=" statement (";" statement)* ;
     # Speculative: parse the head shape, and only commit when an `=` follows the
     # closing paren; anything else restores the position so `f(x)` reparses as an
     # application. Parameter validity is enforced only once committed. Newlines are
@@ -529,10 +578,10 @@ class _Parser:
     # expression (`1 +`, a committed range `1..`) the statement continues. Imports
     # stay out (statements, not expressions — the group is an expression) and
     # `\alias`/`\dual` stay top-level (the depth guard).
-    def _group_stmts(self) -> list[Node]:
+    def _group_stmts(self, allow_let_function: bool = False) -> list[Node]:
         self._skip_newlines()
         self._nl = False
-        items = [self.statement()]
+        items = [self.statement(allow_let_function=allow_let_function)]
         while True:
             sep = self._nl or isinstance(self.peek(), Newline)
             self._skip_newlines()
@@ -547,7 +596,7 @@ class _Parser:
                     f"statements in a group are separated by a newline or `;`, "
                     f"found {self.peek().describe}")
             self._nl = False
-            items.append(self.statement())
+            items.append(self.statement(allow_let_function=allow_let_function))
         return items
 
     # lambda ::= ("\λ" | "\fn") "(" params? ")" expr ;
@@ -880,10 +929,15 @@ class _Parser:
                 return Call(head=BackslashRef(name="sqrt", span=rad.span, spelling="√"),
                             args=(operand,), span=rad.span.to(operand.span))
             case LParen():
+                group_top_level = (
+                    self._top_level_statement and self.pos == self._statement_start
+                )
                 self.advance()
                 self.depth += 1
                 try:
-                    items = self._group_stmts()
+                    items = self._group_stmts(
+                        allow_let_function=group_top_level
+                    )
                 finally:
                     self.depth -= 1
                 # Imports bind names and produce no output — they have no value, so

@@ -1,4 +1,4 @@
-"""Modules and imports: `\import` over ad source files and `\pyimport` over Python
+r"""Modules and imports: `\import` over ad source files and `\pyimport` over Python
 module members (ticket-27 semantics — two forms, two targets, no module values and no
 dotted attribute access in the grammar).
 
@@ -191,6 +191,14 @@ def test_module_const_does_not_join_importer_protected_set(tmp_path):
     make_lib(tmp_path, text="k = 5; f(x) = x")
     env: dict = {}
     run_at(tmp_path, '\\import("lib")', env)
+    assert run_at(tmp_path, "k = 6", env) == ["false"]
+
+
+def test_let_imports_remain_ordinary_module_bindings(tmp_path):
+    make_lib(tmp_path, text="\\let k = 5; f(x) = x + k")
+    env: dict = {}
+    run_at(tmp_path, '\\import("lib")', env)
+    assert run_at(tmp_path, "f(2)", env) == ["= 7"]
     assert run_at(tmp_path, "k = 6", env) == ["false"]
 
 

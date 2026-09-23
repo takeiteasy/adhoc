@@ -35,7 +35,8 @@ written against — it should stay in lockstep with the code.
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
   After the first character a name may continue with letters or underscores (`\rel_tol`,
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
-  names, including variables; an unbound one fails at evaluation.
+  names, including variables; an unbound one fails at evaluation. `\let` is the one
+  statement keyword in this group: it is not a bindable name.
 - Operators: `+ - * / ^ < > <= >= = .. ( ) , ? :`. Statement separator: `;`.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
@@ -51,12 +52,15 @@ written against — it should stay in lockstep with the code.
 program    ::= statement (sep statement)* sep? ;
 sep        ::= newline-run | ";" ;    -- a ";" after a newline run is one separator too
 statement  ::= func-def
+             | let-stmt
              | import-stmt
              | pyimport-stmt
              | spelling-directive
              | string
-             | identifier "=" expr
+             | name "=" expr
              | expr ;
+let-stmt    ::= "\let" name "=" expr
+             | "\let" name "(" params? ")" "=" statement (";" statement)* ;
 import-stmt   ::= "\import" "(" string (":" member ("," member)*)? ")" ;
 pyimport-stmt ::= "\pyimport" "(" string ":" member ("," member)* ")" ;
 member        ::= identifier | "\"-name ;
@@ -82,13 +86,17 @@ trailer    ::= "(" args? ")" ;
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
-func-def   ::= identifier "(" params? ")" "=" statement (";" statement)* ;
+func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
               | lambda | radical ;
 sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 ```
+
+`\let` is a statement form. Its variable form is legal wherever a statement is legal;
+its function form is top-level (including a group that flattens at top level). A bare
+or misplaced `\let` is an error, and incomplete forms enter the REPL continuation path.
 
 `sep` inside a group's `sequence` is a newline run or a single `;` — blank lines are
 free, `;;` is an error. A trailing `;` after the last statement is tolerated (`1;` and
@@ -459,10 +467,10 @@ Shared rules:
 - **Cycles**: importing a file that is already being evaluated (directly or through a
   chain) is a typed error naming the chain.
 - **Binding rules**: everything validates before anything binds. A member missing from
-  the module, a protected name (prelude or session constant), or a name already bound
-  to a different value is a typed error; a name already bound to the *identical*
-  cached value is a silent no-op (re-import). Imported names land as ordinary
-  bindings — rebindable, not protected.
+  the module, a protected prelude name, or a name already bound to a different value is
+  a typed error; a name already bound to the *identical* cached value is a silent
+  no-op (re-import). Imported names land as ordinary bindings — not protected, and a
+  repeat `=` compares rather than overwrites.
 
 ```
 \import("lib")                 -- bind everything lib.ad defines at the top level
@@ -523,16 +531,16 @@ Rules:
   outside the alias mechanism entirely — it is a fixed operator spelling.
 - **Parse-time, declare-before-use**: declarations take effect with the next
   statement in the same unit; a use parsed before the declaration reads the raw
-  spelling, and no declaration renames it retroactively.
+  spelling, and no alias declaration renames it retroactively.
 - **Top-level only**: `\alias` and `\dual` are directives, not expressions — they
   cannot appear inside a function body or parenthesized group (their effect is
   parse-time, and a body's declarations would fire whether or not it ever runs).
-- **Protected names**: a spelling that names a prelude or session constant cannot be
-  repurposed as an alias (`\alias x, e` errors). Aliasing *onto* a canonical prelude
+- **Protected names**: a spelling that names a prelude value cannot be repurposed as an
+  alias (`\alias x, e` errors). Aliasing *onto* a canonical prelude
   name is allowed — `\alias \pi, ϖ` gives `ϖ` to the constant — and protection still
   holds, since every use of the short spelling becomes a use of the canonical name.
-- **Session scope**: the REPL threads the map across inputs alongside the
-  environment and constants; scripts and `\import`ed modules parse with the seed
+- **Session scope**: the REPL threads the map across inputs alongside the environment;
+  scripts and `\import`ed modules parse with the seed
   alone — they never inherit or export declarations. The driver API threads the map
   explicitly (`parse_program`/`compile_source` take `aliases=`).
 - **Source spelling**: each name-bearing occurrence retains the spelling written at
@@ -558,10 +566,12 @@ One rule everywhere (`x = e`, any statement context):
 
 The comparison is value-based on the numeric tower, not type-checked: `x = 1; x = 1.0`
 echoes `true`, `0.5` and `1/2` compare `true`, `"a" = 1` echoes `false` (mixed kinds
-simply are not equal). There is no reassignment operator and no declaration operator —
-a binding is made once by the first `=` and can never be overwritten, only compared
-against (a paper page doesn't reassign either). To iterate on a value, bind a fresh
-name or compute inside a function, where every call starts from a fresh frame.
+simply are not equal). There is no reassignment operator. A binding is made once by the
+first `=` and can never be overwritten, only compared against. `\let name = expr` is
+the explicit fresh-only spelling: it binds a new current-frame name, echoes the same
+`name = value` line, and errors when that name is already bound in the current frame.
+To iterate on a value, bind a fresh name or compute inside a function, where every call
+starts from a fresh frame.
 
 **The `i` exception**: the imaginary unit's spelling is the conventional loop-binder
 name, so `i` is the one prelude name a binding may shadow — `i = 5` binds a fresh `i`,
@@ -577,8 +587,9 @@ binds and compares are frame-local. Inside a body, `y = e` shadows a global `y` 
 fresh local (it never touches the global), and a repeat `y = e` compares the local.
 Function definitions are the one exception to bind-or-check: `f(x) = body` on a bound
 or protected name is an error — definitions are declarations, and functions compare by
-identity, so a check would be meaningless. Note that inside an argument list,
-`name=value` is a keyword argument and never assigns.
+identity, so a check would be meaningless. The top-level `\let f(x) = body` form has
+the same fresh-only behavior. Note that inside an argument list, `name=value` is a
+keyword argument and never assigns.
 
 Statement groups flatten: a top-level `(a; b)` becomes plain top-level statements, each
 with its own echo line — the parentheses do not create a scope, so a group cannot
@@ -587,9 +598,9 @@ bodies, ternary branch groups) run the same rule in the frame they evaluate in.
 
 ## The prelude
 
-There are no user-declared constants and no declaration spellings: every binding is
-immutable by the assignment rule itself, so `x = 5` and the old "constant" forms are
-equally final. Built-in names live in a prelude scope protected by the same mechanism:
+There are no user-declared constants: every binding is immutable by the assignment rule
+itself, while `\let` is only the explicit fresh-binding spelling. Built-in names live
+in a prelude scope protected by the same mechanism:
 
 | spelling | value |
 |---|---|
@@ -599,6 +610,7 @@ equally final. Built-in names live in a prelude scope protected by the same mech
 | `\inf` / `\nan` | the non-finite floats `Inf` / `NaN` — float tier only; the exact tiers have neither (`1/0` is a typed error). IEEE semantics, docs/numerics.md |
 | `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
 | `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`, `\sqrt(-2)` is `√2·i`, `\ln(-1)` is `π·i`); algebraic `√` arguments through the algebraic tier (`\sqrt(2^(1/3))` is `2^(1/6)`); anything finite the lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact, complex results included); everything else falls to the `math.*` float tier. Display as `<fn \sqrt(x)>` |
+| `\isnan` / `\isinf` / `\isfinite` | test the float tier's non-finite states; exact-tier values are finite, so `\isnan` and `\isinf` are false and `\isfinite` is true. Non-numeric arguments are typed errors. Display as `<fn \isnan(x)>`, `<fn \isinf(x)>`, and `<fn \isfinite(x)>` |
 | `\complex` | builds a complex value from two real components: `\complex(2, 3)` is `2+3i`, a vanishing imaginary part collapses to the real; float components read as their exact decimals |
 | `\re` / `\im` | project the real or imaginary side (`\re(2+3i)` is `2`, `\im(π·i)` is `π`); a float's imaginary side is `0.0` |
 | `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |

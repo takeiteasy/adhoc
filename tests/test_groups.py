@@ -105,6 +105,15 @@ def test_same_line_adjacency_still_juxtaposes():
     assert run_source("(2 (3))", {}) == ["= 6"]
 
 
+def test_let_group_binds_fresh_names():
+    env: dict = {}
+    assert run_source("(\\let x = 1\n\\let y = x + 1\ny)", env) == [
+        "x = 1", "y = 2", "= 2"
+    ]
+    with pytest.raises(EvalError, match="`x` is already bound"):
+        run_source("(\\let x = 1)", env)
+
+
 def test_arguments_need_commas_across_lines():
     # The same rule in argument lists: a newline ends the argument where the
     # expression is complete, so multi-line argument lists are comma-separated.

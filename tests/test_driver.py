@@ -399,6 +399,29 @@ def test_prelude_inf_and_nan_constants():
             run_source(src)
 
 
+def test_prelude_nonfinite_predicates_return_booleans():
+    assert last("\\isnan(\\nan)") == "= true"
+    assert last("\\isinf(-\\inf)") == "= true"
+    assert last("\\isfinite(0.5)") == "= true"
+    assert last("\\isnan(0.5)") == "= false"
+    assert last("\\isinf(0.5)") == "= false"
+    assert last("\\isfinite(\\inf)") == "= false"
+
+    env: dict = {}
+    assert run_source("b = \\isnan(\\nan); b", env) == ["b = true", "= true"]
+    assert run_source("r = \\true ? \\isnan(\\nan) : \\false", env) == ["r = true"]
+    run_source("f() = \\isnan(\\nan)", env)
+    assert run_source("f()", env) == ["= true"]
+
+
+def test_prelude_nonfinite_predicates_are_protected_and_typed():
+    for name in ("isnan", "isinf", "isfinite"):
+        with pytest.raises(EvalError, match="is protected"):
+            run_source(f"\\{name} = 1")
+    with pytest.raises(EvalError, match="strings are not numbers"):
+        run_source('\\isnan("x")')
+
+
 def test_prelude_names_cannot_be_rebound():
     for src in ["π = 3", "\\pi = 3", "e = 5", "\\true = \\false"]:
         with pytest.raises(EvalError) as e:
@@ -468,9 +491,9 @@ def test_lim_body_producing_a_boolean_reports_a_spanned_error():
     assert e.value.span == Span(0, 15)  # the whole \lim node
 
 
-def test_declaration_operators_are_gone():
-    # ≡, the == alias, and \const no longer exist: everything is immutable by the
-    # binding rule, so there is nothing left to declare.
+def test_legacy_declaration_operators_are_gone():
+    # ≡, the == alias, and \const no longer exist; \let is the explicit fresh-only
+    # spelling tested separately.
     with pytest.raises(ParseError, match="unexpected character `≡`"):
         run_source("c ≡ 5")
     with pytest.raises(ParseError):
@@ -487,6 +510,46 @@ def test_binding_rule_is_the_tower_not_the_type():
     assert last("y = 0.5; y = 1/2", env) == "true"
     assert last('s = "a"; s = 1', env) == "false"
     assert last("t = \\true; t = 1", env) == "true"  # bools compare as Python ints
+
+
+def test_let_binds_fresh_and_rejects_duplicates():
+    env: dict = {}
+    assert last("\\let x = 1", env) == "x = 1"
+    with pytest.raises(EvalError, match="`x` is already bound"):
+        run_source("\\let x = 1", env)
+    with pytest.raises(EvalError, match="`x` is already bound"):
+        run_source("\\let x = 2", env)
+    assert run_source("x = 1", env) == ["true"]
+
+
+def test_let_is_reserved_in_expression_position():
+    with pytest.raises(EvalError, match="binds a fresh name"):
+        run_source("1 + \\let")
+
+
+def test_let_protection_and_current_frame_shadowing():
+    env: dict = {}
+    with pytest.raises(EvalError, match="`π` is protected"):
+        run_source("\\let π = 1", env)
+    run_source("y = 10", env)
+    assert run_source("f() = (\\let y = 4; y)", env) == ["f = <fn f()>"]
+    assert last("f()", env) == "= 4"
+    assert last("y", env) == "= 10"
+
+
+def test_let_function_definition_is_top_level_and_fresh():
+    env: dict = {}
+    assert run_source("\\let f(x) = x + 1", env) == ["f = <fn f(x)>"]
+    assert last("f(2)", env) == "= 3"
+    with pytest.raises(EvalError, match="`f` is already bound"):
+        run_source("\\let f(x) = x + 2", env)
+
+
+def test_let_function_definition_can_be_in_a_top_level_group():
+    env: dict = {}
+    assert run_source("(\\let f(x) = x + 1\nf(2))", env) == [
+        "f = <fn f(x)>", "= 3"
+    ]
 
 
 def test_group_cannot_overwrite_a_global():

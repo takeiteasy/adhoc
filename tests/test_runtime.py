@@ -565,6 +565,50 @@ def test_prelude_builtin_display():
     assert nshow(PRELUDE["sqrt"]) == "<fn \\sqrt(x)>"
 
 
+def test_nonfinite_predicates_cover_float_and_exact_tiers():
+    float_cases = (
+        (0.0, False, False, True),
+        (-0.0, False, False, True),
+        (math.inf, False, True, False),
+        (-math.inf, False, True, False),
+        (math.nan, True, False, False),
+    )
+    for value, is_nan, is_inf, is_finite in float_cases:
+        assert PRELUDE["isnan"](value) is is_nan
+        assert PRELUDE["isinf"](value) is is_inf
+        assert PRELUDE["isfinite"](value) is is_finite
+
+    exact_values = (
+        10**400,
+        Fraction(1, 2),
+        nadd(1, PRELUDE["i"]),
+        PI_SYM,
+        npow(2, Fraction(1, 3)),
+        nadd(PI_SYM, 1),
+    )
+    for value in exact_values:
+        assert PRELUDE["isnan"](value) is False
+        assert PRELUDE["isinf"](value) is False
+        assert PRELUDE["isfinite"](value) is True
+
+
+def test_nonfinite_predicates_reject_non_numeric_values():
+    for value, message in (
+        (True, "booleans are not numbers"),
+        ("value", STRINGS_NOT_NUMBERS),
+        (RangeValue(1, 1, None), NOT_A_NUMBER),
+        (PRELUDE["sin"], NOT_A_NUMBER),
+    ):
+        with pytest.raises(NumError, match=message):
+            PRELUDE["isnan"](value)
+
+
+def test_nonfinite_predicate_display_names():
+    assert nshow(PRELUDE["isnan"]) == "<fn \\isnan(x)>"
+    assert nshow(PRELUDE["isinf"]) == "<fn \\isinf(x)>"
+    assert nshow(PRELUDE["isfinite"]) == "<fn \\isfinite(x)>"
+
+
 def test_to_ad_admits_recognized_sympy_values():
     assert _to_ad(sympy.sqrt(2)) == SQRT2
     assert _to_ad(sympy.pi) == PI_SYM

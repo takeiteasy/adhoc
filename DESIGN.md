@@ -33,7 +33,7 @@ ADhoc Higher Order Calculator — a cli based calculator and language like `bc` 
 - An identifier is exactly one character, ascii or unicode (see above) — this is what makes `ab` unambiguous as `a * b`.
 - Every language-defined name longer than one character is written with a `\` prefix, regardless of script: `\pi`, `\sum`, `\sqrt`, `\sin`, `\solve`, `\map`, `\graph`, ... The backslash is what a multi-character name costs to stay unambiguous with juxtaposition.
 - Where a `\`-name has a single-character unicode form, the two are the same name, not two different ones: `\pi` ≡ `π`, `\sum` ≡ `Σ`, `\prod` ≡ `Π`, `\sqrt` ≡ `√`, `\cup` ≡ `∪`, `\cap` ≡ `∩`, `\in` ≡ `∈`, `\subseteq` ≡ `⊆`, `\setminus` ≡ `∖`, `\circ` ≡ `∘`.
-- Where there is no unicode form, the `\` spelling is the only spelling: `\lim`, `\arr`, `\expr`, `\if`, `\otherwise`, `\sin`, `\cos`, `\tan`, `\ln`, `\solve`, `\simplify`, `\expand`, `\factor`, `\eval`, `\body`, `\map`, `\fold`, `\filter`, `\graph`, `\infix`.
+- Where there is no unicode form, the `\` spelling is the only spelling: `\lim`, `\let`, `\arr`, `\expr`, `\sin`, `\cos`, `\tan`, `\ln`, `\solve`, `\simplify`, `\expand`, `\factor`, `\eval`, `\body`, `\map`, `\fold`, `\filter`, `\graph`, `\infix`.
 - The names are chosen to match their LaTeX command where one exists (`\sum`, `\prod`, `\sqrt`, `\cup`, `\cap`, `\in`, `\setminus`, `\circ`, `\lim`, `\sin`, `\ln`, ...) — `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX. This is a naming convention, not a compatibility claim: `ad` is not a TeX parser and has no layout/document commands.
 - Bracket syntax (`[...]`, `{...}`, `⟨...⟩`) is unaffected by this rule — `\arr(...)` is the ASCII *spelling* of `⟨...⟩`, a form rather than a name.
 - User-defined infix operators (`⊕` via `\infix(N) ⊕(a, b) = ...`) are exempt — the sigil rule is about language-defined names, not names an author invents.
@@ -58,23 +58,16 @@ Juxtaposition binding tighter than `*`/`/` but looser than `^` is a deliberate c
 
 ## equality and =
 
-`=` is a single token reused in three ways, disambiguated by position rather than by
-introducing a separate `==` operator:
+`=` is a statement-level bind-or-check operator:
 
-1. **Statement-level, bare identifier on the left** (`x = 1`) — declare-once-then-check: binds `x`
-   into the current frame if unbound there, compares against it if bound there. See
-   `## globals / constants` and docs/grammar.md, `## Assignment semantics`.
-2. **Anywhere else in an expression** (`x = 0` as an operand, e.g. `\solve(e = 0, x)`) — plain
-   boolean equality, no different from `<`/`>=`/etc. `\solve`'s first argument is simply a
-   normal argument that happens to be an equality expression; no special-casing is needed for
-   `\solve` itself.
-3. **A small, closed list of builtins** — `\sum`, `\prod`, `\lim`, `\graph`, and any future
-   range/domain-taking builtin — treat one specific argument position as a loop-variable or
-   domain *binding* rather than parsing it as a general equality expression (`Σ(i=1..10)`,
-   `\lim(x=0)`, `\graph(f, x=-5..5)`). This is a named special form tied to those specific
-   builtins, not a generic named-argument mechanism available to ordinary user-defined
-   functions — an ordinary call `f(a, b)` never takes `name=value` arguments, so this never
-   shows up as ambiguous syntax in practice.
+- A fresh name in the current frame binds.
+- A name already bound in the current frame compares by value and echoes `true` or `false`.
+- `\let name = expr` is the explicit fresh-only spelling; `\let f(params) = body` is the
+  top-level fresh-only function-definition spelling.
+- Protected prelude names cannot be rebound, except the shadowable unit name `i`.
+
+A call's keyword arguments are a separate `name=value` syntax, as are the binders in
+`Σ`, `Π`, and `\lim`; those forms do not use statement-level assignment.
 
 ## ranges
 
@@ -116,23 +109,27 @@ introducing a separate `==` operator:
 
 ## conditionals
 
-Piecewise bodies don't use braces — `\if`/`\otherwise` already self-delimit the branches as the
-whole right-hand side, so braces would be redundant, and dropping them frees `{...}` for set
-literals:
+The ternary `condition ? then : otherwise` is the one conditional. It is lazy: only
+the selected branch evaluates, the condition must be boolean, and a parenthesized
+statement group gives a branch an explicit multi-statement extent:
 
 ```
-> f(x) = x \if x >= 0; -x \otherwise
-< f = <fn>
-> abs(x) = x \if x >= 0; -x \otherwise
-< abs = <fn>
+> f(x) = x >= 0 ? x : -x
+< f = <fn f(x)>
 > f(-3)
 < = 3
+> r = 1 > 2 ? 1 : 2 > 3 ? 2 : 3
+< r = 3
+> 1 < 2 ? (x = 4
+>          x + 1) : 0
+< = 5
 ```
 
-- Piecewise notation, matching how math textbooks write conditional functions, reusing the existing `;`-separated body style.
-- `\otherwise` is sugar for a final catch-all branch (no condition needed).
-- `=` inside a condition (`x >= 0`) is always a comparison, never a binding — binding-or-check `=` only appears at statement level (`x = 1`), never inside an expression. Comparisons `<`, `>`, `<=`, `>=` exist and produce booleans; `\and`/`\or`/`\not` and other logical operators remain future work.
-- Recursion works — a function's own name is bound within its own body scope before evaluation, so `fact(n) = 1 \if n <= 1; n * fact(n-1) \otherwise` is valid. Specifics (e.g. tail-call handling) TBD.
+- Comparisons `<`, `>`, `<=`, and `>=` produce booleans; logical operators remain future
+  work.
+- Parenthesized groups are statements, not scopes: bindings use the enclosing frame.
+- The former line-structured `\if` and `\begin` block forms are not part of the current
+  grammar.
 
 ## globals / constants
 
@@ -144,13 +141,12 @@ literals:
 ```
 
 - Every binding is immutable by the assignment rule itself: a fresh `=` binds, a repeat
-  compares (value-based, tower semantics — `1 = 1.0` is `true`). There is no
-  reassignment operator and no declaration spelling — the former `≡`/`==`/`\const`
-  forms are gone outright, since plain `=` already gave the same immutability.
-- Function definitions (`f(x) = body`) are declarations, not checks: a protected or
-  already-visible name is an error, since functions compare by identity and a check
-  would be meaningless.
-- Built-in constants/functions (`π`/`\pi`, `e`, `i`/`\i`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`, `\complex`, `\re`, `\im`) live in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same name, not two different ones. The function builtins are seam-native: exact arguments are recognized through the symbolic closed-form tier (`√2 * √2` collapses back to `2`, `\sqrt(-2)` is `√2·i`), everything else rises through the exact tiers, and only non-established-reals fall to the `math.*` float tier.
+  compares (value-based, tower semantics — `1 = 1.0` is `true`). `\let` is the
+  explicit fresh-only spelling; it never overwrites a current-frame binding.
+- Function definitions (`f(x) = body`) and the top-level `\let f(x) = body` form are
+  fresh-only declarations: a protected or already-visible name is an error, since
+  functions compare by identity and a check would be meaningless.
+- Built-in constants/functions (`π`/`\pi`, `e`, `i`/`\i`, `\true`/`\false`, `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt`, `\isnan`, `\isinf`, `\isfinite`, `\complex`, `\re`, `\im`) live in a prelude scope. Every unicode-named builtin has an ASCII name bound to the same value — `π` and `\pi` are the same name, not two different ones. The function builtins are seam-native: exact arguments are recognized through the symbolic closed-form tier (`√2 * √2` collapses back to `2`, `\sqrt(-2)` is `√2·i`), everything else rises through the exact tiers, and only non-established-reals fall to the `math.*` float tier.
 - Prelude names are **protected everywhere**, not shadowable — a function parameter, local binding, or fold/limit binder named `π` (or any other prelude name) is a redefinition error, not a local shadow. This keeps a prelude name's meaning fixed regardless of where it's read from, at the cost of a handful of single-character names (`π`, `e`) being permanently unavailable as ordinary variable names. The one exception is `i`: the imaginary unit's spelling is the conventional loop-binder name, so it shadows like any identifier (both spellings read the one binding, and the shadow lifts with the scope).
 
 ## numeric types

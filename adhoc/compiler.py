@@ -17,8 +17,8 @@ Lowering rules:
   lineno ↔ span table aligned while producing no output.
 - Variables are never bare Python name loads or stores — reads go through `_e.var`,
   every `x = e` write-or-compare through `_e.assign` (declare-once-then-check: binds a
-  fresh name into the current frame, compares against one already bound there; there
-  is no force-reassignment spelling and no declaration operator). The user env is
+  fresh name into the current frame, compares against one already bound there; `\\let`
+  passes the fresh-only mode). The user env is
   a plain dict the engine holds; it never mixes with the exec globals.
 - `\name` lowers to `_e.bref("name", sid, spelling)`; application lowers to
   `_e.app(head, args, kwargs, sid, spelling)` with the kwargs as a dict literal;
@@ -157,14 +157,16 @@ class _Lowerer:
                 # A lone string is a comment-like no-op; `pass` keeps the one-line-per-
                 # statement invariant that the lineno ↔ span table depends on.
                 return "pass"
-            case Assign(name=name, value=value, spelling=spelling, span=span):
+            case Assign(name=name, value=value, fresh_only=fresh_only,
+                        spelling=spelling, span=span):
                 sid = self._push(span)
                 inner = self.expr(value)
                 # Statement level echoes: the binding rule reports the outcome
                 # (the echo or the comparison result) into the transcript.
                 return pyast.unparse(_call("assign",
                     [pyast.Constant(name), inner, pyast.Constant(sid),
-                     pyast.Constant(True), pyast.Constant(spelling)]))
+                     pyast.Constant(True), pyast.Constant(spelling),
+                     pyast.Constant(fresh_only)]))
             case _:
                 sid = self._push(stmt.span)
                 inner = self.expr(stmt)
@@ -245,14 +247,16 @@ class _Lowerer:
                 self.definitions[sid] = _compile_body(body)
                 return _call("lambda_", [pyast.Constant(params), pyast.Constant(sid),
                                          pyast.Constant(param_spellings)])
-            case Assign(name=name, value=value, spelling=spelling, span=span):
+            case Assign(name=name, value=value, fresh_only=fresh_only,
+                        spelling=spelling, span=span):
                 # Assign is legal in expression position (a parenthesized sequence's
                 # statements compile through here); the engine's one binding rule
                 # covers every context — frame-local fresh bind or compare.
                 sid = self._push(span)
                 return _call("assign", [pyast.Constant(name), self.expr(value),
                                         pyast.Constant(sid), pyast.Constant(False),
-                                        pyast.Constant(spelling)])
+                                        pyast.Constant(spelling),
+                                        pyast.Constant(fresh_only)])
             case Seq(statements=statements):
                 return pyast.Subscript(
                     value=pyast.Tuple(elts=[self.expr(s) for s in statements], ctx=pyast.Load()),

@@ -28,6 +28,14 @@ def test_script_runs_statement_by_statement_with_repl_style_output(tmp_path):
     assert r.stdout == "< x = 3\n< = 7\n"
 
 
+def test_let_script_binds_and_echoes_fresh_name(tmp_path):
+    path = tmp_path / "let.ad"
+    path.write_text("\\let x = 1\nx\n")
+    r = run_cli(["run", str(path)])
+    assert r.returncode == 0
+    assert r.stdout == "< x = 1\n< = 1\n"
+
+
 def test_script_error_renders_with_line_gutter_and_exits_nonzero(tmp_path):
     path = tmp_path / "err.ad"
     path.write_text("x = 1;\ny\n")

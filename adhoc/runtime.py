@@ -65,10 +65,11 @@ Strings are ad values (docs/grammar.md): they bind, display, concatenate with `+
 compare equal only to other strings. The conversion matrix (`_to_ad`) is deliberately
 small:
 
-- bool → int (true becomes 1), int/float/Fraction pass through, `numbers.Rational`
-  collapses to Fraction/int, `Gaussian`/`Symbolic`/`Algebraic`/`RRA` pass through,
-  recognized sympy expressions convert through the symbolic tier's gate then the
-  algebraic tier's then the RRA tier's,
+- bool → int at the Python boundary (true becomes 1); internal prelude and user-function
+  results preserve booleans. int/float/Fraction pass through, `numbers.Rational` collapses
+  to Fraction/int, `Gaussian`/`Symbolic`/`Algebraic`/`RRA` pass through, recognized sympy
+  expressions convert through the symbolic tier's gate then the algebraic tier's then the
+  RRA tier's,
   other `numbers.Real` widens to float,
   Decimal converts exactly via Fraction.
 - `complex` converts exactly: both components by exact decimal expansion
@@ -111,7 +112,8 @@ A built-in scope present in every session (`PRELUDE` below): symbolic constants
 imaginary unit (`i` and `\\i` — one prelude key, two spellings, an exact
 `Gaussian(0, 1)` displaying as `i`), the non-finite floats (`\\inf`, `\\nan`),
 booleans (`\\true`, `\\false`), and the function builtins (`\\sin`, `\\cos`,
-`\\tan`, `\\ln`, `\\sqrt`, plus `\\complex`, `\\re`, `\\im`) — seam-native
+`\\tan`, `\\ln`, `\\sqrt`, `\\isnan`, `\\isinf`, `\\isfinite`, plus `\\complex`,
+`\\re`, `\\im`) — seam-native
 `PreludeFn` callables that replaced the original float-tier `math.*` aliases in
 place: exact arguments go through the symbolic tier (`\\sqrt(2)` stays `√2`,
 `\\sqrt(-2)` is `√2·i`, `\\ln(-1)` is `π·i`), algebraic `\\sqrt` arguments
@@ -119,9 +121,11 @@ through the algebraic tier (`\\sqrt(2^(1/3))` is `2^(1/6)`), anything finite
 the lower tiers cannot hold through the RRA tier (`\\sin(1)` stays exact),
 everything else falls to the `math.*` float tier (`\\sqrt(2.)`).
 `\\complex(re, im)` builds a complex value from two real components,
-`\\re`/`\\im` project the sides. `\\prec(n)` sets the RRA display precision
-(significant digits, default 15) as a session-wide setting and returns the new
-value.
+`\\re`/`\\im` project the sides. `\\isnan(x)`, `\\isinf(x)`, and `\\isfinite(x)`
+test the float tier's non-finite states; exact-tier values are finite, so the
+last predicate returns true and the first two return false. `\\prec(n)` sets the
+RRA display precision (significant digits, default 15) as a session-wide setting
+and returns the new value.
 Unicode spellings of prelude names (`π`, `Σ`, `Π`) are not separate keys: the parser's
 alias map normalizes them to the canonical `\\`-name before evaluation, so `π` and
 `\\pi` are one name, not two (docs/grammar.md, `## Name aliases`); `i` and `\\i`
@@ -138,11 +142,12 @@ an `i`-binder body the unit is spelled `\\complex(0, 1)`.
 
 One rule everywhere (`Engine.assign`): `x = e` binds a fresh name into the current
 frame, or compares by value against a name already bound in that frame (echoing
-`true`/`false`; `1 = 1.` is true — the tower, not the type). Reads walk the frame
+`true`/`false`; `1 = 1.` is true — the tower, not the type). `\\let x = e` uses the
+same binding path but rejects an existing current-frame name. Reads walk the frame
 chain, binds and compares stay frame-local, and no operation ever rebinds an existing
-binding — the language has no reassignment spelling and no declaration operator.
-Function definitions (`Engine.define`) are declarations: a protected or already-visible
-name is an error. The one shadowable prelude name is `i` (see above).
+binding. Function definitions (`Engine.define`) are fresh-only declarations: a
+protected or already-visible name is an error. The one shadowable prelude name is `i`
+(see above).
 
 ## Pinned divergences from the rug/MPFR backing (docs/numerics.md)
 
@@ -210,6 +215,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
+RESERVED_NAMES = frozenset({"let"})
 
 
 class PreludeFn:
@@ -307,6 +313,15 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
     return PreludeFn(name, call)
 
 
+def _predicate_fn(name: str, float_fn: Callable[[float], bool], exact: bool) -> PreludeFn:
+    def call(v: AdValue) -> bool:
+        _reject_non_numeric(v)
+        if isinstance(v, float):
+            return float_fn(v)
+        return exact
+    return PreludeFn(name, call)
+
+
 def _prec_call(v: AdValue) -> AdValue:
     """The `\\prec(n)` display-precision setting: set the RRA tier's session
     precision (significant digits) and return the new value. A session-wide
@@ -395,6 +410,9 @@ PRELUDE: dict[str, Any] = {
     "tan": _prelude_fn("tan", math.tan),
     "ln": _prelude_fn("ln", math.log),
     "sqrt": _prelude_fn("sqrt", math.sqrt),
+    "isnan": _predicate_fn("isnan", math.isnan, False),
+    "isinf": _predicate_fn("isinf", math.isinf, False),
+    "isfinite": _predicate_fn("isfinite", math.isfinite, True),
     "complex": PreludeFn("complex", _complex_call),
     "re": PreludeFn("re", _re_call),
     "im": PreludeFn("im", _im_call),
@@ -1133,10 +1151,11 @@ def _sympy_to_ad(expr: Any, type_name: str) -> AdValue:
             f"cannot convert a returned {type_name} to an ad value") from None
 
 
-def _to_ad(value: Any) -> Any:
+def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     """The Python→ad half of the interop conversion matrix (see module docstring).
     Raises NumError with a matrix-specific message on everything without an ad
-    representation; the caller attaches the call's span."""
+    representation; the caller attaches the call's span. Internal callable and
+    branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
     if isinstance(value, AdFunction):
@@ -1144,7 +1163,7 @@ def _to_ad(value: Any) -> Any:
     if isinstance(value, RangeValue):
         return value
     if isinstance(value, bool):  # before int — bool is an int subclass
-        return int(value)
+        return value if preserve_bool else int(value)
     if isinstance(value, int | float | Fraction):
         return value
     if isinstance(value, Decimal):
@@ -1209,17 +1228,16 @@ class Engine:
         return parse_literal(text)
 
     def _protected(self, name: str) -> bool:
-        """Prelude names are protected everywhere — the only protected set, since
-        user bindings are immutable by the binding rule itself. Covers rebinding by
-        `=`, function definition, and — at the definition/binder sites — parameters
-        and loop variables, so a protected name can never be shadowed. The one
-        exception is `i`: the imaginary unit's spelling is the conventional
-        loop-binder name, so it binds like any identifier and shadows the unit
-        for both spellings (`i` and `\\i` read the one binding) — inside such a
-        scope the unit is spelled `\\complex(0, 1)`."""
+        """Prelude names and reserved statement forms are protected everywhere. User
+        bindings are immutable by the binding rule itself. Covers rebinding by `=`,
+        function definition, and — at the definition/binder sites — parameters and loop
+        variables. The one exception is `i`: the imaginary unit's spelling is the
+        conventional loop-binder name, so it binds like any identifier and shadows
+        the unit for both spellings (`i` and `\\i` read the one binding) — inside such
+        a scope the unit is spelled `\\complex(0, 1)`."""
         if name in SHADOWABLE_PRELUDE:
             return False
-        return name in _PRELUDE_PROTECTED
+        return name in _PRELUDE_PROTECTED or name in RESERVED_NAMES
 
     def _lookup(self, name: str) -> Any:
         """Walk the frame chain for `name`; the prelude sits outermost. Returns
@@ -1255,6 +1273,8 @@ class Engine:
         if name == "dual":
             self._fail(f"`{label}` defines a name under two spellings: "
                        "\\dual \\alpha, α = 3.14", sid)
+        if name == "let":
+            self._fail(f"`{label}` binds a fresh name: \\let name = expr", sid)
         if name in ("fn", "λ"):
             self._fail(f"`{label}` takes a parenthesized parameter list: \\λ(x) body "
                        "(ASCII spelling \\fn(x) body)", sid)
@@ -1293,18 +1313,22 @@ class Engine:
         return AdFunction("", params, self.definitions[sid], self, "", param_spellings)
 
     def assign(self, name: str, value: AdValue, sid: int,
-               echo: bool = False, spelling: str | None = None) -> AdValue | bool:
+               echo: bool = False, spelling: str | None = None,
+               fresh_only: bool = False) -> AdValue | bool:
         """`x = e` — declare-once-then-check, the one binding rule. A protected
         prelude name is rejected; a name already bound in the current frame compares
         by value (`1 = 1.0` is true — the tower, not the type); otherwise the name
-        binds fresh into this frame. Reads walk the chain, binds and compares stay
-        frame-local, and nothing ever rebinds an existing binding. Silent in
+        binds fresh into this frame. `\\let` passes `fresh_only=True`, so an existing
+        current-frame binding is an error. Reads walk the chain, binds and compares
+        stay frame-local, and nothing ever rebinds an existing binding. Silent in
         expression position (groups, bodies); statement-level lowering passes
         `echo=True` so the REPL/script transcript shows the outcome."""
         display_name = _display_name(name, spelling)
         if self._protected(name):
             self._fail(f"`{display_name}` is protected", sid)
         if name in self.env:
+            if fresh_only:
+                self._fail(f"`{display_name}` is already bound", sid)
             matches = neq(self.env[name], value)
             if echo:
                 self.outputs.append("true" if matches else "false")
@@ -1501,10 +1525,10 @@ class Engine:
         if not isinstance(condition, bool):
             self._fail("ternary condition must be boolean", sid)
         if condition:
-            return _to_ad(then())
+            return _to_ad(then(), preserve_bool=True)
         if otherwise is None:
             self._fail("ternary condition was false and has no else branch", sid)
-        return _to_ad(otherwise())
+        return _to_ad(otherwise(), preserve_bool=True)
 
     def py(self, path: Any, sid: int, spelling: str | None = None) -> Any:
         """`\\py("dotted.path")` — resolve a Python dotted path to a callable. The
@@ -1686,7 +1710,10 @@ class Engine:
                 name = spelling or getattr(fn, "__name__", None) or "<callable>"
                 self._fail(f"{name}: {type(e).__name__}: {e}", sid)
             try:
-                return _to_ad(result)
+                return _to_ad(
+                    result,
+                    preserve_bool=isinstance(fn, (AdFunction, PreludeFn)),
+                )
             except NumError as e:
                 self._fail(e.args[0], sid)
         if not kwargs and len(args) == 1:

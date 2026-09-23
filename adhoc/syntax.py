@@ -190,13 +190,14 @@ class Assign(Node):
     """Statement-level `x = e` — declare-once-then-check. Binds a fresh name into
     the current frame; a name already bound in that frame compares by value and
     prints `true`/`false`; a protected prelude name is rejected (`i` excepted —
-    the one shadowable prelude name). Reads walk the
-    chain, binds and compares stay frame-local — nothing ever rebinds an existing
-    binding, so `x = 1; x = 1` is `true`, never an overwrite."""
+    the one shadowable prelude name). Reads walk the chain, binds and compares stay
+    frame-local. `\\let` uses the same node with `fresh_only=True`, so a bound name
+    is an error rather than a comparison."""
 
     name: str
     value: Node
     spelling: str | None = field(default=None, compare=False)
+    fresh_only: bool = False
 
 
 @dataclass(frozen=True)

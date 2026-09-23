@@ -38,10 +38,10 @@ they don't replace it. The interaction-net engine and parallel rewriting recorde
 - Ranges: `a..b`, `a..` (lazy infinite), `a,c..b` / `a,c..` (step-inferred).
 - `Σ`/`\sum`, `Π`/`\prod`, `\lim` — fold over a range; infinite-range `Σ`/`Π` as limit of partial
   sums.
-- Globals/constants: `=` assign-or-check rules; every binding is immutable (there is no
-  reassignment or declaration spelling).
-  - Prelude constants (`π`, `e`, `\sin`, ...) are protected everywhere, not shadowable
-    (decided).
+- Globals/constants: `=` assign-or-check rules; every binding is immutable. `\let` is
+  the explicit fresh-binding spelling, including top-level function definitions.
+  - Prelude constants (`π`, `e`, `\sin`, `\isnan`, `\isinf`, `\isfinite`, ...) are
+    protected everywhere, not shadowable (decided).
 - Non-converging infinite `Σ`/`Π`: error after a tolerance/iteration cap, reusing the phase-2
   RRA tier's tolerance-based shape rather than a separate mechanism (decided).
 
@@ -158,7 +158,7 @@ former is phase-independent, the latter rides phase 4.
 - **Exactness introspection** — ask which tier a value lives on (`\exact(v)`), control RRA
   display precision. Small, and it makes the numerics story visible.
 - **Textbook multi-clause definitions** — `f(0) = 1; f(n) = n·f(n-1)` as one definition,
-  first matching clause winning; generalizes the designed piecewise `\otherwise` form.
+  first matching clause winning; generalizes the current piecewise ternary form.
   Design tension: a clause sequence must read as one definition, not successive rebinding,
   to coexist with the immutability rules.
 - **Recurrence-defined lazy sequences** — `a(n) = a(n-1) + a(n-2)` memoized and lazy,
@@ -172,7 +172,6 @@ former is phase-independent, the latter rides phase 4.
 - **Arbitrary-precision float tier** — MPFR/gmpy2 behind the numeric seam with a `\prec(n)`
   directive (docs/numerics.md already anticipates the slot); makes RRA display tunable.
 - **Module system growth** — `\import`/`\pyimport` exist (ad files and Python members,
-  statement-level, cached per session); what remains: imported constants joining the
-  protected set on import ("this file's constants are protected", generalizing the
-  prelude machinery), dotted attribute access on bound Python objects, and module
+  statement-level, cached per session); what remains: imported module bindings joining
+  the protected set on import, dotted attribute access on bound Python objects, and module
   namespaces as values.

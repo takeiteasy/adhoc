@@ -36,6 +36,9 @@ r = 2;
 \inf;
 -\inf;
 \nan;
+\isnan(\nan);
+\isinf(-\inf);
+\isfinite(1);
 
 -- the ternary `c ? a : b` is the one conditional; a parenthesized group is
 -- its multi-line, multi-statement form (newlines separate statements inside
@@ -49,6 +52,12 @@ r > 0 ? r : -r;
 -- on its own line into its body, so one def per line keeps scripts sane)
 φ = 1.6180339887498948e0;   -- the exponent form is the float spelling
 φ;
+
+-- `\let` is the explicit fresh-binding spelling, including top-level functions
+\let ψ = φ;
+ψ;
+\let \f(x) = x + 1
+\f(2);
 
 -- name aliases: Σ is \sum by seed; \alias declares your own short spelling.
 -- \dual defines a name under two spellings at once (the short form reads,
