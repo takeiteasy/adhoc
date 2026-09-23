@@ -1,0 +1,11 @@
+-- Reflect a function body and supply its parameter at evaluation.
+f(x) = y = x + 1; y^2
+q = \body(f)
+\eval(q, x=3)
+
+-- A reflected lambda uses names from the evaluation scope.
+g = \fn(x) x + n
+\eval(\body(g), x=4, n=6)
+
+-- Statement-sequence quotes use a separator inside the inner parentheses.
+\eval(\expr((a=2; a+3)))

@@ -85,6 +85,9 @@ the compiled unit's quote table. `\eval` lowers to an engine call that compiles 
 expression through the same lowering path and runs it in a child frame. Binding values
 evaluate in the caller before that frame is created. Errors from the stored AST retain its
 source for caret rendering, including across REPL inputs.
+Compiled function bodies also retain their AST and defining source. `\body` wraps the
+body as a statement-sequence expression value; `\eval` compiles that sequence through
+the function-body path, with local bindings and the last statement as its result.
 
 
 ## Engine notes

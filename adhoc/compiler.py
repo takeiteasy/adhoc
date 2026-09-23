@@ -108,6 +108,8 @@ class CompiledBody:
     spans: tuple[Span, ...]
     definitions: dict[int, "CompiledBody"]
     quotes: dict[int, ExpressionValue]
+    node: Node
+    source: str
 
 
 def _call(method: str, args: list[pyast.expr]) -> pyast.expr:
@@ -129,7 +131,8 @@ def _call_spelling(head: Node) -> str | None:
 
 
 class _Lowerer:
-    def __init__(self):
+    def __init__(self, source: str = ""):
+        self.source = source
         self.spans: list[Span] = []
         self.definitions: dict[int, CompiledBody] = {}
         self.quotes: dict[int, ExpressionValue] = {}
@@ -143,7 +146,7 @@ class _Lowerer:
             case FuncDef(name=name, params=params, body=body, spelling=spelling,
                          param_spellings=param_spellings, span=span):
                 sid = self._push(span)
-                self.definitions[sid] = _compile_body(body)
+                self.definitions[sid] = _compile_body(body, self.source)
                 return pyast.unparse(_call("define", [pyast.Constant(name),
                     pyast.Constant(params), pyast.Constant(sid), pyast.Constant(spelling),
                     pyast.Constant(param_spellings)]))
@@ -184,9 +187,9 @@ class _Lowerer:
 
     def expr(self, node: Node) -> pyast.expr:
         match node:
-            case Quote(body=body, source=source, span=span):
+            case Quote(body=body, source=source, statement_body=statement_body, span=span):
                 sid = self._push(span)
-                self.quotes[sid] = ExpressionValue(body, source)
+                self.quotes[sid] = ExpressionValue(body, source, statement_body)
                 return _call("quote", [pyast.Constant(sid)])
             case Eval(value=value, bindings=bindings, span=span):
                 sid = self._push(span)
@@ -243,14 +246,14 @@ class _Lowerer:
                 # Same shape as FuncDef: the folded body is compiled once into
                 # `definitions[sid]`; the engine evaluates it per term in a child frame.
                 sid = self._push(span)
-                self.definitions[sid] = _compile_body(body)
+                self.definitions[sid] = _compile_body(body, self.source)
                 return _call("fold", [pyast.Constant(_FOLD_METHODS[op]),
                     pyast.Constant(var), self.expr(rng), pyast.Constant(sid),
                     pyast.Constant(spelling), pyast.Constant(var_spelling)])
             case Limit(var=var, point=point, body=body, spelling=spelling,
                       var_spelling=var_spelling, span=span):
                 sid = self._push(span)
-                self.definitions[sid] = _compile_body(body)
+                self.definitions[sid] = _compile_body(body, self.source)
                 return _call("limit", [pyast.Constant(var), self.expr(point),
                                        pyast.Constant(sid), pyast.Constant(spelling),
                                        pyast.Constant(var_spelling)])
@@ -261,7 +264,7 @@ class _Lowerer:
                 # AdFunction closed over the defining frame. The `_e.lambda_`
                 # call carries the span id, so body errors stay narrow.
                 sid = self._push(span)
-                self.definitions[sid] = _compile_body(body)
+                self.definitions[sid] = _compile_body(body, self.source)
                 return _call("lambda_", [pyast.Constant(params), pyast.Constant(sid),
                                          pyast.Constant(param_spellings)])
             case Assign(name=name, value=value, fresh_only=fresh_only,
@@ -317,8 +320,8 @@ def _flatten(node: Node) -> list[Node]:
     return [node]
 
 
-def compile_program(node: Node) -> Compiled:
-    lowerer = _Lowerer()
+def compile_program(node: Node, original_source: str = "") -> Compiled:
+    lowerer = _Lowerer(original_source)
     stmts = _flatten(node)
     lines = [lowerer.statement(s) for s in stmts]
     source = "\n".join(lines)
@@ -328,8 +331,8 @@ def compile_program(node: Node) -> Compiled:
                     definitions=lowerer.definitions, quotes=lowerer.quotes)
 
 
-def _compile_body(node: Node) -> CompiledBody:
-    lowerer = _Lowerer()
+def _compile_body(node: Node, source: str = "") -> CompiledBody:
+    lowerer = _Lowerer(source)
     statements = _flatten(node)
     lines = ["_result = None"]
     for stmt in statements:
@@ -352,13 +355,14 @@ def _compile_body(node: Node) -> CompiledBody:
     tree = pyast.parse("\n".join(lines))
     tree = pyast.fix_missing_locations(tree)
     return CompiledBody(compile(tree, "<adhoc>", "exec"), tuple(lowerer.spans),
-                        lowerer.definitions, lowerer.quotes)
+                        lowerer.definitions, lowerer.quotes, node, source)
 
 
-def compile_expression(node: Node) -> CompiledBody:
-    lowerer = _Lowerer()
+def compile_expression(node: Node, source: str = "") -> CompiledBody:
+    lowerer = _Lowerer(source)
     assignment = pyast.Assign(
         targets=[pyast.Name(id="_result", ctx=pyast.Store())], value=lowerer.expr(node))
     tree = pyast.Module(body=[assignment], type_ignores=[])
     code = compile(pyast.fix_missing_locations(tree), "<adhoc>", "exec")
-    return CompiledBody(code, tuple(lowerer.spans), lowerer.definitions, lowerer.quotes)
+    return CompiledBody(code, tuple(lowerer.spans), lowerer.definitions, lowerer.quotes,
+                        node, source)

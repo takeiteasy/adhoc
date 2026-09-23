@@ -4,8 +4,8 @@ from dataclasses import dataclass, fields
 
 from .syntax import (
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
-    Fold, IfExpr, KwArg, Lambda, Limit, Node, NumLit, Quote, Range, StrLit,
-    UnOp, Var,
+    Assign, Fold, FuncDef, IfExpr, Import, KwArg, Lambda, Limit, Node, NumLit,
+    PyImport, Quote, Range, Seq, StrLit, UnOp, Var,
 )
 
 
@@ -13,10 +13,13 @@ from .syntax import (
 class ExpressionValue:
     node: Node
     source: str
+    statement_body: bool = False
     __hash__ = None
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, ExpressionValue) and _shape(self.node) == _shape(other.node)
+        return (isinstance(other, ExpressionValue)
+                and self.statement_body == other.statement_body
+                and _shape(self.node) == _shape(other.node))
 
 
 def _shape(value):
@@ -40,6 +43,27 @@ _CMP = {
 
 def show(node: Node) -> str:
     match node:
+        case Seq(statements=statements):
+            return "; ".join(show(stmt) for stmt in statements)
+        case Assign(name=name, value=value, spelling=spelling, fresh_only=fresh):
+            prefix = "\\let " if fresh else ""
+            label = spelling or (name if len(name) == 1 else f"\\{name}")
+            return f"{prefix}{label} = {show(value)}"
+        case FuncDef(name=name, params=params, body=body, spelling=spelling,
+                     param_spellings=spellings):
+            label = spelling or (name if len(name) == 1 else f"\\{name}")
+            names = [spellings[i] if i < len(spellings) else param
+                     for i, param in enumerate(params)]
+            return f"{label}({', '.join(names)}) = {show(body)}"
+        case Import(path=path, members=members, member_spellings=spellings):
+            names = [spellings[i] if i < len(spellings) else name
+                     for i, name in enumerate(members)]
+            suffix = f": {', '.join(names)}" if names else ""
+            return f"\\import({show(StrLit(text=path, span=node.span))}{suffix})"
+        case PyImport(path=path, members=members, member_spellings=spellings):
+            names = [spellings[i] if i < len(spellings) else name
+                     for i, name in enumerate(members)]
+            return f"\\pyimport({show(StrLit(text=path, span=node.span))}: {', '.join(names)})"
         case NumLit(text=text):
             return text
         case StrLit(text=text):
@@ -72,8 +96,8 @@ def show(node: Node) -> str:
         case Lambda(params=params, body=body, param_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name for i, name in enumerate(params)]
             return f"(\\fn({', '.join(names)}) {show(body)})"
-        case Quote(body=body):
-            return f"\\expr({show(body)})"
+        case Quote(body=body, statement_body=statement_body):
+            return show_quote(body, statement_body)
         case Eval(value=value, bindings=bindings):
             values = [show(value)] + [f"{show(kw_name(kw))}={show(kw.value)}" for kw in bindings]
             return f"\\eval({', '.join(values)})"
@@ -83,3 +107,10 @@ def show(node: Node) -> str:
 
 def kw_name(kw: KwArg) -> Node:
     return BackslashRef(name=kw.name, span=kw.span, spelling=kw.spelling) if len(kw.name) > 1 else Var(ch=kw.name, span=kw.span, spelling=kw.spelling)
+
+
+def show_quote(node: Node, statement_body: bool) -> str:
+    text = show(node)
+    if statement_body and isinstance(node, Seq) and len(node.statements) == 1:
+        text += ";"
+    return f"\\expr(({text}))" if statement_body else f"\\expr({text})"

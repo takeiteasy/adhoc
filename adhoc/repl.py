@@ -119,7 +119,7 @@ def run_repl(emit_py: bool = False) -> int:
             continue
 
         pending = ""
-        compiled = compile_program(node)
+        compiled = compile_program(node, source)
         if emit_py:
             print(compiled.source, file=sys.stderr)
         try:

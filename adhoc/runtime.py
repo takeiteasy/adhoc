@@ -186,7 +186,8 @@ from . import algebraic, gauss, rra, symbolic
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
-from .expression import ExpressionValue, show as show_expression
+from .expression import ExpressionValue, show_quote
+from .syntax import Seq
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
@@ -388,16 +389,16 @@ def _im_call(v: AdValue) -> AdValue:
     return _project(v, imag=True)
 
 
-# The prelude scope: built-in constants and function builtins, present in every
-# session (see the module docstring). `π`/`e` are exact symbolic reals; `i` is
-# the exact imaginary unit, a Gaussian reached by both spellings (`i`, `\i`) —
-# the one prelude name a binder may shadow. The function builtins replaced the
-# original float-tier `math.*` aliases in place — binding names unchanged,
-# exact arguments recognized through the symbolic tier (adhoc/symbolic.py,
-# docs/numerics.md), algebraic `sqrt` arguments through the algebraic tier,
-# anything finite the lower tiers cannot hold through the RRA tier, everything
-# else on the `math.*` float tier. `\complex`/`\re`/`\im` build and project
-# complex values; `\prec` sets the RRA display precision and returns it.
+def _body_call(value: Any) -> ExpressionValue:
+    if not isinstance(value, AdFunction):
+        raise NumError("\\body needs a user-defined function")
+    body = value.body
+    node = body.node
+    if not isinstance(node, Seq):
+        node = Seq(statements=(node,), span=node.span)
+    return ExpressionValue(node, body.source, statement_body=True)
+
+
 PRELUDE: dict[str, Any] = {
     "pi": symbolic.PI,
     "e": symbolic.E,
@@ -418,6 +419,7 @@ PRELUDE: dict[str, Any] = {
     "re": PreludeFn("re", _re_call),
     "im": PreludeFn("im", _im_call),
     "prec": PreludeFn("prec", _prec_call),
+    "body": PreludeFn("body", _body_call),
 }
 
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
@@ -773,7 +775,7 @@ def neq(a: AdValue, b: AdValue) -> bool:
 
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
     if isinstance(v, ExpressionValue):
-        return f"\\expr({show_expression(v.node)})"
+        return show_quote(v.node, v.statement_body)
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, AdFunction):
@@ -1238,16 +1240,17 @@ class Engine:
         for name, spelling in zip(names, spellings):
             if self._protected(name):
                 self._fail(f"`{_display_name(name, spelling)}` is protected", sid)
-        from .compiler import compile_expression
+        from .compiler import _compile_body, compile_expression
 
-        body = compile_expression(value.node)
+        body = (_compile_body(value.node, value.source) if value.statement_body
+                else compile_expression(value.node, value.source))
         child = Engine(dict(zip(names, values)), body.spans, body.definitions, self,
                        self.modules, self.base_dir, self.import_chain, quotes=body.quotes)
         scope = {"_e": child}
         try:
             exec(body.code, scope)
         except EvalError as e:
-            if e.source is None:
+            if e.source is None and value.source:
                 e.source = value.source
             raise
         return scope["_result"]

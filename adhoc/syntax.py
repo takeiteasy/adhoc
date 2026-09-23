@@ -57,6 +57,7 @@ class StrLit(Node):
 class Quote(Node):
     body: Node
     source: str = field(compare=False)
+    statement_body: bool = False
 
 
 @dataclass(frozen=True)

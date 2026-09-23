@@ -820,6 +820,34 @@ class _Parser:
 
     def _quote(self, head: Token) -> Quote:
         self.expect(LParen, "`(`")
+        group_end = None
+        has_separator = False
+        if isinstance(self.peek(), LParen):
+            depth = 0
+            for index in range(self.pos, len(self.tokens)):
+                if isinstance(self.tokens[index], LParen):
+                    depth += 1
+                elif isinstance(self.tokens[index], RParen):
+                    depth -= 1
+                    if depth == 0:
+                        group_end = index
+                        break
+                elif depth == 1 and isinstance(self.tokens[index], (Semi, Newline)):
+                    has_separator = True
+        if (group_end is not None and has_separator
+                and isinstance(self.tokens[group_end + 1], RParen)):
+            self.advance()
+            self.depth += 1
+            try:
+                statements = self._group_stmts()
+            finally:
+                self.depth -= 1
+            self.expect(RParen, "`)`")
+            self.expect(RParen, "`)`")
+            body = Seq(statements=tuple(statements),
+                       span=statements[0].span.to(statements[-1].span))
+            return Quote(body=body, source=self.source, statement_body=True,
+                         span=head.span.to(self.tokens[self.pos - 1].span))
         body = self.expr()
         self.expect(RParen, "`)`")
         if not self._quotable(body):

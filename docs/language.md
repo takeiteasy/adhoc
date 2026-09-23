@@ -142,11 +142,15 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   `\eval(q, x=3)` returns `5`. Bindings evaluate in the caller's scope and remain local to
   that evaluation. Other names resolve where `\eval` runs. Values display as parseable
   `\expr(...)` text; errors inside them point to their original source.
+- Function reflection: `\body(f)` returns the body AST of a user-defined function or
+  lambda. `\eval(\body(f), x=3)` evaluates it with explicit parameter bindings and
+  names from the evaluation scope. Multi-statement bodies display as `\expr((...))`;
+  their local bindings stay local and the last statement supplies the result.
 
 ## Not yet implemented
 
 Logical operators, tensors/arrays/sets, symbolic rewriting and solving
-(`\solve`/`\simplify`/...), metaprogramming, and graphing. See `ROADMAP.md` and the tracker for
+(`\solve`/`\simplify`/...), and graphing. See `ROADMAP.md` and the tracker for
 status.
 
 ## The `\` sigil, briefly

@@ -19,7 +19,7 @@ def compile_source(src: str, aliases: dict[str, str] | None = None) -> Compiled:
     """Frontend + lowering in one step: source text → executable unit. `aliases` is
     the session alias map threaded through to `parse_program` (docs/grammar.md,
     `## Name aliases`); scripts and imported modules pass None — seed aliases only."""
-    return compile_program(parse_program(src, aliases))
+    return compile_program(parse_program(src, aliases), src)
 
 
 def execute(compiled: Compiled, env: dict, modules: dict | None = None,

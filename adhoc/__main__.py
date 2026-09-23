@@ -44,7 +44,7 @@ def _run_script(path: str, emit_py: bool) -> int:
         print_parse_error(source, e)
         return 1
 
-    compiled = compile_program(node)
+    compiled = compile_program(node, source)
     if emit_py:
         print(compiled.source, file=sys.stderr)
 

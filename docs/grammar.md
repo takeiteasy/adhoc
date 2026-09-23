@@ -38,7 +38,7 @@ written against — it should stay in lockstep with the code.
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
 - Operators: `+ - * / ^ < > <= >= = .. ( ) , ? :`. Statement separator: `;`.
-  A backtick starts the quote form `` `(expression) ``.
+  A backtick starts a quote: `` `(expression) `` or a statement-sequence quote.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
   conditional and `:` closes it
@@ -91,7 +91,8 @@ func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= identifier ("," identifier)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
               | lambda | radical | quote ;
-quote      ::= "\\expr" "(" expr ")" | "`" "(" expr ")" ;
+quote      ::= ("\\expr" | "`") "(" expr ")"
+             | ("\\expr" | "`") "(" "(" sequence ")" ")" ;
 eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
 sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
@@ -101,12 +102,16 @@ lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 its function form is top-level (including a group that flattens at top level). A bare
 or misplaced `\let` is an error, and incomplete forms enter the REPL continuation path.
 
-`\expr` and `` ` `` quote one expression without evaluating it. `\eval` evaluates an
-expression value with optional named bindings. Binding values evaluate in the caller's
-scope before the quoted expression runs. Other names read from the scope of the `\eval`
-call; the bindings are local to that evaluation. Protected names cannot be bound, except
+`\expr` and `` ` `` quote without evaluating. A parenthesized statement sequence uses
+`\expr((x=1; x+1))`; a single-statement body has a trailing separator,
+`\expr((x+1;))`. `\eval` evaluates an expression value with optional named bindings.
+Binding values evaluate in the caller's scope before the quoted value runs. Other names
+read from the scope of the `\eval` call; the bindings are local to that evaluation.
+Protected names cannot be bound, except
 `i` under the usual rule. Expression values print as parseable `\expr(...)` text, and the
 binding rule compares them by AST structure and canonical names.
+`\body(f)` returns the statement body of a user-defined function or lambda as an
+expression value. Built-ins and Python callables have no reflected body.
 
 `sep` inside a group's `sequence` is a newline run or a single `;` — blank lines are
 free, `;;` is an error. A trailing `;` after the last statement is tolerated (`1;` and
@@ -280,9 +285,9 @@ branches, lambda bodies. Its value is its last statement's value.
 `)` would otherwise end the sequence: def bodies and lambda bodies. It does **not**
 shield against `;`: in a def body or at top level, a `;` after the closing `)`
 simply continues the enclosing statement sequence (a group is one grouped statement
-of it — definitions still consume their line). Imports
-are rejected inside a group (statements, not expressions — write them outside), and
-`\alias`/`\dual` are rejected (top-level directives). An unclosed group is incomplete
+of it — definitions still consume their line). Imports are rejected inside an ordinary
+group; a quoted statement sequence may contain them. `\alias`/`\dual` are rejected
+(top-level directives). An unclosed group is incomplete
 input — the REPL offers a continuation prompt, and a blank line cancels.
 
 Braces `{}` are deliberately **not** given a grouping meaning — they are reserved for

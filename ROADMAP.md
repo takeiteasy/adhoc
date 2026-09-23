@@ -121,7 +121,7 @@ tree.
     the design.
 - Function composition (`∘`), `\map`/`\fold`/`\filter` (generalizing the `Σ`/`Π` fold), partial
   application (`f(a, ·)`).
-- Reflection: `\body(f)`.
+- Reflection: `\body(f)` is implemented for user-defined functions and lambdas.
 - Custom infix operators: `\infix(N) ⊕(a, b) = ...` with declared precedence.
   - Open: precedence numbering scheme (range, relation to built-in operators).
 
