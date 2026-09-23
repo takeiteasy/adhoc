@@ -509,8 +509,8 @@ everywhere a name is consumed, seeded with:
 ordinary definition forms with a second spelling attached:
 
 ```
-\dual \alpha, α = 3.14               -- binds \alpha; α reads the same binding
-\dual \fact, φ(n) = n*\fact(n-1)     -- a function with a short spelling
+\dual \alpha, α = 3.14               -- binds \alpha; echoes α = 3.14
+\dual \fact, φ(n) = n*\fact(n-1)     -- echoes φ = <fn φ(n)>
 ```
 
 Rules:
@@ -535,10 +535,14 @@ Rules:
   environment and constants; scripts and `\import`ed modules parse with the seed
   alone — they never inherit or export declarations. The driver API threads the map
   explicitly (`parse_program`/`compile_source` take `aliases=`).
-- **Diagnostics echo canonical names**: an error about a use of `π` names `pi`. The
-  source spelling is not carried into the value model — accepted for v1.
+- **Source spelling**: each name-bearing occurrence retains the spelling written at
+  that occurrence as non-semantic metadata. Canonical names still determine identity,
+  lookup, and protection; diagnostics and fresh declaration echoes use the written
+  spelling. For example, `\dual \alpha, α = 3.14` echoes `α = 3.14` while storing
+  `\alpha` in the environment.
 - **Atomic registration**: declarations merge into the session map only after the
   parse of their input unit succeeds; a failed or cancelled line declares nothing.
+  An evaluation failure after a successful parse may leave a declaration registered.
 
 Bare `\alias`/`\dual` heads (not followed by a name) stay ordinary unbound names and
 report their usage at evaluation, like `\py`.
@@ -547,7 +551,8 @@ report their usage at evaluation, like `\py`.
 
 One rule everywhere (`x = e`, any statement context):
 
-- `x` protected (a prelude name, except `i`) → error `` `pi` is protected ``
+- `x` protected (a prelude name, except `i`) → error naming the written spelling, e.g.
+  `` `π` is protected ``
 - `x` unbound in the current frame → **bind** it, prints `x = v`
 - `x` bound in the current frame → **compare** current value to `v`, prints `true` / `false`
 
@@ -599,9 +604,9 @@ equally final. Built-in names live in a prelude scope protected by the same mech
 | `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
-`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `pi` is protected ``
-— diagnostics echo the canonical name, see `## Name aliases`), never shadows — except
-`i`, the one shadowable prelude name (above).
+`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `π` is protected ``,
+naming the spelling written at the failing occurrence), never shadows — except `i`,
+the one shadowable prelude name (above).
 Unicode and ASCII spellings are the same value — `π` and `\pi` are one
 name, not two, and `i` and `\i` are one name reached as a bare identifier and as a
 `\`-reference. The function builtins replaced the original float-tier `math.*` aliases

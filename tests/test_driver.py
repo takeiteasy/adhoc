@@ -418,14 +418,13 @@ def test_prelude_names_cannot_be_shadowed_by_locals():
     run_source("f(x) = π = 1; x", env)  # definition succeeds; the body is never run
     with pytest.raises(EvalError) as e:
         run_source("f(5)", env)
-    # The alias mechanism normalizes π to the canonical name; diagnostics echo it.
-    assert e.value.msg == "`pi` is protected"
+    assert e.value.msg == "`π` is protected"
 
 
 def test_prelude_names_cannot_be_binder_variables():
-    with pytest.raises(EvalError, match="`pi` is protected"):
+    with pytest.raises(EvalError, match="`π` is protected"):
         run_source("\\sum(π=1..2) π")
-    with pytest.raises(EvalError, match="`pi` is protected"):
+    with pytest.raises(EvalError, match="`π` is protected"):
         run_source("\\lim(π=0) π")
 
 
@@ -552,9 +551,9 @@ def test_user_alias_drives_folds_and_reads():
 
 
 def test_alias_takes_effect_from_the_next_statement():
-    # Declare-before-use: a use parsed before the declaration reads the raw
-    # spelling, which no declaration retroactively renames.
-    with pytest.raises(EvalError, match=r"`\\sum` is not bound"):
+    # Declare-before-use: the first `σ` remains its own binding, while the later
+    # use resolves through the newly declared alias and reports that spelling.
+    with pytest.raises(EvalError, match="`σ` is not bound"):
         run_source("σ = 5; \\alias \\sum, σ; σ")
 
 
@@ -569,7 +568,7 @@ def test_alias_bare_heads_report_usage():
 
 def test_dual_binds_one_name_under_two_spellings():
     out = run_source("\\dual \\alpha, α = 3.14e0; α + \\alpha")
-    assert out[0] == "\\alpha = 3.14"
+    assert out[0] == "α = 3.14"
     assert out[-1] == "= 6.28"
 
 
@@ -592,6 +591,92 @@ def test_dual_function_recurses_through_the_short_spelling():
     aliases = dict(ALIAS_SEED)
     run_source("\\dual \\fact, φ(n) = n <= 1 ? 1 : n * φ(n - 1)", env, aliases=aliases)
     assert last("φ(5)", env, aliases=aliases) == "= 120"
+
+
+def test_alias_definition_echo_uses_written_spelling():
+    env: dict = {}
+    aliases: dict[str, str] = {}
+    assert run_source(r"\alias x, ξ; ξ = 1", env, aliases=aliases) == ["ξ = 1"]
+    assert env == {"x": 1}
+
+
+def test_dual_function_echo_keeps_definition_spellings():
+    env: dict = {}
+    aliases: dict[str, str] = {}
+    out = run_source(r"\alias \arg, ξ; \dual \fact, φ(ξ) = ξ", env, aliases=aliases)
+    assert out == ["φ = <fn φ(ξ)>"]
+    assert set(env) == {"fact"}
+    assert run_source("φ(3)", env, aliases=aliases) == ["= 3"]
+
+
+def test_alias_unbound_name_reports_its_occurrence_spelling():
+    with pytest.raises(EvalError) as error:
+        run_source(r"\alias \missing, μ; μ")
+    assert error.value.msg == "`μ` is not bound"
+    assert error.value.span == Span(21, 23)
+
+
+def test_alias_protected_name_reports_its_occurrence_spelling():
+    with pytest.raises(EvalError) as error:
+        run_source(r"\alias \pi, ϖ; ϖ = 3")
+    assert error.value.msg == "`ϖ` is protected"
+
+
+def test_duplicate_definition_uses_the_attempted_alias_spelling():
+    env: dict = {}
+    aliases: dict[str, str] = {}
+    run_source(r"\dual \f, φ(x) = x", env, aliases=aliases)
+    aliases["η"] = "f"
+    with pytest.raises(EvalError) as error:
+        run_source("η(x) = x", env, aliases=aliases)
+    assert error.value.msg == "`η` is already bound"
+
+
+def test_alias_call_arity_uses_the_call_site_spelling():
+    env: dict = {}
+    aliases: dict[str, str] = {}
+    run_source(r"\dual \f, φ(x) = x", env, aliases=aliases)
+    with pytest.raises(EvalError) as error:
+        run_source("φ()", env, aliases=aliases)
+    assert error.value.msg == "φ takes 1 arguments, got 0"
+
+
+def test_alias_fold_and_limit_errors_use_written_forms(monkeypatch):
+    import adhoc.runtime as runtime
+
+    monkeypatch.setattr(runtime, "MAX_TERMS", 50)
+    with pytest.raises(EvalError) as fold_error:
+        run_source(r"\alias \sum, σ; σ(i=1..) i")
+    assert fold_error.value.msg == "σ did not converge within 50 terms"
+
+    monkeypatch.setattr(runtime, "MAX_PROBES", 1)
+    with pytest.raises(EvalError) as limit_error:
+        run_source(r"\alias \lim, ℓ; ℓ(x=0) 1/x")
+    assert limit_error.value.msg == "ℓ did not converge within 1 probes"
+
+
+def test_alias_prelude_domain_error_uses_written_spelling():
+    with pytest.raises(EvalError) as error:
+        run_source(r"\alias \complex, ζ; ζ(1)")
+    assert error.value.msg == "ζ takes two components: ζ(re, im)"
+
+    with pytest.raises(EvalError) as ordinary:
+        run_source(r"\alias \re, ρ; ρ(\true)")
+    assert ordinary.value.msg == "booleans are not numbers"
+
+
+def test_alias_bare_lambda_reports_written_spelling():
+    with pytest.raises(EvalError) as error:
+        run_source(r"\alias \fn, f; f")
+    assert error.value.msg == (
+        "`f` takes a parenthesized parameter list: \\λ(x) body "
+        "(ASCII spelling \\fn(x) body)")
+
+
+def test_alias_limit_disagreement_uses_written_form():
+    with pytest.raises(EvalError) as error:
+        run_source(r"\alias \lim, ℓ; ℓ(x=0) x < 0 ? -1 : 1")
+    assert error.value.msg == "ℓ does not exist: left and right estimates disagree"
 
 
 # --- symbolic closed forms: the first tier above exact rationals ---

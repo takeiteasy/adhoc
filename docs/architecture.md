@@ -9,7 +9,8 @@ are thin drivers over it, depending on it the way any other consumer would.
 adhoc/
 ├── span        — byte-offset spans (start, end)
 ├── lexer       — tokens: numbers, strings, identifiers, \-names, operators, the √ radical
-├── syntax      — frozen AST dataclasses, each node carries its own Span
+├── syntax      — frozen AST dataclasses, each node carries its own Span and optional
+│                 non-semantic source spelling
 ├── parser      — precedence climbing over docs/grammar.md
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
@@ -42,7 +43,8 @@ source text
 lexer (lexer.py)       -- tokens with byte-offset spans
     │
     ▼
-parser (parser.py)     -- precedence climbing → syntax.py dataclasses, spans tagged at construction
+parser (parser.py)     -- precedence climbing → syntax.py dataclasses; canonical names
+     │                    and source spellings, spans tagged at construction
     │
     ▼
 compiler (compiler.py) -- lowering to Python source: one line per statement,
@@ -68,10 +70,15 @@ span id per lowered operation and emits it as an argument; `runtime.Engine` rais
 `EvalError(msg, span)` from that id when an operation fails. This preserves per-node span
 narrowing end-to-end: in `1 + x`, an unbound-`x` failure points at `x`, not at the statement;
 in `2 + 1/0`, the division-by-zero points at `1/0`.
-
-`diagnostic.render(source, label, message, span)` takes a span and a message rather than an
-error value, which is what lets the REPL and script mode share it unchanged — the one
+`diagnostic.render(source, label, message, span)` takes a span and a message rather than
+an error value, which is what lets the REPL and script mode share it unchanged — the one
 difference between them is *when* each calls it, not how the output looks.
+
+Name-bearing AST nodes also retain an optional written spelling with `compare=False`.
+Canonical fields remain the only inputs to lookup, protection, recursion, and value
+identity; spelling fields travel to the compiler and engine solely for diagnostics and
+fresh declaration echoes.
+
 
 ## Engine notes
 
@@ -81,10 +88,10 @@ difference between them is *when* each calls it, not how the output looks.
   statement invariant the table depends on.
 - Variables never become Python name loads or stores — reads go through `_e.var`, writes
   through `_e.assign` (bind-or-compare; globals are single-assignment). Function calls create a
-  local frame with global read-through; body writes use `_e.set` and never escape. The user
-  environment is a plain dict kept separate from exec globals. Callables bind like any
-  value; strings never enter it.
-- Application lowers to `_e.app(head, args, kwargs, sid)` with dynamic juxtaposition:
+  local frame with global read-through; body writes use `_e.assign` and never escape. The user
+  environment is a plain dict kept separate from exec globals. Callables and strings bind like
+  any other value.
+- Application lowers to `_e.app(head, args, kwargs, sid, spelling)` with dynamic juxtaposition:
   callable heads apply (kwargs pass through as native Python keyword arguments); a
   non-callable head with one positional argument and no kwargs falls back to
   multiplication; anything else fails at the call's span. Definitions lower to callable
@@ -94,7 +101,7 @@ difference between them is *when* each calls it, not how the output looks.
   eager ordinary call).
   `\py(path)` has its own seam method
   resolving the dotted path and converting results back through the matrix
-  (docs/numerics.md). Imports lower to `_e.import_(path, members, sid)` and
+  (docs/numerics.md). Imports lower to `_e.import_(path, members, sid, member_spellings)` and
   `_e.pyimport(...)`: the session's module registry (absolute path → module
   environment), the import base directory, and the in-progress import chain ride on
   the root engine and are inherited by every child frame and imported module engine,
@@ -105,7 +112,8 @@ difference between them is *when* each calls it, not how the output looks.
   value through the numeric seam.
 - Folds and limits lower like definitions: `Fold`/`Limit` compile their bodies via
   `_compile_body` into the unit's `definitions` table and emit one engine call —
-  `_e.fold(op, "i", <range>, sid)` / `_e.limit("x", <point>, sid)`. The engine evaluates
+  `_e.fold(op, "i", <range>, sid, spelling, var_spelling)` /
+  `_e.limit("x", <point>, sid, spelling, var_spelling)`. The engine evaluates
   the body once per term or probe in a fresh child frame (the `AdFunction.__call__`
   scoping pattern: parent read-through, local writes); all accumulation arithmetic runs
   through the numeric seam inside `runtime.py`, never in generated code. The convergence

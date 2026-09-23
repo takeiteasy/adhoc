@@ -79,6 +79,10 @@ def test_lambdas_display_as_lambda():
     assert run_source("\\dbl = \\λ(x) 2x", {}) == ["\\dbl = <λ(x)>"]
 
 
+def test_lambda_display_uses_written_parameter_spelling():
+    assert run_source(r"\alias \arg, ξ; \fn(ξ) ξ", {}) == ["= <λ(ξ)>"]
+
+
 def test_lambda_binding_checks_by_identity():
     env = define("g = \\fn(x) x")
     assert run_source("g = g", env) == ["true"]
@@ -110,7 +114,7 @@ def test_lambdas_reject_keyword_arguments():
 
 
 def test_lambda_parameters_reject_protected_names():
-    with pytest.raises(EvalError, match="`pi` is protected"):
+    with pytest.raises(EvalError, match="`π` is protected"):
         run_source("\\fn(π) π", {})
 
 

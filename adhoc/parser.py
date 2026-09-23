@@ -148,6 +148,10 @@ _LAMBDA_HEADS = ("λ", "fn")
 ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi"}
 
 
+def _spelling(tok: Ident | Backslash) -> str:
+    return tok.ch if isinstance(tok, Ident) else f"\\{tok.name}"
+
+
 class _Parser:
     def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None):
         self.tokens = tokens
@@ -234,8 +238,8 @@ class _Parser:
         BackslashRef — the language's own long/short name convention."""
         canonical = self._canonical(spelling)
         if len(canonical) == 1:
-            return Var(ch=canonical, span=span)
-        return BackslashRef(name=canonical, span=span)
+            return Var(ch=canonical, span=span, spelling=spelling)
+        return BackslashRef(name=canonical, span=span, spelling=spelling)
 
     # program ::= statement (sep statement)* ;
     # sep ::= newline run | ";" — newlines are whitespace-carved statement boundaries
@@ -302,7 +306,8 @@ class _Parser:
                 span = ident_tok.span.to(value.span)
                 name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
                         else ident_tok.name)
-                return Assign(name=name, value=value, span=span)
+                return Assign(name=name, value=value, span=span,
+                              spelling=_spelling(ident_tok))
             if isinstance(self.peek2(), LParen):
                 saved = self.pos
                 defn = self._func_def_or_none()
@@ -328,6 +333,7 @@ class _Parser:
                 f"expected a string literal naming the {what}, found {path_tok.describe}")
         self.advance()
         members: list[str] = []
+        member_spellings: list[str] = []
         if isinstance(self.peek(), Colon):
             self.advance()
             while True:
@@ -335,6 +341,7 @@ class _Parser:
                 if isinstance(tok, (Ident, Backslash)):
                     members.append(self._canonical(tok.ch) if isinstance(tok, Ident)
                                    else tok.name)
+                    member_spellings.append(_spelling(tok))
                     self.advance()
                 else:
                     raise self.error_at_current(
@@ -350,7 +357,7 @@ class _Parser:
         rparen = self.expect(RParen, "`)`")
         cls = PyImport if head.name == "pyimport" else Import
         return cls(path=path_tok.text, members=tuple(members),
-                   span=head.span.to(rparen.span))
+                   span=head.span.to(rparen.span), member_spellings=tuple(member_spellings))
 
     # spelling-directive ::= "\\alias" name ("," name)+
     #                      | "\\dual" name "," name params? "=" statement (";" statement)* ;
@@ -402,16 +409,20 @@ class _Parser:
         # one it is a plain binding whose value is a single expression, exactly
         # like statement-level `=`.
         params: tuple[str, ...] = ()
+        param_spellings: tuple[str, ...] = ()
+        spelling = _spelling(end)
         if isinstance(self.peek(), LParen):
             self.advance()
-            params = self._func_params()
+            params, param_spellings = self._func_params()
         self.expect(Eq, "`=`")
         if params:
             body = self._func_body()
             return FuncDef(name=canonical, params=params, body=body,
-                           span=head.span.to(body.span))
+                           span=head.span.to(body.span), spelling=spelling,
+                           param_spellings=param_spellings)
         value = self.expr()
-        return Assign(name=canonical, value=value, span=head.span.to(value.span))
+        return Assign(name=canonical, value=value, span=head.span.to(value.span),
+                      spelling=spelling)
 
     def _collect_name_list(self) -> list[tuple[Token, str]]:
         """Comma-separated name spellings (Ident or Backslash tokens) with their
@@ -431,15 +442,17 @@ class _Parser:
                 break
         return names
 
-    def _func_params(self) -> tuple[str, ...]:
+    def _func_params(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         # Newlines are whitespace where an operand is expected: the parameter list
         # may span lines (`f(\nx, y)`).
         self._skip_newlines()
         params: list[str] = []
+        param_spellings: list[str] = []
         while True:
             tok = self.peek()
             if isinstance(tok, Ident):
                 params.append(self._canonical(tok.ch))
+                param_spellings.append(_spelling(tok))
                 self.advance()
             elif isinstance(tok, RParen):
                 break
@@ -452,7 +465,7 @@ class _Parser:
             else:
                 break
         self.expect(RParen, "`)`")
-        return tuple(params)
+        return tuple(params), tuple(param_spellings)
 
     def _func_body(self) -> Node:
         self.depth += 1
@@ -481,10 +494,12 @@ class _Parser:
         self.advance()  # LParen — caller verified peek2
         self._skip_newlines()
         params: list[str] = []
+        param_spellings: list[str] = []
         while True:
             tok = self.peek()
             if isinstance(tok, Ident):
                 params.append(self._canonical(tok.ch))
+                param_spellings.append(_spelling(tok))
                 self.advance()
             elif isinstance(tok, RParen):
                 break
@@ -504,7 +519,8 @@ class _Parser:
         span = ident_tok.span.to(body.span)
         name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
                 else ident_tok.name)
-        return FuncDef(name=name, params=tuple(params), body=body, span=span)
+        return FuncDef(name=name, params=tuple(params), body=body, span=span,
+                       spelling=_spelling(ident_tok), param_spellings=tuple(param_spellings))
 
     # The statement list of a parenthesized group: statements separated by a newline
     # run or a single `;` (blank lines are free, `;;` an error, a trailing `;` before
@@ -543,13 +559,14 @@ class _Parser:
     # matching `f()` legality.
     def _lambda(self, head: Backslash) -> Node:
         self.expect(LParen, "`(`")
-        params = self._func_params()
+        params, param_spellings = self._func_params()
         if isinstance(self.peek(), Eq):
             raise ParseError(
                 "a lambda takes a body, not `=`: \\fn(x) x^2 — name it with f(x) = body",
                 head.span.to(self.peek().span))
         body = self.expr()
-        return Lambda(params=params, body=body, span=head.span.to(body.span))
+        return Lambda(params=params, body=body, span=head.span.to(body.span),
+                      param_spellings=param_spellings)
 
     def expr(self) -> Node:
         return self.ternary()
@@ -695,8 +712,9 @@ class _Parser:
                 # Fold/limit heads are reserved special forms — any parenthesized use
                 # that is not the binder shape is a usage error, not an application of
                 # an unbound name.
-                usage = ("\\lim(x=a) body" if fold_op is None
-                         else "\\sum(i=a..b) body")
+                label = self._form_label(node)
+                usage = (f"{label}(x=a) body" if fold_op is None
+                         else f"{label}(i=a..b) body")
                 raise ParseError(
                     f"{self._form_label(node)} takes a binder as its first "
                     f"argument: {usage}",
@@ -724,7 +742,7 @@ class _Parser:
                     if isinstance(item, KwArg):
                         if item.name in seen:
                             raise ParseError(
-                                f"duplicate keyword argument `{item.name}`", item.span)
+                                f"duplicate keyword argument `{item.spelling or item.name}`", item.span)
                         seen.add(item.name)
                 args = tuple(i for i in items if not isinstance(i, KwArg))
                 kwargs = tuple(i for i in items if isinstance(i, KwArg))
@@ -736,7 +754,8 @@ class _Parser:
                 and node.head.name == "py"
                 and (len(node.args) != 1 or node.kwargs)
             ):
-                raise ParseError("`\\py` takes exactly one argument", node.span)
+                raise ParseError(
+                    f"`{self._form_label(node.head)}` takes exactly one argument", node.span)
         return node
 
     def _fold_head(self, node: Node) -> BinOperator | None:
@@ -771,10 +790,11 @@ class _Parser:
         return isinstance(self.look(k), Eq)
 
     def _special_form(self, head: Node, fold_op: BinOperator | None) -> Node:
-        label = self._LIMIT_LABEL if fold_op is None else self._form_label(head)
+        label = self._form_label(head)
         self.advance()  # LParen — caller verified
         self._skip_newlines()
-        var = self._canonical(self.advance().ch)
+        var_tok = self.advance()
+        var = self._canonical(var_tok.ch)
         self.expect(Eq, "`=`")
         bound = self.expr()
         self.expect(RParen, "`)`")
@@ -787,13 +807,17 @@ class _Parser:
                     f"{self._form_label(head)}(i=1..10)",
                     bound.span,
                 )
-            return Fold(op=fold_op, var=var, rng=bound, body=body, span=span)
-        return Limit(var=var, point=bound, body=body, span=span)
+            return Fold(op=fold_op, var=var, rng=bound, body=body, span=span,
+                        spelling=label, var_spelling=_spelling(var_tok))
+        return Limit(var=var, point=bound, body=body, span=span,
+                     spelling=label, var_spelling=_spelling(var_tok))
 
     def _form_label(self, head: Node) -> str:
         match head:
-            case BackslashRef(name=name):
-                return f"\\{name}"
+            case BackslashRef(name=name, spelling=spelling):
+                return spelling or f"\\{name}"
+            case Var(ch=ch, spelling=spelling):
+                return spelling or ch
             case _:
                 return "?"
 
@@ -811,7 +835,8 @@ class _Parser:
             value = self.call_value()
             name = (self._canonical(name_tok.ch) if isinstance(name_tok, Ident)
                     else name_tok.name)
-            return KwArg(name=name, value=value, span=name_tok.span.to(value.span))
+            return KwArg(name=name, value=value, span=name_tok.span.to(value.span),
+                         spelling=_spelling(name_tok))
         return self.call_value()
 
     def call_value(self) -> Node:
@@ -842,7 +867,7 @@ class _Parser:
                     self.advance()
                     return self._lambda(tok)
                 self.advance()
-                return BackslashRef(name=tok.name, span=tok.span)
+                return BackslashRef(name=tok.name, span=tok.span, spelling=_spelling(tok))
             case Radical():
                 # `√` is the prefix spelling of `\sqrt(...)`: the operand parses at
                 # the unary level (so `√2^2` reads √(2²), `2^√2` works, `√2·3` is
@@ -852,7 +877,7 @@ class _Parser:
                 # like an unclosed parenthesis.
                 rad = self.advance()
                 operand = self.unary()
-                return Call(head=BackslashRef(name="sqrt", span=rad.span),
+                return Call(head=BackslashRef(name="sqrt", span=rad.span, spelling="√"),
                             args=(operand,), span=rad.span.to(operand.span))
             case LParen():
                 self.advance()

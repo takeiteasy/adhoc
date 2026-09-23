@@ -137,9 +137,9 @@ literals:
 ## globals / constants
 
 ```
-> π = 3.14159265358979
-< π = 3.14159265358979
-> π = 4 -- a repeat `=` compares; it can never overwrite
+> x = 3.14159265358979
+< x = 3.14159265358979
+> x = 4 -- a repeat `=` compares; it can never overwrite
 < false
 ```
 

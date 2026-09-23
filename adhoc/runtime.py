@@ -40,8 +40,10 @@ stays at the lowest tier that remains exact:
 The `Engine` object is the seam's other half: every operation in generated code routes
 through it carrying a span id, which is what keeps runtime-error spans narrow (a
 sub-expression's failure points at the sub-expression, matching interp.rs's narrowing).
-Statement-level bind-or-compare lives here too, since `=` never lowers to Python
-assignment.
+Name-bearing operations also carry canonical names for lookup and optional source
+spellings for diagnostics and declaration echoes. Statement-level bind-or-check lives
+here too, since `=` never lowers to Python assignment.
+
 
 ## Convergence
 
@@ -170,6 +172,7 @@ import importlib
 import math
 import numbers
 import os
+import re
 import sympy
 import types
 from typing import Any, Callable, NoReturn
@@ -752,9 +755,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
         return "true" if v else "false"
     if isinstance(v, AdFunction):
         if not v.name:
-            return f"<λ({', '.join(v.params)})>"
-        label = f"\\{v.name}" if len(v.name) > 1 else v.name
-        return f"<fn {label}({', '.join(v.params)})>"
+            return f"<λ({', '.join(v.param_spellings)})>"
+        return f"<fn {v.display_name}({', '.join(v.param_spellings)})>"
     if isinstance(v, str):
         return _show_str(v)
     if isinstance(v, RangeValue):
@@ -804,6 +806,27 @@ def _show_callable(fn: Any) -> str:
 
 def _name_text(name: str) -> str:
     return name if len(name) == 1 else f"\\{name}"
+
+
+def _display_name(name: str, spelling: str | None) -> str:
+    return spelling or _name_text(name)
+
+
+def _display_params(params: tuple[str, ...], spellings: tuple[str, ...] = ()) -> tuple[str, ...]:
+    return tuple(
+        spellings[index] if index < len(spellings) and spellings[index] else _name_text(param)
+        for index, param in enumerate(params)
+    )
+
+
+def _display_builtin_error(message: str, name: str, spelling: str | None) -> str:
+    if not spelling:
+        return message
+    canonical = _name_text(name)
+    if canonical in message:
+        return message.replace(canonical, spelling)
+    pattern = rf"(?<!\w){re.escape(name)}(?!\w)"
+    return re.sub(pattern, lambda _: spelling, message)
 
 
 def _show_float(f: float) -> str:
@@ -1037,13 +1060,14 @@ _IMPORTING = object()  # module-registry marker: evaluation in progress (cycle g
 
 
 class AdFunction:
-    def __init__(self, name, params, body, closure):
+    def __init__(self, name, params, body, closure, spelling=None, param_spellings=()):
         self.name, self.params, self.body, self.closure = name, params, body, closure
+        self.display_name = _display_name(name, spelling) if name else "λ"
+        self.param_spellings = _display_params(params, param_spellings)
 
     def __call__(self, *args):
         if len(args) != len(self.params):
-            # Anonymous functions (name "") report the λ spelling.
-            raise EvalError(f"{self.name or 'λ'} takes {len(self.params)} arguments, "
+            raise EvalError(f"{self.display_name} takes {len(self.params)} arguments, "
                             f"got {len(args)}")
         frame = dict(zip(self.params, args))
         if self.name:
@@ -1209,64 +1233,67 @@ class Engine:
             scope = scope.parent
         return PRELUDE.get(name, _MISSING)
 
-    def var(self, name: str, sid: int) -> AdValue:
+    def var(self, name: str, sid: int, spelling: str | None = None) -> AdValue:
         value = self._lookup(name)
         if value is _MISSING:
-            self._fail(f"`{name}` is not bound", sid)
+            self._fail(f"`{_display_name(name, spelling)}` is not bound", sid)
         return value
 
-    def bref(self, name: str, sid: int) -> AdValue:
+    def bref(self, name: str, sid: int, spelling: str | None = None) -> AdValue:
+        label = _display_name(name, spelling)
         if name == "py":
-            self._fail(r'`\py` must be applied to a path: \py("dotted.path")', sid)
+            self._fail(f"`{label}` must be applied to a path: \\py(\"dotted.path\")", sid)
         if name == "import":
-            self._fail(r'`\import` reads an ad file: \import("lib") or \import("lib": f)', sid)
+            self._fail(f"`{label}` reads an ad file: \\import(\"lib\") or "
+                       "\\import(\"lib\": f)", sid)
         if name == "pyimport":
-            self._fail(r'`\pyimport` binds Python members: \pyimport("math": \sqrt)', sid)
+            self._fail(f"`{label}` binds Python members: "
+                       "\\pyimport(\"math\": \\sqrt)", sid)
         if name == "alias":
-            self._fail("`\\alias` declares short spellings at top level: \\alias \\sum, σ", sid)
+            self._fail(f"`{label}` declares short spellings at top level: "
+                       "\\alias \\sum, σ", sid)
         if name == "dual":
-            self._fail("`\\dual` defines a name under two spellings: \\dual \\alpha, α = 3.14", sid)
+            self._fail(f"`{label}` defines a name under two spellings: "
+                       "\\dual \\alpha, α = 3.14", sid)
         if name in ("fn", "λ"):
-            self._fail("a lambda takes a parenthesized parameter list: \\λ(x) body "
+            self._fail(f"`{label}` takes a parenthesized parameter list: \\λ(x) body "
                        "(ASCII spelling \\fn(x) body)", sid)
         value = self._lookup(name)
         if value is _MISSING:
-            self._fail(f"`\\{name}` is not bound", sid)
+            self._fail(f"`{label}` is not bound", sid)
         return value
 
-    def define(self, name, params, sid):
-        # Parameters bind into the call frame exactly like assignments, so a protected
-        # parameter would shadow a prelude name — rejected at definition.
-        for p in params:
+    def define(self, name, params, sid, spelling=None, param_spellings=()):
+        param_names = _display_params(params, param_spellings)
+        for p, display in zip(params, param_names):
             if self._protected(p):
-                self._fail(f"`{p}` is protected", sid)
-        fn = AdFunction(name, params, self.definitions[sid], self)
-        # Definitions are declarations: the name must be fresh and unprotected.
-        # Identity comparison would make a check meaningless anyway.
+                self._fail(f"`{display}` is protected", sid)
+        fn = AdFunction(name, params, self.definitions[sid], self, spelling,
+                        param_spellings)
+        display_name = _display_name(name, spelling)
         if self._protected(name):
-            self._fail(f"`{name}` is protected", sid)
+            self._fail(f"`{display_name}` is protected", sid)
         if self._lookup(name) is not _MISSING:
-            self._fail(f"`{name}` is already bound", sid)
+            self._fail(f"`{display_name}` is already bound", sid)
         self.env[name] = fn
-        # _name_text sigilates multi-character names, so the echoed line needs no
-        # further rebranding.
-        result = f"{_name_text(name)} = {nshow(fn)}"
+        result = f"{display_name} = {nshow(fn)}"
         self.outputs.append(result)
         return result
 
-    def lambda_(self, params, sid):
+    def lambda_(self, params, sid, param_spellings=()):
         """`\\λ(params) body` / `\\fn(params) body` — an anonymous AdFunction closed
         over the defining frame. Parameters reject protected names exactly like
         `define`; there is no self-name to install (recursion goes through named
         defs or a fixpoint combinator), and the empty name is what nshow renders
         as `<λ(x)>`."""
-        for p in params:
+        param_names = _display_params(params, param_spellings)
+        for p, display in zip(params, param_names):
             if self._protected(p):
-                self._fail(f"`{p}` is protected", sid)
-        return AdFunction("", params, self.definitions[sid], self)
+                self._fail(f"`{display}` is protected", sid)
+        return AdFunction("", params, self.definitions[sid], self, "", param_spellings)
 
     def assign(self, name: str, value: AdValue, sid: int,
-               echo: bool = False) -> AdValue | bool:
+               echo: bool = False, spelling: str | None = None) -> AdValue | bool:
         """`x = e` — declare-once-then-check, the one binding rule. A protected
         prelude name is rejected; a name already bound in the current frame compares
         by value (`1 = 1.0` is true — the tower, not the type); otherwise the name
@@ -1274,8 +1301,9 @@ class Engine:
         frame-local, and nothing ever rebinds an existing binding. Silent in
         expression position (groups, bodies); statement-level lowering passes
         `echo=True` so the REPL/script transcript shows the outcome."""
+        display_name = _display_name(name, spelling)
         if self._protected(name):
-            self._fail(f"`{name}` is protected", sid)
+            self._fail(f"`{display_name}` is protected", sid)
         if name in self.env:
             matches = neq(self.env[name], value)
             if echo:
@@ -1283,7 +1311,7 @@ class Engine:
             return matches
         self.env[name] = value
         if echo:
-            self.outputs.append(f"{_name_text(name)} = {nshow(value)}")
+            self.outputs.append(f"{display_name} = {nshow(value)}")
         return value
 
     def _compare(self, op, a, b, sid):
@@ -1367,7 +1395,8 @@ class Engine:
             self._fail(f"{label} failed unexpectedly: {type(e).__name__}: {e}", sid)
         return scope["_result"]
 
-    def fold(self, op_name: str, name: str, value: AdValue, sid: int) -> AdValue:
+    def fold(self, op_name: str, name: str, value: AdValue, sid: int,
+             spelling: str | None = None, var_spelling: str | None = None) -> AdValue:
         """`\\sum(i=a..b) body` / `\\prod(...)`: iterate the bound RangeValue, evaluating
         the compiled body once per term in a fresh frame `{i: term}`. Finite ranges
         accumulate exactly at the lowest exact tier; lazy infinite ranges switch to the
@@ -1377,11 +1406,10 @@ class Engine:
         honored by a confirmation window) — erroring at MAX_TERMS rather than
         returning a misleading partial (docs/numerics.md). Products keep the
         plateau only (see _FoldTailEstimator)."""
-        label = FOLD_LABELS.get(op_name, "\\sum")
-        # The loop variable binds like a parameter: a protected name is a
-        # redefinition error, never a shadow.
+        label = spelling or FOLD_LABELS.get(op_name, "\\sum")
+        display_name = _display_name(name, var_spelling)
         if self._protected(name):
-            self._fail(f"`{name}` is protected", sid)
+            self._fail(f"`{display_name}` is protected", sid)
         if not isinstance(value, RangeValue):
             self._fail(f"{label} folds over a range, got {nshow(value)}", sid)
         fn = nmul if op_name == "mul" else nadd
@@ -1413,7 +1441,8 @@ class Engine:
                     self._fail(f"{label} did not converge within {MAX_TERMS} terms", sid)
         return acc
 
-    def limit(self, name: str, point_value: AdValue, sid: int) -> float:
+    def limit(self, name: str, point_value: AdValue, sid: int,
+              spelling: str | None = None, var_spelling: str | None = None) -> float:
         """`\\lim(x=a) body`, numeric only: probe both sides with geometrically shrinking
         steps — never evaluating at `a` itself; the ulp guard halts each side when a
         step would round back onto the anchor. Each side must stabilize within
@@ -1421,17 +1450,19 @@ class Engine:
         inside MAX_PROBES;
         sides stabilizing apart means the limit does not exist. Probes evaluate in the
         float tier like infinite-range folds (docs/numerics.md)."""
+        label = spelling or "\\lim"
+        display_name = _display_name(name, var_spelling)
         try:
             _reject_non_numeric(point_value)
             if _is_complex(point_value):
-                raise NumError("\\lim approaches a real point")
+                raise NumError(f"{label} approaches a real point")
             anchor = _as_float(point_value)
         except NumError as e:
             self._fail(e.args[0], sid)
         if not math.isfinite(anchor):
-            self._fail("\\lim approaches a finite point", sid)
+            self._fail(f"{label} approaches a finite point", sid)
         if self._protected(name):
-            self._fail(f"`{name}` is protected", sid)
+            self._fail(f"`{display_name}` is protected", sid)
         body = self.definitions[sid]
         h = max(abs(anchor), 1.0) * 0.5**7  # start close enough that ~60 halvings pass any ulp floor
         estimates: list[float] = []
@@ -1443,7 +1474,7 @@ class Engine:
                 probe = anchor + sign * h
                 if probe == anchor:
                     break  # step underflowed onto the anchor itself — never evaluate there
-                raw = self._eval_bound(body, {name: probe}, "\\lim", sid)
+                raw = self._eval_bound(body, {name: probe}, label, sid)
                 try:
                     estimate = _as_float(raw)
                 except NumError as e:
@@ -1454,11 +1485,13 @@ class Engine:
                 previous = estimate
                 h *= 0.5
             if not converged:
-                self._fail(f"\\lim did not converge within {MAX_PROBES} probes", sid)
+                self._fail(f"{label} did not converge within {MAX_PROBES} probes", sid)
             estimates.append(estimate)
         left, right = estimates[1], estimates[0]
         if not _agree(left, right):
-            self._fail("limit does not exist: left and right estimates disagree", sid)
+            display_label = "limit" if label == "\\lim" else label
+            self._fail(
+                f"{display_label} does not exist: left and right estimates disagree", sid)
         mid = self._binop(nadd, left, right, sid)
         return self._binop(ndiv, mid, 2, sid)
 
@@ -1473,20 +1506,22 @@ class Engine:
             self._fail("ternary condition was false and has no else branch", sid)
         return _to_ad(otherwise())
 
-    def py(self, path: Any, sid: int) -> Any:
+    def py(self, path: Any, sid: int, spelling: str | None = None) -> Any:
         """`\\py("dotted.path")` — resolve a Python dotted path to a callable. The
         argument must evaluate to a string (a literal or any string-valued
         expression); no other value names a path."""
+        label = _display_name("py", spelling)
         if not isinstance(path, str):
-            self._fail("`\\py` takes one string naming a dotted Python path", sid)
+            self._fail(f"`{label}` takes one string naming a dotted Python path", sid)
         obj = _resolve_dotted(path)
         if obj is _MISSING:
-            self._fail(f"`\\py` cannot resolve `{path}`", sid)
+            self._fail(f"`{label}` cannot resolve `{path}`", sid)
         if not callable(obj):
             self._fail(f"`{path}` is not callable", sid)
         return obj
 
-    def import_(self, path: Any, members: tuple[str, ...], sid: int) -> None:
+    def import_(self, path: Any, members: tuple[str, ...], sid: int,
+                 member_spellings: tuple[str, ...] = ()) -> None:
         """`\\import("lib")` / `\\import("lib": f, \\g)` — evaluate an ad source file
         once per session in a fresh root environment and bind its top-level names into
         this environment. See the module docstring's "Modules and imports" for the
@@ -1500,9 +1535,10 @@ class Engine:
         record = self.modules.get(resolved)
         if record is None:
             record = self._evaluate_module(resolved, path, sid)
-        self._bind_imported(record, members, path, sid)
+        self._bind_imported(record, members, path, sid, member_spellings)
 
-    def pyimport(self, path: Any, members: tuple[str, ...], sid: int) -> None:
+    def pyimport(self, path: Any, members: tuple[str, ...], sid: int,
+                 member_spellings: tuple[str, ...] = ()) -> None:
         """`\\pyimport("math": \\sqrt, \\tau)` — resolve a Python module and bind the
         named members into this environment. Callables bind as callables (the `\\py`
         rule); every other member converts through the interop matrix or fails at the
@@ -1520,21 +1556,23 @@ class Engine:
         if len(set(members)) != len(members):
             self._fail("duplicate member in `\\pyimport`", sid)
         bound: list[tuple[str, Any]] = []
-        for name in members:
+        for index, name in enumerate(members):
+            display_name = _display_name(
+                name, member_spellings[index] if index < len(member_spellings) else None)
             value = getattr(module, name, _MISSING)
             if value is _MISSING:
-                self._fail(f"module `{path}` has no member `{_name_text(name)}`", sid)
+                self._fail(f"module `{path}` has no member `{display_name}`", sid)
             if self._protected(name):
-                self._fail(f"`{_name_text(name)}` is protected", sid)
+                self._fail(f"`{display_name}` is protected", sid)
             if name in self.env:
-                self._fail(f"`{_name_text(name)}` is already bound", sid)
+                self._fail(f"`{display_name}` is already bound", sid)
             if callable(value):
                 bound.append((name, value))
                 continue
             try:
                 bound.append((name, _to_ad(value)))
             except NumError as e:
-                self._fail(f"member `{_name_text(name)}`: {e.args[0]}", sid)
+                self._fail(f"member `{display_name}`: {e.args[0]}", sid)
         for name, value in bound:
             self.env[name] = value
 
@@ -1595,27 +1633,30 @@ class Engine:
         return module_env
 
     def _bind_imported(self, module_env: dict, members: tuple[str, ...], path: str,
-                       sid: int) -> None:
+                       sid: int, member_spellings: tuple[str, ...] = ()) -> None:
         """Copy bindings out of a (cached) module environment: every top-level name,
         or only the selected members. Everything validates before anything binds, so
         a bad member leaves the environment untouched rather than partially
         imported. A name already bound to the *identical* cached value is a silent
         no-op (re-import), any other collision a typed error."""
         names = members if members else tuple(module_env)
+        spellings = member_spellings if members else ()
         if len(set(names)) != len(names):
             self._fail("duplicate member in `\\import`", sid)
-        for name in names:
+        for index, name in enumerate(names):
+            display_name = _display_name(
+                name, spellings[index] if index < len(spellings) else None)
             if name not in module_env:
-                self._fail(f"`{_name_text(name)}` is not defined in `{path}`", sid)
+                self._fail(f"`{display_name}` is not defined in `{path}`", sid)
             if self._protected(name):
-                self._fail(f"`{_name_text(name)}` is protected", sid)
+                self._fail(f"`{display_name}` is protected", sid)
             if name in self.env and self.env[name] is not module_env[name]:
-                self._fail(f"`{_name_text(name)}` is already bound", sid)
+                self._fail(f"`{display_name}` is already bound", sid)
         for name in names:
             self.env[name] = module_env[name]
 
     def app(self, fn: Any, args: tuple[Any, ...], kwargs: dict[str, Any],
-            sid: int) -> AdValue | str:
+            sid: int, spelling: str | None = None) -> AdValue | str:
         """Postfix application `f(args, \\name=value…)` lowered to one seam call, with
         dynamic juxtaposition: a callable head applies; a non-callable head with exactly
         one positional argument and no kwargs falls back to the paper product
@@ -1628,16 +1669,21 @@ class Engine:
         if callable(fn):
             if kwargs and isinstance(fn, AdFunction):
                 self._fail("user-defined functions take positional arguments only", sid)
+            if isinstance(fn, AdFunction) and len(args) != len(fn.params):
+                label = spelling or fn.display_name
+                self._fail(f"{label} takes {len(fn.params)} arguments, "
+                           f"got {len(args)}", sid)
             try:
                 result = fn(*args, **kwargs)
             except NumError as e:
-                # A seam-native callable's typed failure gets the call's span (a
-                # bare NumError escaping would lose it to the defensive mapper).
-                self._fail(e.args[0], sid)
+                message = e.args[0]
+                if isinstance(fn, PreludeFn):
+                    message = _display_builtin_error(message, fn.name, spelling)
+                self._fail(message, sid)
             except EvalError:
                 raise
             except Exception as e:
-                name = getattr(fn, "__name__", None) or "<callable>"
+                name = spelling or getattr(fn, "__name__", None) or "<callable>"
                 self._fail(f"{name}: {type(e).__name__}: {e}", sid)
             try:
                 return _to_ad(result)

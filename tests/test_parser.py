@@ -1,3 +1,5 @@
+from dataclasses import fields, replace
+
 import pytest
 
 from adhoc.parser import IncompleteInput, ParseError, parse_program
@@ -12,10 +14,13 @@ from adhoc.syntax import (
     Fold,
     FuncDef,
     IfExpr,
+    Import,
     KwArg,
+    Lambda,
     Limit,
     NoOp,
     NumLit,
+    PyImport,
     Range,
     Seq,
     StrLit,
@@ -28,11 +33,14 @@ from adhoc.syntax import (
 def shape(node):
     r"""A span-free structural snapshot, for comparing trees built from source spellings
     of different byte widths (`Σ` vs `\sum`)."""
+    if isinstance(node, tuple):
+        return tuple(shape(item) for item in node)
     if not hasattr(node, "__dataclass_fields__"):
         return repr(node)
     return (
         type(node).__name__,
-        {k: shape(v) for k, v in vars(node).items() if k != "span"},
+        {f.name: shape(getattr(node, f.name)) for f in fields(node)
+         if f.name != "span" and f.compare},
     )
 
 
@@ -315,7 +323,7 @@ def test_string_kwarg_value():
 
 
 def test_duplicate_kwarg_is_a_parse_error():
-    with pytest.raises(ParseError, match="duplicate keyword argument `a`"):
+    with pytest.raises(ParseError, match="duplicate keyword argument `\\\\a`"):
         parse_program("f(\\a=1, \\a=2)")
 
 
@@ -502,8 +510,7 @@ def test_missing_body_after_closed_binder_is_incomplete():
 def test_non_binder_use_of_special_heads_is_a_usage_error():
     # Fold/limit heads are reserved special forms: a paren that is not the binder
     # shape is a usage error at the head, not an application of an unbound name.
-    # Aliased spellings report their canonical name (Σ normalizes to \sum).
-    for src, head in [("\\sum(2)", "\\sum"), ("Σ(x)", "\\sum"), ("\\lim(2)", "\\lim")]:
+    for src, head in [("\\sum(2)", "\\sum"), ("Σ(x)", "Σ"), ("\\lim(2)", "\\lim")]:
         with pytest.raises(ParseError, match="takes a binder as its first argument") as e:
             parse_program(src)
         assert head in e.value.msg
@@ -729,3 +736,98 @@ def test_dangling_radical_offers_continuation():
     # line exactly like an unclosed parenthesis.
     with pytest.raises(IncompleteInput):
         parse_program("√")
+
+
+def test_spelling_metadata_is_compare_false():
+    from adhoc import syntax
+
+    for name in ["Var", "BackslashRef", "Assign", "FuncDef", "KwArg", "Fold", "Limit",
+                 "Lambda", "Import", "PyImport"]:
+        cls = getattr(syntax, name)
+        for f in fields(cls):
+            if "spelling" in f.name:
+                assert f.compare is False, (name, f.name)
+
+
+def test_metadata_absent_from_structural_equality():
+    node = parse_program("\\dual \\alpha, α = 3.14")
+    canonical = replace(node, spelling="\\alpha")
+    assert node == canonical
+    assert hash(node) == hash(canonical)
+    assert node.spelling == "α" and canonical.spelling == "\\alpha"
+    assert shape(node) == shape(canonical)
+
+
+def test_var_and_bref_carry_the_written_spelling():
+    node = parse_program("\\alias x, ξ; ξ + \\x")
+    lhs, rhs = node.statements[1].lhs, node.statements[1].rhs
+    assert lhs.spelling == "ξ" and rhs.spelling == "\\x"
+
+
+def test_plain_names_carry_exact_spelling():
+    node = parse_program("x + \\y")
+    assert node.lhs.spelling == "x" and node.rhs.spelling == "\\y"
+
+
+def test_two_aliases_same_program_keep_distinct_spellings():
+    node = parse_program("\\alias \\sum, σ, Σ; (σ(i=1..1) i) + (Σ(j=1..1) j)")
+    first, second = node.statements[1].lhs, node.statements[1].rhs
+    assert first.spelling == "σ" and first.var_spelling == "i"
+    assert second.spelling == "Σ" and second.var_spelling == "j"
+
+
+def test_funcdef_and_lambda_param_spellings():
+    node = parse_program("\\dual \\f, φ(ξ) = ξ")
+    assert node.name == "f" and node.spelling == "φ"
+    assert node.params == ("ξ",)
+    assert node.param_spellings == ("ξ",)
+    lam = parse_program("\\λ(ξ) ξ + \\π(1)")
+    assert lam.param_spellings == ("ξ",)
+    assert isinstance(lam.body, BinOp) and lam.body.rhs.head.spelling == "\\π"
+
+
+def test_funcdef_ascii_and_unicode_shapes_match_but_spellings_differ():
+    a = parse_program("\\dual \\fact, φ(n) = n")
+    b = parse_program("\\fact(n) = n")
+    assert shape(a) == shape(b)
+    assert a.spelling == "φ" and b.spelling == "\\fact"
+    assert a.param_spellings == ("n",) and b.param_spellings == ("n",)
+
+
+def test_dual_short_spelling_is_the_short_name():
+    node = parse_program("\\dual \\alpha, α = 3.14")
+    assert node.name == "alpha" and node.spelling == "α"
+
+
+def test_kwarg_spelling_and_canonical_duplicate_detection():
+    with pytest.raises(ParseError, match="duplicate keyword argument `\\\\dpi`"):
+        parse_program("f(\\dpi=1, \\dpi=2)")
+    node = parse_program("f(\\dpi=1)")
+    assert node.kwargs[0].name == "dpi" and node.kwargs[0].spelling == "\\dpi"
+
+
+def test_fold_and_limit_keep_head_and_binder_spellings():
+    fold = parse_program("Σ(i=1..3) i")
+    assert fold.spelling == "Σ" and fold.var_spelling == "i"
+    lim = parse_program("\\lim(x=0) x")
+    assert lim.spelling == "\\lim" and lim.var_spelling == "x"
+
+
+def test_radical_bref_spelling_is_the_radical_sign():
+    node = parse_program("√2")
+    assert node.head.spelling == "√" and node.head.name == "sqrt"
+
+
+def test_import_member_spellings():
+    node = parse_program('\\import("lib.ad": f, \\fact)')
+    assert node.members == ("f", "fact")
+    assert node.member_spellings == ("f", "\\fact")
+    node = parse_program('\\pyimport("math": \\sqrt, \\tau)')
+    assert node.members == ("sqrt", "tau")
+    assert node.member_spellings == ("\\sqrt", "\\tau")
+
+
+def test_utf8_spans_with_spelled_names():
+    node = parse_program("π + ξ")
+    assert node.lhs.span == Span(0, 2)
+    assert node.rhs.span == Span(5, 7)

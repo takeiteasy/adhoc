@@ -100,6 +100,13 @@ def test_dual_persists_and_reads_through_both_spellings(tmp_path):
     assert out.count("= 3.14") == 3  # definition echo + both reads
 
 
+def test_aliased_name_diagnostic_renders_written_spelling(tmp_path):
+    out = run_repl("π = 3\n", tmp_path).stdout
+    assert "ERROR! `π` is protected" in out
+    assert "    π = 3" in out
+    assert "    ^~~~~" in out
+
+
 def test_alias_survives_incomplete_then_completed_input(tmp_path):
     # A declaration straddling the continuation prompt still lands once complete,
     # and the failed partial never committed a half-declaration.

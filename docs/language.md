@@ -27,9 +27,10 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   (`2x` = `2 * x`, `ab` = `a * b`).
 - Bare identifiers are exactly one character (ASCII or unicode); multi-character names,
   including user-defined function names, use the backslash sigil (`\fact`).
-- Assignment (`x = 1`) with declare-once-then-check semantics: a fresh name binds; `x = 1`
-  again *compares*, printing `true`/`false` — there is no reassignment and no declaration
-  operator, every binding is immutable (docs/grammar.md, `## Assignment semantics`).
+- Assignment (`x = 1`) with declare-once-then-check semantics: a fresh name binds and
+  echoes the spelling written at that occurrence; `x = 1` again *compares*, printing
+  `true`/`false` — there is no reassignment and no declaration operator, every binding
+  is immutable (docs/grammar.md, `## Assignment semantics`).
 - Multi-character variables use the same backslash sigil as multi-character functions:
   `\bar = 100; \foo = 200; \foobar = \foo\bar`.
 - `--` line comments, plus bare string literals as comment-like statements (`"a note"` alone
@@ -118,9 +119,12 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Name aliases: one name owns several spellings — `Σ` is `\sum`, `π` is `\pi`, and
   `\alias \sum, σ` declares your own for the session (declare-before-use, top-level
   only, protected names repurposed by no one; docs/grammar.md, `## Name aliases`).
+  Diagnostics and fresh declaration echoes use the spelling written at the occurrence;
+  the canonical name still determines identity and lookup.
 - Dual-form definitions: `\dual \alpha, α = 3.14` and `\dual \fact, φ(n) = ...` define
   the canonical name and register its short spelling in one statement; both spellings
-  read and compare as the same binding.
+  read and compare as the same binding, and the definition echo keeps the written name
+  and parameter spellings.
 - Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
   — approximate iteration in the float tier until values stabilize within tolerance
   (infinite sums additionally stop early on a confirmed tail estimate),
@@ -155,9 +159,9 @@ same way, and meaning comes from three places — the parser's closed set of spe
 the session alias map that normalizes short spellings to canonical
 names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`), and
 the prelude scope of
-built-in constants and function builtins (see docs/grammar.md, `## Constants and the
-prelude`). Everything else lexes cleanly and fails at evaluation as an unbound name, so
-later phases add bindings without touching the lexer.
+built-in constants and function builtins (see docs/grammar.md, `## The prelude`).
+Everything else lexes cleanly and fails at evaluation as an unbound name, so later
+phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
 

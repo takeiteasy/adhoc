@@ -2,11 +2,13 @@
 
 Mirrors the Rust `ast.rs` design: every node carries its own `Span`, tagged at
 construction time by the parser (see `parser.py` for why *at construction* matters for
-parenthesized expressions). Nodes are immutable, so quoting and rewriting them (the
-phase-4 symbolic-algebra plan) is ordinary match-and-rebuild over these classes.
+parenthesized expressions). Name-bearing nodes also carry optional source spellings,
+excluded from structural equality because they are display metadata. Nodes are immutable,
+so quoting and rewriting them (the phase-4 symbolic-algebra plan) is ordinary
+match-and-rebuild over these classes.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 
 from .span import Span
@@ -54,11 +56,13 @@ class StrLit(Node):
 @dataclass(frozen=True)
 class Var(Node):
     ch: str
+    spelling: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
 class BackslashRef(Node):
     name: str
+    spelling: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -105,6 +109,8 @@ class Fold(Node):
     var: str
     rng: Range
     body: Node
+    spelling: str | None = field(default=None, compare=False)
+    var_spelling: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,8 @@ class Limit(Node):
     var: str
     point: Node
     body: Node
+    spelling: str | None = field(default=None, compare=False)
+    var_spelling: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -127,6 +135,7 @@ class KwArg(Node):
 
     name: str
     value: Node
+    spelling: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -152,6 +161,8 @@ class FuncDef(Node):
     name: str
     params: tuple[str, ...]
     body: Node
+    spelling: str | None = field(default=None, compare=False)
+    param_spellings: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True)
@@ -171,6 +182,7 @@ class Lambda(Node):
 
     params: tuple[str, ...]
     body: Node
+    param_spellings: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True)
@@ -184,6 +196,7 @@ class Assign(Node):
 
     name: str
     value: Node
+    spelling: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -209,6 +222,7 @@ class Import(Node):
 
     path: str
     members: tuple[str, ...]
+    member_spellings: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True)
@@ -221,3 +235,4 @@ class PyImport(Node):
 
     path: str
     members: tuple[str, ...]
+    member_spellings: tuple[str, ...] = field(default=(), compare=False)

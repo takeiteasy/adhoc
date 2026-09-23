@@ -20,15 +20,16 @@ Lowering rules:
   fresh name into the current frame, compares against one already bound there; there
   is no force-reassignment spelling and no declaration operator). The user env is
   a plain dict the engine holds; it never mixes with the exec globals.
-- `\name` lowers to `_e.bref("name", sid)`; application lowers to `_e.app(head, args,
-  kwargs, sid)` with the kwargs as a dict literal; `\\py(path)` is the one backslash name
-  with semantics of its own and lowers to `_e.py(path, sid)`. `FuncDef` registers a
-  separately compiled body and lowers to `_e.define(...)`; the ternary lowers to lazy
-  thunk calls (`_e.if_expr`). `Import`/`PyImport` lower to
-  `_e.import_(path, members, sid)`/`_e.pyimport(...)`
-  `Fold`/`Limit` likewise register their bodies via `_compile_body` and lower to
-  `_e.fold(...)`/`_e.limit(...)`, which evaluate the body once per term/probe in a child
-  engine frame.
+- `\name` lowers to `_e.bref("name", sid, spelling)`; application lowers to
+  `_e.app(head, args, kwargs, sid, spelling)` with the kwargs as a dict literal;
+  `\\py(path)` is the one backslash name with semantics of its own and lowers to
+  `_e.py(path, sid, spelling)`. `FuncDef` registers a separately compiled body and
+  lowers to `_e.define(...)`; the ternary lowers to lazy thunk calls (`_e.if_expr`).
+  `Import`/`PyImport` lower to `_e.import_(path, members, sid, member_spellings)`/
+  `_e.pyimport(...)`; `Fold`/`Limit` likewise register their bodies via `_compile_body`
+  and lower to `_e.fold(...)`/`_e.limit(...)`, which evaluate the body once per
+  term/probe in a child engine frame. Canonical names drive lookup; optional spelling
+  metadata is used only for diagnostics and declaration echoes.
 - `Seq` flattens; each statement becomes one line, matching script mode's per-statement
   echo and the line-number gutter.
 """
@@ -114,6 +115,14 @@ def _call(method: str, args: list[pyast.expr]) -> pyast.expr:
     )
 
 
+def _call_spelling(head: Node) -> str | None:
+    match head:
+        case Var(spelling=spelling) | BackslashRef(spelling=spelling):
+            return spelling
+        case _:
+            return None
+
+
 class _Lowerer:
     def __init__(self):
         self.spans: list[Span] = []
@@ -125,31 +134,37 @@ class _Lowerer:
 
     def statement(self, stmt: Node) -> str:
         match stmt:
-            case FuncDef(span=span):
+            case FuncDef(name=name, params=params, body=body, spelling=spelling,
+                         param_spellings=param_spellings, span=span):
                 sid = self._push(span)
-                self.definitions[sid] = _compile_body(stmt.body)
-                return pyast.unparse(_call("define", [pyast.Constant(stmt.name),
-                    pyast.Constant(stmt.params), pyast.Constant(sid)]))
-            case Import(path=path, members=members, span=span):
+                self.definitions[sid] = _compile_body(body)
+                return pyast.unparse(_call("define", [pyast.Constant(name),
+                    pyast.Constant(params), pyast.Constant(sid), pyast.Constant(spelling),
+                    pyast.Constant(param_spellings)]))
+            case Import(path=path, members=members, member_spellings=member_spellings,
+                        span=span):
                 sid = self._push(span)
                 return pyast.unparse(_call("import_",
-                    [pyast.Constant(path), pyast.Constant(members), pyast.Constant(sid)]))
-            case PyImport(path=path, members=members, span=span):
+                    [pyast.Constant(path), pyast.Constant(members), pyast.Constant(sid),
+                     pyast.Constant(member_spellings)]))
+            case PyImport(path=path, members=members, member_spellings=member_spellings,
+                          span=span):
                 sid = self._push(span)
                 return pyast.unparse(_call("pyimport",
-                    [pyast.Constant(path), pyast.Constant(members), pyast.Constant(sid)]))
+                    [pyast.Constant(path), pyast.Constant(members), pyast.Constant(sid),
+                     pyast.Constant(member_spellings)]))
             case StrLit() | NoOp():
                 # A lone string is a comment-like no-op; `pass` keeps the one-line-per-
                 # statement invariant that the lineno ↔ span table depends on.
                 return "pass"
-            case Assign(name=name, value=value, span=span):
+            case Assign(name=name, value=value, spelling=spelling, span=span):
                 sid = self._push(span)
                 inner = self.expr(value)
                 # Statement level echoes: the binding rule reports the outcome
                 # (the echo or the comparison result) into the transcript.
                 return pyast.unparse(_call("assign",
                     [pyast.Constant(name), inner, pyast.Constant(sid),
-                     pyast.Constant(True)]))
+                     pyast.Constant(True), pyast.Constant(spelling)]))
             case _:
                 sid = self._push(stmt.span)
                 inner = self.expr(stmt)
@@ -173,12 +188,14 @@ class _Lowerer:
                 return _call("lit", [pyast.Constant(text), pyast.Constant(sid)])
             case StrLit(text=text):
                 return pyast.Constant(value=text)
-            case Var(ch=ch, span=span):
+            case Var(ch=ch, spelling=spelling, span=span):
                 sid = self._push(span)
-                return _call("var", [pyast.Constant(ch), pyast.Constant(sid)])
-            case BackslashRef(name=name, span=span):
+                return _call("var", [pyast.Constant(ch), pyast.Constant(sid),
+                    pyast.Constant(spelling)])
+            case BackslashRef(name=name, spelling=spelling, span=span):
                 sid = self._push(span)
-                return _call("bref", [pyast.Constant(name), pyast.Constant(sid)])
+                return _call("bref", [pyast.Constant(name), pyast.Constant(sid),
+                    pyast.Constant(spelling)])
             case UnOp(op=UnaryOperator.NEG, operand=operand, span=span):
                 inner = self.expr(operand)
                 sid = self._push(span)
@@ -202,44 +219,53 @@ class _Lowerer:
                 return _call("if_expr", [self.expr(condition), self._thunk(then_branch),
                     self._thunk(otherwise) if otherwise is not None else pyast.Constant(None),
                     pyast.Constant(sid)])
-            case Fold(op=op, var=var, rng=rng, body=body, span=span):
+            case Fold(op=op, var=var, rng=rng, body=body, spelling=spelling,
+                      var_spelling=var_spelling, span=span):
                 # Same shape as FuncDef: the folded body is compiled once into
                 # `definitions[sid]`; the engine evaluates it per term in a child frame.
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(body)
                 return _call("fold", [pyast.Constant(_FOLD_METHODS[op]),
-                    pyast.Constant(var), self.expr(rng), pyast.Constant(sid)])
-            case Limit(var=var, point=point, body=body, span=span):
+                    pyast.Constant(var), self.expr(rng), pyast.Constant(sid),
+                    pyast.Constant(spelling), pyast.Constant(var_spelling)])
+            case Limit(var=var, point=point, body=body, spelling=spelling,
+                      var_spelling=var_spelling, span=span):
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(body)
                 return _call("limit", [pyast.Constant(var), self.expr(point),
-                                       pyast.Constant(sid)])
-            case Lambda(params=params, body=body, span=span):
+                                       pyast.Constant(sid), pyast.Constant(spelling),
+                                       pyast.Constant(var_spelling)])
+            case Lambda(params=params, body=body, param_spellings=param_spellings,
+                        span=span):
                 # Same shape as FuncDef/Fold: the body compiles once into
                 # `definitions[sid]`; the engine materializes an anonymous
                 # AdFunction closed over the defining frame. The `_e.lambda_`
                 # call carries the span id, so body errors stay narrow.
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(body)
-                return _call("lambda_", [pyast.Constant(params), pyast.Constant(sid)])
-            case Assign(name=name, value=value, span=span):
+                return _call("lambda_", [pyast.Constant(params), pyast.Constant(sid),
+                                         pyast.Constant(param_spellings)])
+            case Assign(name=name, value=value, spelling=spelling, span=span):
                 # Assign is legal in expression position (a parenthesized sequence's
                 # statements compile through here); the engine's one binding rule
                 # covers every context — frame-local fresh bind or compare.
                 sid = self._push(span)
                 return _call("assign", [pyast.Constant(name), self.expr(value),
-                                        pyast.Constant(sid)])
+                                        pyast.Constant(sid), pyast.Constant(False),
+                                        pyast.Constant(spelling)])
             case Seq(statements=statements):
                 return pyast.Subscript(
                     value=pyast.Tuple(elts=[self.expr(s) for s in statements], ctx=pyast.Load()),
                     slice=pyast.Constant(-1), ctx=pyast.Load())
-            case Call(head=BackslashRef(name="py"), args=args, span=span):
+            case Call(head=BackslashRef(name="py", spelling=spelling), args=args,
+                      span=span):
                 # `\py` is the one backslash name with its own semantics: resolve the
                 # single string-literal argument to a Python callable. Parser enforces
                 # arity; the engine rejects non-string arguments with the same span.
                 sid = self._push(span)
                 arg_exprs = [self.expr(a) for a in args]
-                return _call("py", [*arg_exprs, pyast.Constant(sid)])
+                return _call("py", [*arg_exprs, pyast.Constant(sid),
+                                     pyast.Constant(spelling)])
             case Call(head=head, args=args, kwargs=kwargs, span=span):
                 head_expr = self.expr(head)
                 arg_exprs = [self.expr(a) for a in args]
@@ -254,7 +280,7 @@ class _Lowerer:
                 return _call(
                     "app",
                     [head_expr, pyast.Tuple(elts=arg_exprs, ctx=pyast.Load()), kw_dict,
-                     pyast.Constant(sid)],
+                     pyast.Constant(sid), pyast.Constant(_call_spelling(head))],
                 )
             case _:
                 raise TypeError(f"no lowering for {node!r}")
@@ -293,7 +319,8 @@ def _compile_body(node: Node) -> CompiledBody:
             sid = lowerer._push(stmt.span)
             method = "import_" if isinstance(stmt, Import) else "pyimport"
             lines.append(pyast.unparse(_call(method, [pyast.Constant(stmt.path),
-                pyast.Constant(stmt.members), pyast.Constant(sid)])))
+                pyast.Constant(stmt.members), pyast.Constant(sid),
+                pyast.Constant(stmt.member_spellings)])))
             continue
         else:
             sid = lowerer._push(stmt.span)

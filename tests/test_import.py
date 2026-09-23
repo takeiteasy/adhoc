@@ -267,6 +267,33 @@ def test_pyimport_imported_names_are_ordinary_bindings():
     assert run_source("\\tau = 3", env) == ["false"]
 
 
+def test_import_member_alias_reports_written_spelling(tmp_path):
+    make_lib(tmp_path)
+    with pytest.raises(EvalError) as error:
+        run_source(r'\import("lib": υ)', modules={}, base_dir=str(tmp_path),
+                   aliases={"υ": "missing"})
+    assert error.value.msg == "`υ` is not defined in `lib`"
+
+    with pytest.raises(EvalError) as collision:
+        run_source(r'\import("lib": τ)', {"r": 1}, modules={}, base_dir=str(tmp_path),
+                   aliases={"τ": "r"})
+    assert collision.value.msg == "`τ` is already bound"
+
+
+def test_pyimport_member_alias_reports_written_spelling():
+    with pytest.raises(EvalError) as missing:
+        run_source(r'\pyimport("math": ϑ)', aliases={"ϑ": "nosuch"})
+    assert missing.value.msg == "module `math` has no member `ϑ`"
+
+    with pytest.raises(EvalError) as protected:
+        run_source(r'\pyimport("math": ϖ)', aliases={"ϖ": "pi"})
+    assert protected.value.msg == "`ϖ` is protected"
+
+    with pytest.raises(EvalError) as collision:
+        run_source(r'\pyimport("math": τ)', {"tau": 1}, aliases={"τ": "tau"})
+    assert collision.value.msg == "`τ` is already bound"
+
+
 # --- registry plumbing ---
 
 
