@@ -86,7 +86,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   agree to the full target, otherwise the longest agreed prefix prints.
 - User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
   semicolon-sequenced bodies, first-class function values, and recursion. Nested definitions
-  bind locally and return their callable when they are the last body statement.
+  bind locally and return their callable when they are the last body statement. Parameters
+  may use single-character or `\`-sigiled names.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
 - Booleans are real values: comparisons produce them, arithmetic rejects them, the
   ternary consumes them, and `\true`/`\false` are bound constants. There
@@ -147,6 +148,10 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   lambda. `\eval(\body(f), x=3)` evaluates it with explicit parameter bindings and
   names from the evaluation scope. Multi-statement bodies display as `\expr((...))`;
   their local bindings stay local and the last statement supplies the result.
+- Lambda reduction: `\reduce(\expr((\fn(x) x + 1)(2)))` returns
+  `\expr((2 + 1))`. It reduces explicit lambda calls throughout expression quotes
+  without evaluating arithmetic or expanding named functions. Free names remain free;
+  `\eval` can bind them later. Statement quotes are not reducible.
 
 ## Not yet implemented
 

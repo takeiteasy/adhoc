@@ -399,6 +399,17 @@ def _body_call(value: Any) -> ExpressionValue:
     return ExpressionValue(node, body.source, statement_body=True)
 
 
+def _reduce_call(value: Any) -> ExpressionValue:
+    if not isinstance(value, ExpressionValue):
+        raise NumError("\\reduce needs an expression value")
+    from .reduction import ReduceError, reduce_expression
+
+    try:
+        return reduce_expression(value)
+    except ReduceError as error:
+        raise NumError(str(error)) from error
+
+
 PRELUDE: dict[str, Any] = {
     "pi": symbolic.PI,
     "e": symbolic.E,
@@ -420,6 +431,7 @@ PRELUDE: dict[str, Any] = {
     "im": PreludeFn("im", _im_call),
     "prec": PreludeFn("prec", _prec_call),
     "body": PreludeFn("body", _body_call),
+    "reduce": PreludeFn("reduce", _reduce_call),
 }
 
 _PRELUDE_PROTECTED = frozenset(PRELUDE)

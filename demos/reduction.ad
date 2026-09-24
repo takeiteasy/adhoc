@@ -1,0 +1,7 @@
+-- Reduce a quoted lambda application, then evaluate its arithmetic.
+q = \reduce(\expr((\fn(x) x + 1)(2)))
+\eval(q)
+
+-- A free name remains available for a later explicit binding.
+r = \reduce(\expr((\fn(x) x + y)(2)))
+\eval(r, y=3)

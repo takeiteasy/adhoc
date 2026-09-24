@@ -122,6 +122,7 @@ tree.
 - Function composition (`∘`), `\map`/`\fold`/`\filter` (generalizing the `Σ`/`Π` fold), partial
   application (`f(a, ·)`).
 - Reflection: `\body(f)` is implemented for user-defined functions and lambdas.
+- Lambda term reduction: `\reduce(e)` beta-reduces expression quotes.
 - Custom infix operators: `\infix(N) ⊕(a, b) = ...` with declared precedence.
   - Open: precedence numbering scheme (range, relation to built-in operators).
 
@@ -144,8 +145,7 @@ but doesn't depend on it.
 Not committed to a phase, ordered roughly by weight. The interaction-net engine and parallel
 active-pair rewriting from earlier drafts are retired: `DESIGN.md` keeps the design thinking,
 but nothing builds toward them unless an HVM-style engine is ever actually adopted as a real
-backend. The λ-literals and term-rewriting exploration is tracked as tickets 34/35 — the
-former is phase-independent, the latter rides phase 4.
+backend.
 
 - **LaTeX export** — `\tex(\expr(...))` renders an expression value back out as TeX/Unicode
   source: `ad` reads like LaTeX, this is the round-trip. Small once phase-4 expression

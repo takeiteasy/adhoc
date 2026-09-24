@@ -13,6 +13,7 @@ adhoc/
 │                 non-semantic source spelling
 ├── parser      — precedence climbing over docs/grammar.md
 ├── expression  — frozen expression values and parseable display
+├── reduction   — beta reduction over quoted expression ASTs
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
 ├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
@@ -90,6 +91,8 @@ body as a statement-sequence expression value; `\eval` compiles that sequence th
 the function-body path, with local bindings and the last statement as its result.
 Nested definitions use the same compiled-body table as top-level definitions and return
 their callable without adding an output line.
+`\reduce` converts bound names to De Bruijn indices while substituting, then restores
+parseable names. It preserves free names and original byte spans in the returned expression.
 
 
 ## Engine notes

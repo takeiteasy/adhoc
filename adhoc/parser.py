@@ -504,8 +504,8 @@ class _Parser:
         param_spellings: list[str] = []
         while True:
             tok = self.peek()
-            if isinstance(tok, Ident):
-                params.append(self._canonical(tok.ch))
+            if isinstance(tok, Ident | Backslash):
+                params.append(self._canonical(tok.ch) if isinstance(tok, Ident) else tok.name)
                 param_spellings.append(_spelling(tok))
                 self.advance()
             elif isinstance(tok, RParen):
@@ -551,8 +551,8 @@ class _Parser:
         param_spellings: list[str] = []
         while True:
             tok = self.peek()
-            if isinstance(tok, Ident):
-                params.append(self._canonical(tok.ch))
+            if isinstance(tok, Ident | Backslash):
+                params.append(self._canonical(tok.ch) if isinstance(tok, Ident) else tok.name)
                 param_spellings.append(_spelling(tok))
                 self.advance()
             elif isinstance(tok, RParen):

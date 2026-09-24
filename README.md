@@ -52,7 +52,8 @@ exact complex arithmetic (`(2+3i)(2-3i)` is `13`, `\ln(-1)` is `π·i`,
 fallback (`π + 1`, `\sin(1+i)` — every finite value stays exact, with
 Richardson–Fitch equality). Unevaluated expressions can be quoted with `\expr(...)` or
 `` `(...) `` and evaluated with `\eval(...)`; `\body(f)` reflects a user-defined
-function's body (docs/language.md). Logical operators,
+function's body; `\reduce` beta-reduces quoted lambda terms
+([language guide](docs/language.md)). Logical operators,
 collections, symbolic rewriting, and graphing are on the roadmap, not
 yet built. See [`ROADMAP.md`](ROADMAP.md).
 

@@ -39,6 +39,13 @@ def test_zero_argument_lambda():
     assert node.body == NumLit(text="42", span=Span(6, 8))
 
 
+def test_backslash_parameter_names():
+    assert run_source(r"(\fn(\value) \value + 1)(2)") == ["= 3"]
+    assert run_source("f(\\value) = \\value + 1\nf(2)") == [
+        "f = <fn f(\\value)>", "= 3"
+    ]
+
+
 def test_body_extends_greedily_to_the_enclosing_delimiter():
     # In an argument list the comma ends the body: the lambda is one argument.
     node = parse_program("k(\\fn(x) x + 1, 2)")

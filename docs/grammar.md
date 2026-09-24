@@ -88,7 +88,7 @@ args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
-params     ::= identifier ("," identifier)* ;
+params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
               | lambda | radical | quote ;
 quote      ::= ("\\expr" | "`") "(" expr ")"
@@ -112,6 +112,10 @@ Protected names cannot be bound, except
 binding rule compares them by AST structure and canonical names.
 `\body(f)` returns the statement body of a user-defined function or lambda as an
 expression value. Built-ins and Python callables have no reflected body.
+`\reduce(e)` takes an expression quote and returns its beta-normal form. It uses
+leftmost-outermost reduction, avoids variable capture, and stops with a typed error after
+10,000 beta steps. Nested quotes are opaque. Named function calls stay as calls; arithmetic
+stays as syntax until `\eval` runs the result. Statement quotes are rejected.
 
 `sep` inside a group's `sequence` is a newline run or a single `;` — blank lines are
 free, `;;` is an error. A trailing `;` after the last statement is tolerated (`1;` and
@@ -223,8 +227,7 @@ the usual typed "strings are not numbers".
 
 ## Functions and conditionals
 
-Function definitions are callable values. Parameters are still one-character identifiers,
-while a multi-character function name uses
+Function definitions are callable values. Multi-character function and parameter names use
 the backslash sigil:
 
 ```
