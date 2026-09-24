@@ -145,11 +145,8 @@ class _Lowerer:
         match stmt:
             case FuncDef(name=name, params=params, body=body, spelling=spelling,
                          param_spellings=param_spellings, span=span):
-                sid = self._push(span)
-                self.definitions[sid] = _compile_body(body, self.source)
-                return pyast.unparse(_call("define", [pyast.Constant(name),
-                    pyast.Constant(params), pyast.Constant(sid), pyast.Constant(spelling),
-                    pyast.Constant(param_spellings)]))
+                return pyast.unparse(self._definition(name, params, body, spelling,
+                                                       param_spellings, span, True))
             case Import(path=path, members=members, member_spellings=member_spellings,
                         span=span):
                 sid = self._push(span)
@@ -185,8 +182,20 @@ class _Lowerer:
         return pyast.Lambda(args=pyast.arguments(posonlyargs=[], args=[],
             kwonlyargs=[], kw_defaults=[], defaults=[]), body=self.expr(node))
 
+    def _definition(self, name, params, body, spelling, param_spellings, span,
+                    echo: bool) -> pyast.expr:
+        sid = self._push(span)
+        self.definitions[sid] = _compile_body(body, self.source)
+        return _call("define", [pyast.Constant(name), pyast.Constant(params),
+                                pyast.Constant(sid), pyast.Constant(spelling),
+                                pyast.Constant(param_spellings), pyast.Constant(echo)])
+
     def expr(self, node: Node) -> pyast.expr:
         match node:
+            case FuncDef(name=name, params=params, body=body, spelling=spelling,
+                         param_spellings=param_spellings, span=span):
+                return self._definition(name, params, body, spelling,
+                                        param_spellings, span, False)
             case Quote(body=body, source=source, statement_body=statement_body, span=span):
                 sid = self._push(span)
                 self.quotes[sid] = ExpressionValue(body, source, statement_body)
@@ -347,7 +356,6 @@ def _compile_body(node: Node, source: str = "") -> CompiledBody:
                 pyast.Constant(stmt.member_spellings)])))
             continue
         else:
-            sid = lowerer._push(stmt.span)
             expr = lowerer.expr(stmt)
         assignment = pyast.Assign(
             targets=[pyast.Name(id="_result", ctx=pyast.Store())], value=expr)

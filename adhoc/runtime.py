@@ -1321,7 +1321,7 @@ class Engine:
             self._fail(f"`{label}` is not bound", sid)
         return value
 
-    def define(self, name, params, sid, spelling=None, param_spellings=()):
+    def define(self, name, params, sid, spelling=None, param_spellings=(), echo=True):
         param_names = _display_params(params, param_spellings)
         for p, display in zip(params, param_names):
             if self._protected(p):
@@ -1334,9 +1334,9 @@ class Engine:
         if self._lookup(name) is not _MISSING:
             self._fail(f"`{display_name}` is already bound", sid)
         self.env[name] = fn
-        result = f"{display_name} = {nshow(fn)}"
-        self.outputs.append(result)
-        return result
+        if echo:
+            self.outputs.append(f"{display_name} = {nshow(fn)}")
+        return fn
 
     def lambda_(self, params, sid, param_spellings=()):
         """`\\λ(params) body` / `\\fn(params) body` — an anonymous AdFunction closed

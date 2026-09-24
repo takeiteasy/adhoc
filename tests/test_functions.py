@@ -1,7 +1,8 @@
 import pytest
 
-from adhoc.driver import run_source
+from adhoc.driver import compile_source, run_source
 from adhoc.runtime import EvalError
+from adhoc.span import Span
 
 
 def define(source):
@@ -20,6 +21,28 @@ def test_multi_statement_function_body_returns_last_value():
     assert run_source("f(3, 4)", env) == ["= 144"]
     with pytest.raises(EvalError, match="`c` is not bound"):
         run_source("c", env)
+
+
+def test_nested_definition_returns_local_closure_without_echo():
+    env = {}
+    compile_source("f(x) = g(y) = x+y; g(2)")
+    assert run_source("f(x) = g(y) = x + y", env) == ["f = <fn f(x)>"]
+    assert run_source("h = f(3); h(2)", env) == ["h = <fn g(y)>", "= 5"]
+    with pytest.raises(EvalError, match="`g` is not bound"):
+        run_source("g", env)
+    assert run_source("k(x) = (\ng(y) = x + y\ng(2)\n)\nk(3)", env) == [
+        "k = <fn k(x)>", "= 5"
+    ]
+
+
+def test_nested_definition_rejects_visible_name_at_its_span():
+    source = "f() = (\ng() = 1\ng() = 2\n)"
+    env = {}
+    run_source(source, env)
+    with pytest.raises(EvalError, match="`g` is already bound") as failure:
+        run_source("f()", env)
+    start = source.index("g() = 2")
+    assert failure.value.span == Span(start, start + len("g() = 2"))
 
 
 def test_function_parameters_and_writes_are_local():

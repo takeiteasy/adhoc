@@ -46,6 +46,23 @@ def test_single_body_and_explicit_statement_quote_round_trip():
     assert run_source(r"\eval(\body(\eval(\expr(\fn(x) x+1))), x=2)") == ["= 3"]
 
 
+def test_quoted_nested_definition_evaluates_and_round_trips():
+    env = {}
+    source = "q = \\expr((g(y) = y + 1\ng(2)))"
+    run_source(source, env)
+    assert run_source(r"\eval(q)", env) == ["= 3"]
+    display = run_source("q", env)[0][2:]
+    run_source("r = " + display, env)
+    assert env["q"] == env["r"]
+    assert run_source(r"\eval(r)", env) == ["= 3"]
+
+    run_source("s = \\expr((g(y) = y + 1\n))", env)
+    one = run_source("s", env)[0][2:]
+    run_source("t = " + one, env)
+    assert env["s"] == env["t"]
+    assert run_source(r"\eval(t)(4)", env) == ["= 5"]
+
+
 def test_body_errors_are_typed_and_point_at_call():
     for source in (r"\body(2)", r"\body(\sqrt)", r'\body(\py("math.sqrt"))'):
         with pytest.raises(EvalError, match="needs a user-defined function") as failure:

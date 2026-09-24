@@ -9,3 +9,11 @@ g = \fn(x) x + n
 
 -- Statement-sequence quotes use a separator inside the inner parentheses.
 \eval(\expr((a=2; a+3)))
+
+-- A nested definition closes over the outer call's local parameters.
+\maker(x) = (
+h(y) = x + y
+h
+)
+\add_three = \maker(3)
+\add_three(2)

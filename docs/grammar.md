@@ -241,6 +241,19 @@ reads fall through to globals, while assignments never escape the call. The func
 own name is installed in that frame before the body runs, enabling recursion. Definitions
 are first-class and display as `<fn f(x)>` or `<fn \fact(n)>`.
 
+A definition inside a function or quoted statement body binds locally without an echo. Its
+value is the new callable. A newline separates a nested definition from a following call:
+
+```
+f(x) = (
+g(y) = x + y
+g(2)
+)
+f(3)                         ->  = 5
+```
+
+A semicolon after `g(y) = ...` continues `g`'s body.
+
 Because `;` also separates top-level statements, a function definition consumes the
 semicolon-separated statements after its `=` **on its own line** as its body — write one
 definition per line, or group a multi-statement body in parentheses (a `;` after the

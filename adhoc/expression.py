@@ -44,7 +44,8 @@ _CMP = {
 def show(node: Node) -> str:
     match node:
         case Seq(statements=statements):
-            return "; ".join(show(stmt) for stmt in statements)
+            return "".join(show(stmt) + ("\n" if isinstance(stmt, FuncDef) else "; ")
+                           for stmt in statements[:-1]) + show(statements[-1])
         case Assign(name=name, value=value, spelling=spelling, fresh_only=fresh):
             prefix = "\\let " if fresh else ""
             label = spelling or (name if len(name) == 1 else f"\\{name}")
@@ -54,7 +55,8 @@ def show(node: Node) -> str:
             label = spelling or (name if len(name) == 1 else f"\\{name}")
             names = [spellings[i] if i < len(spellings) else param
                      for i, param in enumerate(params)]
-            return f"{label}({', '.join(names)}) = {show(body)}"
+            text = f"({show(body)})" if isinstance(body, Seq) else show(body)
+            return f"{label}({', '.join(names)}) = {text}"
         case Import(path=path, members=members, member_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name
                      for i, name in enumerate(members)]
@@ -112,5 +114,5 @@ def kw_name(kw: KwArg) -> Node:
 def show_quote(node: Node, statement_body: bool) -> str:
     text = show(node)
     if statement_body and isinstance(node, Seq) and len(node.statements) == 1:
-        text += ";"
+        text += "\n" if isinstance(node.statements[0], FuncDef) else ";"
     return f"\\expr(({text}))" if statement_body else f"\\expr({text})"

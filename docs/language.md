@@ -85,7 +85,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   like every prelude name. Digits print only once successive approximations
   agree to the full target, otherwise the longest agreed prefix prints.
 - User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
-  semicolon-sequenced bodies, first-class function values, and recursion.
+  semicolon-sequenced bodies, first-class function values, and recursion. Nested definitions
+  bind locally and return their callable when they are the last body statement.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
 - Booleans are real values: comparisons produce them, arithmetic rejects them, the
   ternary consumes them, and `\true`/`\false` are bound constants. There
