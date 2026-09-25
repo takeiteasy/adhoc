@@ -148,3 +148,8 @@ def test_quotes_round_trip():
 
 def test_arr_is_reserved():
     fails(r"\arr = 1", "protected")
+
+
+def test_statement_quotes_may_hold_hash_bracket_arrays():
+    assert ev(r"\expr((a = #[1, 2]; a[1]))") == ev(r"\expr((a = ⟨1, 2⟩; a[1]))")
+    assert ev(r"\eval(\expr((a = #[1, 2]; a[2])))") == "= 2"

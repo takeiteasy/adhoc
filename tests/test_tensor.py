@@ -259,3 +259,12 @@ def test_quotes_holding_tensors_round_trip():
 def test_reduce_walks_inside_tensor_literals():
     out = ev(r"\reduce(\expr([(\fn(x) x + 1)(2), 5]))")
     assert out == r"= \expr([(2 + 1), 5])"
+
+
+def test_rows_inside_bodies_lambdas_and_branches():
+    env = {}
+    run_source("f(x) = [x, 1; 2, x]", env)
+    assert ev("f(3)", env) == "= [3, 1; 2, 3]"
+    assert ev(r"(\fn(x) [x; 1])(2)") == "= [2; 1]"
+    assert ev(r"\true ? [1; 2] : [3; 4]") == "= [1; 2]"
+    assert ev(r"\eval(\expr((a = [1; 2]; a[2])))") == "= [2]"

@@ -183,3 +183,12 @@ def test_quotes_round_trip():
     assert ev(r"\eval(q, x=7)", env) == "= {7, 1, 2}"
     assert ev(r"\reduce(\expr({(\fn(x) x)(1)}))") == r"= \expr({1})"
     assert ev(r"\eval(\expr(x ∈ {1, 2}), x=2)") == "= true"
+
+
+def test_newlines_inside_braces_do_not_make_a_statement_quote():
+    assert ev("\\expr(({1,\n2}))") == ev(r"\expr(({1, 2}))") == r"= \expr({1, 2})"
+
+
+def test_infix_names_cannot_be_aliased():
+    with pytest.raises(ParseError, match="cannot be aliased"):
+        parse_program(r"\alias \cup, u")

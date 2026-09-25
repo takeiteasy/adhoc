@@ -35,7 +35,7 @@ ADhoc Higher Order Calculator — a cli based calculator and language like `bc` 
 - Where a `\`-name has a single-character unicode form, the two are the same name, not two different ones: `\pi` ≡ `π`, `\sum` ≡ `Σ`, `\prod` ≡ `Π`, `\sqrt` ≡ `√`, `\cup` ≡ `∪`, `\cap` ≡ `∩`, `\in` ≡ `∈`, `\subseteq` ≡ `⊆`, `\setminus` ≡ `∖`, `\circ` ≡ `∘`.
 - Where there is no unicode form, the `\` spelling is the only spelling: `\lim`, `\let`, `\arr`, `\expr`, `\sin`, `\cos`, `\tan`, `\ln`, `\solve`, `\simplify`, `\expand`, `\factor`, `\eval`, `\body`, `\map`, `\fold`, `\filter`, `\graph`, `\infix`.
 - The names are chosen to match their LaTeX command where one exists (`\sum`, `\prod`, `\sqrt`, `\cup`, `\cap`, `\in`, `\setminus`, `\circ`, `\lim`, `\sin`, `\ln`, ...) — `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX. This is a naming convention, not a compatibility claim: `ad` is not a TeX parser and has no layout/document commands.
-- Bracket syntax (`[...]`, `{...}`, `⟨...⟩`) is unaffected by this rule — `\arr(...)` is the ASCII *spelling* of `⟨...⟩`, a form rather than a name.
+- Bracket syntax (`[...]`, `{...}`, `⟨...⟩`) is unaffected by this rule — `\arr(...)` and `#[...]` are the ASCII *spellings* of `⟨...⟩`, forms rather than names.
 - User-defined infix operators (`⊕` via `\infix(N) ⊕(a, b) = ...`) are exempt — the sigil rule is about language-defined names, not names an author invents.
 - Comparisons `<`, `>`, `<=`, `>=` produce real booleans, displayed as `true`/`false`: valid conditions and bindable values, rejected as numeric operands. The literal spellings are `\true`/`\false`, bound in the prelude. Logical operators remain future work.
 

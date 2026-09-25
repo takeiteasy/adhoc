@@ -160,6 +160,9 @@ _ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, 
 
 # Backslash names that are infix operators, never atoms: they end a juxtaposition run
 # and cannot be bound or used as values.
+_OPENERS = (LBracket, HashBracket, LBrace, LAngle)
+_CLOSERS = (RBracket, RBrace, RAngle)
+
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"cdot": BinOperator.DOT, "cap": BinOperator.INTERSECT}
 _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ}
@@ -431,6 +434,10 @@ class _Parser:
                 "`\\let` is a reserved statement form",
                 canonical_tok.span,
             )
+        if canonical in _INFIX_NAMES:
+            raise ParseError(
+                f"`\\{canonical}` is an infix operator and cannot be aliased",
+                canonical_tok.span)
         canonical_display = f"\\{canonical}" if len(canonical) > 1 else canonical
         for short_tok, short in names[1:]:
             if not isinstance(short_tok, Ident):
@@ -983,9 +990,9 @@ class _Parser:
                     if depth == 0:
                         group_end = index
                         break
-                elif isinstance(self.tokens[index], LBracket):
+                elif isinstance(self.tokens[index], _OPENERS):
                     brackets += 1
-                elif isinstance(self.tokens[index], RBracket):
+                elif isinstance(self.tokens[index], _CLOSERS):
                     brackets -= 1
                 elif (depth == 1 and brackets == 0
                         and isinstance(self.tokens[index], (Semi, Newline))):
