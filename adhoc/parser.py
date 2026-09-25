@@ -74,6 +74,7 @@ from .lexer import (
     Eof,
     Ident,
     LAngle,
+    LBrace,
     LBracket,
     LexError,
     LParen,
@@ -88,9 +89,11 @@ from .lexer import (
     Question,
     RAngle,
     Radical,
+    RBrace,
     RBracket,
     RParen,
     Semi,
+    SetOp,
     Slash,
     Star,
     Str,
@@ -129,6 +132,7 @@ from .syntax import (
     Eval,
     Range,
     Seq,
+    SetLit,
     StrLit,
     TensorLit,
     Transpose,
@@ -151,12 +155,15 @@ class IncompleteInput(ParseError):
     "parsing failed" can catch ParseError and get the same msg/span fields."""
 
 
-_ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, HashBracket,
-                  Str, Radical)
+_ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, LBrace,
+                  HashBracket, Str, Radical)
 
 # Backslash names that are infix operators, never atoms: they end a juxtaposition run
 # and cannot be bound or used as values.
-_INFIX_NAMES = frozenset({"cdot"})
+_ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
+_MULTIPLICATIVE_INFIX = {"cdot": BinOperator.DOT, "cap": BinOperator.INTERSECT}
+_COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ}
+_INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_COMPARE_INFIX)
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
 # a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
@@ -690,17 +697,34 @@ class _Parser:
         return Range(start=start, second=second, end=end,
                      span=start.span.to((end or dotdot).span))
 
+    # The canonical name of an infix-only spelling at the cursor, in either its
+    # unicode or its `\\`-name form (`∪` and `\\cup` are both "cup").
+    def _infix_name(self) -> str | None:
+        tok = self.peek()
+        if isinstance(tok, SetOp):
+            return tok.name
+        if isinstance(tok, Middot):
+            return "cdot"
+        if isinstance(tok, Backslash) and tok.name in _INFIX_NAMES:
+            return tok.name
+        return None
+
+    # comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "⊆") additive)? ;
     def comparison(self) -> Node:
         lhs = self.additive()
         ops = {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
                Greater: CompareOperator.GT, GreaterEq: CompareOperator.GE}
         if type(self.peek()) in ops:
-            tok = self.advance()
-            rhs = self.additive()
-            return Compare(op=ops[type(tok)], lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
-        return lhs
+            op = ops[type(self.advance())]
+        elif self._infix_name() in _COMPARE_INFIX:
+            op = _COMPARE_INFIX[self._infix_name()]
+            self.advance()
+        else:
+            return lhs
+        rhs = self.additive()
+        return Compare(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
 
-    # additive ::= multiplicative (("+" | "-") multiplicative)* ;
+    # additive ::= multiplicative (("+" | "-" | "∪" | "∖") multiplicative)* ;
     def additive(self) -> Node:
         lhs = self.multiplicative()
         while True:
@@ -708,6 +732,8 @@ class _Parser:
                 op = BinOperator.ADD
             elif isinstance(self.peek(), Minus):
                 op = BinOperator.SUB
+            elif self._infix_name() in _ADDITIVE_INFIX:
+                op = _ADDITIVE_INFIX[self._infix_name()]
             else:
                 break
             self.advance()
@@ -715,7 +741,7 @@ class _Parser:
             lhs = BinOp(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
         return lhs
 
-    # multiplicative ::= juxtaposed (("*" | "/" | "·" | "\cdot") juxtaposed)* ;
+    # multiplicative ::= juxtaposed (("*" | "/" | "·" | "∩") juxtaposed)* ;
     def multiplicative(self) -> Node:
         lhs = self.juxtaposed()
         while True:
@@ -724,8 +750,8 @@ class _Parser:
                 op = BinOperator.MUL
             elif isinstance(tok, Slash):
                 op = BinOperator.DIV
-            elif isinstance(tok, Middot) or (isinstance(tok, Backslash) and tok.name == "cdot"):
-                op = BinOperator.DOT
+            elif self._infix_name() in _MULTIPLICATIVE_INFIX:
+                op = _MULTIPLICATIVE_INFIX[self._infix_name()]
             else:
                 break
             self.advance()
@@ -908,6 +934,23 @@ class _Parser:
             raise ParseError("tensor rows have different lengths", span)
         return TensorLit(items=tuple(items), row_length=row_lengths[0], span=span)
 
+    # set ::= "{" (expr ("," expr)*)? "}"
+    def _set_literal(self) -> SetLit:
+        opener = self.advance()
+        self._skip_newlines()
+        items: list[Node] = []
+        if not isinstance(self.peek(), RBrace):
+            items.append(self.expr())
+            self._skip_newlines()
+            while isinstance(self.peek(), Comma):
+                self.advance()
+                self._skip_newlines()
+                items.append(self.expr())
+                self._skip_newlines()
+        close = self.expect(RBrace, "`}`")
+        self._nl = False
+        return SetLit(items=tuple(items), span=opener.span.to(close.span))
+
     # array ::= "⟨" (expr ("," expr)*)? "⟩" | "#[" (expr ("," expr)*)? "]"
     def _array_literal(self, closer: type, closer_text: str) -> ArrayLit:
         opener = self.advance()
@@ -1082,6 +1125,8 @@ class _Parser:
                 return self._name_node(tok.ch, tok.span)
             case LBracket():
                 return self._tensor_literal()
+            case LBrace():
+                return self._set_literal()
             case LAngle():
                 return self._array_literal(RAngle, "`⟩`")
             case HashBracket():

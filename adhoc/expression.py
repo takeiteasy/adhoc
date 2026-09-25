@@ -5,7 +5,7 @@ from dataclasses import dataclass, fields
 from .syntax import (
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
     Assign, ArrayLit, Fold, FuncDef, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit,
-    PyImport, Quote, Range, Seq, StrLit, TensorLit, Transpose, UnOp, Var,
+    PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnOp, Var,
 )
 
 
@@ -34,10 +34,12 @@ def _shape(value):
 _BIN = {
     BinOperator.ADD: "+", BinOperator.SUB: "-", BinOperator.MUL: "*",
     BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "·",
+    BinOperator.UNION: "∪", BinOperator.INTERSECT: "∩", BinOperator.SETMINUS: "∖",
 }
 _CMP = {
     CompareOperator.LT: "<", CompareOperator.LE: "<=",
     CompareOperator.GT: ">", CompareOperator.GE: ">=",
+    CompareOperator.IN: "∈", CompareOperator.SUBSETEQ: "⊆",
 }
 
 
@@ -106,6 +108,8 @@ def show(node: Node) -> str:
             return f"[{'; '.join(rows)};]" if len(rows) == 1 else f"[{'; '.join(rows)}]"
         case ArrayLit(items=items):
             return f"⟨{', '.join(show(item) for item in items)}⟩"
+        case SetLit(items=items):
+            return f"{{{', '.join(show(item) for item in items)}}}"
         case Index(head=head, items=items):
             return f"{show(head)}[{', '.join(show(item) for item in items)}]"
         case Transpose(operand=operand):

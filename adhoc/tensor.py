@@ -1,4 +1,5 @@
-"""Tensor structure: shape bookkeeping, indexing, transpose, and contraction.
+"""Collection values: tensors (shape bookkeeping, indexing, transpose, contraction),
+arrays, and sets.
 
 No arithmetic on user values happens here — `runtime.py` (the numeric seam) passes in the
 scalar operations, so every element combines through `nadd`/`nmul`/... like any other
@@ -28,6 +29,13 @@ class TensorValue:
 @dataclass(frozen=True)
 class ArrayValue:
     """An ordered, possibly ragged and heterogeneous sequence; no elementwise algebra."""
+
+    items: tuple[Any, ...]
+
+
+@dataclass(frozen=True)
+class SetValue:
+    """Deduplicated values in first-seen order; equality ignores order (see runtime.neq)."""
 
     items: tuple[Any, ...]
 

@@ -192,10 +192,10 @@ from .syntax import Seq
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
-from .tensor import ArrayValue, TensorError, TensorValue
+from .tensor import ArrayValue, SetValue, TensorError, TensorValue
 
 AdValue = (int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA
-           | ExpressionValue | TensorValue | ArrayValue)
+           | ExpressionValue | TensorValue | ArrayValue | SetValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -220,7 +220,8 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"let", "expr", "eval", "cdot", "arr"})
+RESERVED_NAMES = frozenset({"let", "expr", "eval", "cdot", "arr", "cup", "cap", "setminus",
+                           "in", "subseteq"})
 
 
 class PreludeFn:
@@ -420,7 +421,7 @@ def _transpose_call(value: Any) -> AdValue:
 def _len_call(value: Any) -> int:
     if isinstance(value, TensorValue):
         return value.shape[0]
-    if isinstance(value, ArrayValue):
+    if isinstance(value, ArrayValue | SetValue):
         return len(value.items)
     raise NumError("\\len needs a collection")
 
@@ -528,6 +529,8 @@ def _reject_non_numeric(*vals: AdValue) -> None:
     for v in vals:
         if isinstance(v, ArrayValue):
             raise NumError("arrays do not support arithmetic")
+        if isinstance(v, SetValue):
+            raise NumError("sets do not support arithmetic")
         if isinstance(v, bool):
             raise NumError("booleans are not numbers")
         if isinstance(v, str):
@@ -803,7 +806,24 @@ def ntranspose(a: AdValue) -> AdValue:
     return tn.transpose(a)
 
 
+def _contains(items: tuple, value: AdValue) -> bool:
+    return any(neq(value, item) for item in items)
+
+
+def _dedup(items) -> tuple:
+    # TODO: O(n²) pairwise `neq`; hash canonical exact keys for large sets (ticket #64)
+    unique: list = []
+    for item in items:
+        if not _contains(tuple(unique), item):
+            unique.append(item)
+    return tuple(unique)
+
+
 def neq(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, SetValue) or isinstance(b, SetValue):
+        return (isinstance(a, SetValue) and isinstance(b, SetValue)
+                and len(a.items) == len(b.items)
+                and all(_contains(b.items, item) for item in a.items))
     if isinstance(a, ArrayValue) or isinstance(b, ArrayValue):
         return (isinstance(a, ArrayValue) and isinstance(b, ArrayValue)
                 and len(a.items) == len(b.items)
@@ -866,6 +886,8 @@ def _show_tensor(t: TensorValue, digits: int | None) -> str:
 
 
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
+    if isinstance(v, SetValue):
+        return "{" + ", ".join(nshow(x, digits) for x in v.items) + "}"
     if isinstance(v, ArrayValue):
         return "⟨" + ", ".join(nshow(x, digits) for x in v.items) + "⟩"
     if isinstance(v, TensorValue):
@@ -1263,7 +1285,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction | ExpressionValue | TensorValue | ArrayValue):
+    if isinstance(value, AdFunction | ExpressionValue | TensorValue | ArrayValue | SetValue):
         return value
     if isinstance(value, RangeValue):
         return value
@@ -1572,7 +1594,7 @@ class Engine:
             items = value
         elif isinstance(value, TensorValue):
             items = tn.slices(value)
-        elif isinstance(value, ArrayValue):
+        elif isinstance(value, ArrayValue | SetValue):
             items = value.items
         else:
             self._fail(f"{label} folds over a range or collection, got {nshow(value)}", sid)
@@ -1675,6 +1697,34 @@ class Engine:
     def array(self, items, sid):
         return ArrayValue(tuple(items))
 
+    def set_(self, items, sid):
+        return SetValue(_dedup(items))
+
+    def _sets(self, symbol, a, b, sid):
+        if not isinstance(a, SetValue) or not isinstance(b, SetValue):
+            self._fail(f"`{symbol}` needs two sets, got {nshow(a)} and {nshow(b)}", sid)
+
+    def union(self, a, b, sid):
+        self._sets("∪", a, b, sid)
+        return SetValue(_dedup(a.items + b.items))
+
+    def intersect(self, a, b, sid):
+        self._sets("∩", a, b, sid)
+        return SetValue(tuple(x for x in a.items if _contains(b.items, x)))
+
+    def setminus(self, a, b, sid):
+        self._sets("∖", a, b, sid)
+        return SetValue(tuple(x for x in a.items if not _contains(b.items, x)))
+
+    def subseteq(self, a, b, sid):
+        self._sets("⊆", a, b, sid)
+        return all(_contains(b.items, x) for x in a.items)
+
+    def member(self, value, collection, sid):
+        if not isinstance(collection, SetValue):
+            self._fail(f"`∈` needs a set on the right, got {nshow(collection)}", sid)
+        return _contains(collection.items, value)
+
     def index(self, head, items, sid, spelling=None):
         """`x[i, j]`: index a tensor (1-based, exact integers); any other number
         multiplies by the bracketed tensor, like the call rule's product fallback."""
@@ -1686,6 +1736,8 @@ class Engine:
                 return tn.index(head, tuple(items))
             except TensorError as e:
                 self._fail(e.args[0], sid)
+        if isinstance(head, SetValue):
+            self._fail("sets are unordered and cannot be indexed", sid)
         if isinstance(head, ArrayValue):
             if len(items) != 1:
                 self._fail("an array takes one index; chain `a[i][j]` for nested arrays", sid)

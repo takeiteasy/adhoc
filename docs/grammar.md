@@ -37,7 +37,7 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / · ^ < > <= >= = .. ( ) [ ] ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
+- Operators: `+ - * / · ∪ ∩ ∖ ∈ ⊆ ^ < > <= >= = .. ( ) [ ] { } ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
   A backtick starts a quote: `` `(expression) `` or a statement-sequence quote.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
@@ -75,10 +75,10 @@ name        ::= identifier | "\"-name ;
 expr       ::= ternary ;
 ternary    ::= range ("?" ternary ":" ternary)? ;   (* right-associative *)
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
-comparison ::= additive (("<" | ">" | "<=" | ">=") additive)? ;
-additive   ::= multiplicative (("+" | "-") multiplicative)* ;
+comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "\\in" | "⊆" | "\\subseteq") additive)? ;
+additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
-           ::= juxtaposed (("*" | "/" | "·" | "\\cdot") juxtaposed)* ;
+           ::= juxtaposed (("*" | "/" | "·" | "\\cdot" | "∩" | "\\cap") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
@@ -91,9 +91,10 @@ kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | lambda | radical | quote | tensor | array ;
+              | lambda | radical | quote | tensor | array | set ;
 tensor     ::= "[" expr ("," expr)* "]"
              | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
+set        ::= "{" (expr ("," expr)*)? "}" ;
 array      ::= ("⟨" | "#[") (expr ("," expr)*)? ("⟩" | "]")
              | "\\arr" "(" (expr ("," expr)*)? ")" ;
 quote      ::= ("\\expr" | "`") "(" expr ")"
@@ -144,9 +145,9 @@ Loosest to tightest:
 | 1 | `? :` (ternary) | right |
 | 2 | `=` (binding/check) | statement level only, non-associative |
 | 3 | `..` (range) | non-associative |
-| 4 | `<` `>` `<=` `>=` | non-associative |
-| 5 | `+` `-` (binary) | left |
-| 6 | `*` `/` `·` | left |
+| 4 | `<` `>` `<=` `>=` `∈` `⊆` | non-associative |
+| 5 | `+` `-` (binary), `∪` `∖` | left |
+| 6 | `*` `/` `·`, `∩` | left |
 | 7 | juxtaposition (implicit `*`) | left |
 | 8 | unary `-`, `√` | prefix |
 | 9 | `^` | right |
@@ -171,7 +172,7 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 ```
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `string`, `identifier`, `\`-name, `√`, `(`, `[`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
+`number`, `string`, `identifier`, `\`-name, `√`, `(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
 parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
 parses as the multiplication it spells and dies as the usual typed "strings are not
 numbers" at evaluation — the same shape as any other string reaching a numeric operator.
@@ -311,8 +312,7 @@ group; a quoted statement sequence may contain them. `\alias`/`\dual` are reject
 (top-level directives). An unclosed group is incomplete
 input — the REPL offers a continuation prompt, and a blank line cancels.
 
-Braces `{}` are deliberately **not** given a grouping meaning — they are reserved for
-future set literals (see `## Deferred`).
+Braces `{}` are not a grouping form — they build sets (`## Sets`).
 
 ## Tensors
 
@@ -378,6 +378,41 @@ operator, comparison, and transpose on an array is a typed error. The binding ru
 compares arrays by length and elements in order. Literal heads do not index (`⟨1, 2⟩[1]`
 juxtaposes and fails), like tensor literals. `\arr` is reserved: it cannot be bound, and
 takes positional values only.
+
+## Sets
+
+`{...}` builds an unordered set without duplicates. Elements are any values; two elements
+are duplicates when the binding rule's check would call them equal.
+
+```
+{3, 1, 3, 2}                 ->  = {3, 1, 2}      -- first-seen order
+{1, 2, 3} ∪ {3, 4}           ->  = {1, 2, 3, 4}
+{1, 2, 3} \cap {2, 3, 4}     ->  = {2, 3}
+{1, 2, 3} ∖ {2}              ->  = {1, 3}
+2 ∈ {1, 2, 3}                ->  = true
+{1, 2} ⊆ {1, 2, 3}           ->  = true
+```
+
+| Unicode | ASCII | Meaning | Level |
+|---|---|---|---|
+| `a ∪ b` | `a \cup b` | union | `+ -` |
+| `a ∖ b` | `a \setminus b` | difference | `+ -` |
+| `a ∩ b` | `a \cap b` | intersection | `* /` |
+| `x ∈ s` | `x \in s` | membership, a boolean | comparison |
+| `a ⊆ b` | `a \subseteq b` | subset, a boolean | comparison |
+
+Every operator is infix. `∪ ∖ ∩ ⊆` need sets on both sides and `∈` a set on the right;
+anything else is a typed error, as are arithmetic, ordering, and indexing on a set. The
+five `\`-names are operators, never values: they cannot stand alone, bind, or be aliased.
+
+Sets display in first-seen order and compare regardless of it: `{1, 2} = {2, 1}` is
+`true`. Sets nest (`{{1, 2}, {2, 1}}` is `{{1, 2}}`) and hold tensors, arrays, strings,
+and functions. A `NaN` never equals itself, so `{\nan, \nan}` keeps both.
+`\len(s)` is the size and folds bind over the elements. Building a set compares
+elements pairwise.[^set-cost]
+
+[^set-cost]: Quadratic in the number of elements; see
+    [Known limitations](language.md#known-limitations-not-bugs).
 
 ## Conditionals: the ternary
 
@@ -755,9 +790,7 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators, arrays and sets (sets will take the `{}` spelling — it is deliberately
-unused today; see `## Groups`),
-symbolic algebra, graphing.
+Logical operators, symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
 rule's check is the only equality today, with tier-aware semantics: exact for
 the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)

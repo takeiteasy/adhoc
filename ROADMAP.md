@@ -106,7 +106,7 @@ Independent of phases 1-2; nothing else depends on it.
   contraction (dot and matrix products), `'` transpose, rank ≥ 3 by nesting.
 - Array (`⟨...⟩` / `#[...]` / `\arr(...)`): implemented — ragged, heterogeneous, ordered,
   indexing/iteration only, no implied algebra.
-- Set (`{...}`): unordered, deduplicated, `∪ ∩ ∈ ∖ ⊆`.
+- Set (`{...}`): implemented — unordered, deduplicated, `∪ ∩ ∈ ∖ ⊆`.
 
 ### phase 4 — symbolic algebra & metaprogramming
 

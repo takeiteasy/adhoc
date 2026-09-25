@@ -53,8 +53,8 @@ fallback (`π + 1`, `\sin(1+i)` — every finite value stays exact, with
 Richardson–Fitch equality). Unevaluated expressions can be quoted with `\expr(...)` or
 `` `(...) `` and evaluated with `\eval(...)`; `\body(f)` reflects a user-defined
 function's body; `\reduce` beta-reduces quoted lambda terms
-([language guide](docs/language.md)). Tensors (`[1, 2; 3, 4]`, `m'`, `m · m`) and arrays (`⟨1, "a", [2]⟩`) are built;
-logical operators, sets, symbolic rewriting, and graphing are on the roadmap, not
+([language guide](docs/language.md)). Tensors (`[1, 2; 3, 4]`, `m'`, `m · m`) arrays (`⟨1, "a", [2]⟩`), and sets (`{1, 2} ∪ {3}`) are built;
+logical operators, symbolic rewriting, and graphing are on the roadmap, not
 yet built. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it

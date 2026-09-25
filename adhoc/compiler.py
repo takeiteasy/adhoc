@@ -65,6 +65,7 @@ from .syntax import (
     Eval,
     Range,
     Seq,
+    SetLit,
     StrLit,
     TensorLit,
     Transpose,
@@ -82,6 +83,9 @@ _BIN_METHODS = {
     BinOperator.DIV: "div",
     BinOperator.POW: "pow",
     BinOperator.DOT: "dot",
+    BinOperator.UNION: "union",
+    BinOperator.INTERSECT: "intersect",
+    BinOperator.SETMINUS: "setminus",
 }
 
 # The fold operator each Fold node accumulates with; the runtime maps these back to
@@ -94,6 +98,7 @@ _FOLD_METHODS = {
 _CMP_METHODS = {
     CompareOperator.LT: "lt", CompareOperator.LE: "le",
     CompareOperator.GT: "gt", CompareOperator.GE: "ge",
+    CompareOperator.IN: "member", CompareOperator.SUBSETEQ: "subseteq",
 }
 
 
@@ -254,6 +259,11 @@ class _Lowerer:
                 return _call("array", [pyast.Tuple(elts=[self.expr(i) for i in items],
                                                    ctx=pyast.Load()),
                                        pyast.Constant(sid)])
+            case SetLit(items=items, span=span):
+                sid = self._push(span)
+                return _call("set_", [pyast.Tuple(elts=[self.expr(i) for i in items],
+                                                  ctx=pyast.Load()),
+                                      pyast.Constant(sid)])
             case Index(head=head, items=items, span=span):
                 head_expr = self.expr(head)
                 sid = self._push(span)

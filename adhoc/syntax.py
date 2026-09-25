@@ -21,6 +21,9 @@ class BinOperator(Enum):
     DIV = auto()
     POW = auto()
     DOT = auto()
+    UNION = auto()
+    INTERSECT = auto()
+    SETMINUS = auto()
 
 
 class CompareOperator(Enum):
@@ -28,6 +31,8 @@ class CompareOperator(Enum):
     LE = auto()
     GT = auto()
     GE = auto()
+    IN = auto()
+    SUBSETEQ = auto()
 
 
 class UnaryOperator(Enum):
@@ -265,6 +270,13 @@ class TensorLit(Node):
 @dataclass(frozen=True)
 class ArrayLit(Node):
     """`⟨a, b⟩`, `#[a, b]`, `\\arr(a, b)`: an ordered container of any values."""
+
+    items: tuple[Node, ...]
+
+
+@dataclass(frozen=True)
+class SetLit(Node):
+    """`{a, b}`: an unordered, deduplicated set of any values."""
 
     items: tuple[Node, ...]
 

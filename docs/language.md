@@ -54,8 +54,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Parenthesized statement groups: newlines separate statements inside `(...)` exactly as
   at top level, so a group is the multi-line, multi-statement form for def bodies,
   ternary branches, and lambda bodies — same flattening/scope rules as a top-level
-  `Seq`, value of its last statement. Braces stay reserved for future set
-  literals (docs/grammar.md, `## Groups`).
+  `Seq`, value of its last statement. Braces build sets
+  (docs/grammar.md, `## Sets`).
 - Imports, statement-level and silent: `\import("lib")` binds the top-level names of `lib.ad`
   (all of them, or only the listed members: `\import("lib": f, \fact)`), each file evaluating
   once per session in a fresh root environment — imported functions keep the module's
@@ -163,9 +163,13 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   any values, possibly ragged. They index (`a[2]`, chain `a[i][j]`), fold, and report
   `\len`, with no elementwise algebra (docs/grammar.md, `## Arrays`).
 
+- Sets: `{3, 1, 3, 2}` is the deduplicated set `{3, 1, 2}` of any values, compared without
+  order. `∪ ∩ ∖ ∈ ⊆` (ASCII `\cup \cap \setminus \in \subseteq`) are infix; `∈` and `⊆`
+  give booleans. Folds iterate the elements (docs/grammar.md, `## Sets`).
+
 ## Not yet implemented
 
-Logical operators, sets, symbolic rewriting and solving
+Logical operators, symbolic rewriting and solving
 (`\solve`/`\simplify`/...), and graphing. See `ROADMAP.md` and the tracker for
 status.
 
@@ -193,6 +197,16 @@ Everything else lexes cleanly and fails at evaluation as an unbound name, so lat
 phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
+
+- Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
+- Python callables cannot return lists, sets, or ndarrays across `\py` —
+  [#63](https://todo.sr.ht/~takeiteasy/adhoc/63).
+- Set construction and membership compare elements pairwise, quadratic in the set size —
+  [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
+- Set notation is `∪ ∩ ∖ ∈ ⊆` only; no `∉`, `⊂`, `⊇`, or `∅` —
+  [#65](https://todo.sr.ht/~takeiteasy/adhoc/65).
+- `/` is elementwise on tensors, and there is no determinant, inverse, or linear solve —
+  [#66](https://todo.sr.ht/~takeiteasy/adhoc/66).
 
 - Symbolic and algebraic values display 15 significant digits plus a trailing
   ellipsis (`π` is `3.14159265358979...`, `2^(1/3)` is

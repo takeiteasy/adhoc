@@ -15,7 +15,7 @@ adhoc/
 ├── expression  — frozen expression values and parseable display
 ├── reduction   — beta reduction over quoted expression ASTs
 ├── tensor      — tensor values (shape, indexing, transpose, contraction; scalar
-│                 operations are passed in by runtime.py) and array values
+│                 operations are passed in by runtime.py), array values, and set values
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
 ├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
@@ -128,7 +128,9 @@ parseable names. It preserves free names and original byte spans in the returned
 - Tensor literals, indexing, and transpose lower to `_e.tensor(items, row_length, sid)`,
   `_e.index(head, items, sid, spelling)`, and `_e.transpose(value, sid)`; `·` lowers to
   `_e.dot`; array literals lower to `_e.array(items, sid)` (`\arr(...)` rewrites to the same
-  node at parse time). `nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg` dispatch to `tensor.map1`/`map2`
+  node at parse time); set literals and operators lower to `_e.set_`, `_e.union`,
+  `_e.intersect`, `_e.setminus`, `_e.member`, and `_e.subseteq`. Set construction
+  deduplicates through `neq`, the binding rule's equality. `nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg` dispatch to `tensor.map1`/`map2`
   when an operand is a tensor, so folds, the product fallback, and function calls all
   broadcast through the same seam. A non-tensor, non-numeric index head is an error;
   a numeric head multiplies.

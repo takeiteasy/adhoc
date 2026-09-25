@@ -235,6 +235,32 @@ class HashBracket(Token):
 
 
 @dataclass(frozen=True)
+class LBrace(Token):
+    @property
+    def describe(self) -> str:
+        return "`{`"
+
+
+@dataclass(frozen=True)
+class RBrace(Token):
+    @property
+    def describe(self) -> str:
+        return "`}`"
+
+
+@dataclass(frozen=True)
+class SetOp(Token):
+    """A unicode set operator; `name` is the canonical `\\`-name it shares with its
+    ASCII spelling (`∪` is `\\cup`)."""
+
+    name: str
+
+    @property
+    def describe(self) -> str:
+        return f"`{_SET_SYMBOLS[self.name]}`"
+
+
+@dataclass(frozen=True)
 class Prime(Token):
     """Postfix transpose `'`."""
 
@@ -324,7 +350,12 @@ _SINGLE_CHAR_TOKENS = {
     "·": Middot,
     "⟨": LAngle,
     "⟩": RAngle,
+    "{": LBrace,
+    "}": RBrace,
 }
+
+_SET_OPERATORS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq"}
+_SET_SYMBOLS = {name: symbol for symbol, name in _SET_OPERATORS.items()}
 
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
 
@@ -473,6 +504,12 @@ def tokenize(src: str) -> list[Token]:
             # the parser's prefix rule rewrites it to a `\sqrt(...)` application.
             end = pos + len(c.encode("utf-8"))
             tokens.append(Radical(span=Span(pos, end)))
+            i += 1
+            continue
+
+        if c in _SET_OPERATORS:
+            end = pos + len(c.encode("utf-8"))
+            tokens.append(SetOp(name=_SET_OPERATORS[c], span=Span(pos, end)))
             i += 1
             continue
 

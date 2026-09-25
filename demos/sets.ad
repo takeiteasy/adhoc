@@ -1,0 +1,27 @@
+-- sets.ad — unordered, deduplicated sets and their operators
+-- run with: adhoc run demos/sets.ad
+
+-- duplicates collapse (by value); display keeps first-seen order
+s = {3, 1, 3, 2}
+{1/2, 0.5}
+
+-- union, intersection, difference: unicode or ASCII, always infix
+{1, 2, 3} ∪ {3, 4}
+{1, 2, 3} \cap {2, 3, 4}
+{1, 2, 3} ∖ {2}
+
+-- membership and subset are booleans, so they drive conditionals
+2 ∈ {1, 2, 3}
+2 \in {1, 2, 3}
+{1, 2} ⊆ {1, 2, 3}
+5 ∈ s ? "in" : "out"
+
+-- any values: numbers, strings, tensors, arrays, sets
+{1, "a", [1, 2], ⟨1⟩, {2}}
+
+-- equality ignores order
+s = {1, 2, 3}
+
+-- folds iterate the elements
+\sum(x=s) x^2
+\len(s)
