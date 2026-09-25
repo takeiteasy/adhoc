@@ -42,6 +42,7 @@ from .runtime import parse_literal
 from .expression import ExpressionValue
 from .span import Span
 from .syntax import (
+    ArrayLit,
     Assign,
     BackslashRef,
     BinOp,
@@ -248,6 +249,11 @@ class _Lowerer:
                 return _call("tensor", [pyast.Tuple(elts=[self.expr(i) for i in items],
                                                     ctx=pyast.Load()),
                                         pyast.Constant(row_length), pyast.Constant(sid)])
+            case ArrayLit(items=items, span=span):
+                sid = self._push(span)
+                return _call("array", [pyast.Tuple(elts=[self.expr(i) for i in items],
+                                                   ctx=pyast.Load()),
+                                       pyast.Constant(sid)])
             case Index(head=head, items=items, span=span):
                 head_expr = self.expr(head)
                 sid = self._push(span)

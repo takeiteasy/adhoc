@@ -14,8 +14,8 @@ adhoc/
 ├── parser      — precedence climbing over docs/grammar.md
 ├── expression  — frozen expression values and parseable display
 ├── reduction   — beta reduction over quoted expression ASTs
-├── tensor      — tensor values: shape, indexing, transpose, contraction; scalar
-│                 operations are passed in by runtime.py
+├── tensor      — tensor values (shape, indexing, transpose, contraction; scalar
+│                 operations are passed in by runtime.py) and array values
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
 ├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
@@ -127,7 +127,8 @@ parseable names. It preserves free names and original byte spans in the returned
   boolean values; Python `\py` results still use the external conversion matrix.
 - Tensor literals, indexing, and transpose lower to `_e.tensor(items, row_length, sid)`,
   `_e.index(head, items, sid, spelling)`, and `_e.transpose(value, sid)`; `·` lowers to
-  `_e.dot`. `nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg` dispatch to `tensor.map1`/`map2`
+  `_e.dot`; array literals lower to `_e.array(items, sid)` (`\arr(...)` rewrites to the same
+  node at parse time). `nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg` dispatch to `tensor.map1`/`map2`
   when an operand is a tensor, so folds, the product fallback, and function calls all
   broadcast through the same seam. A non-tensor, non-numeric index head is an error;
   a numeric head multiplies.

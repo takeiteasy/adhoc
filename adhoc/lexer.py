@@ -212,6 +212,29 @@ class RBracket(Token):
 
 
 @dataclass(frozen=True)
+class LAngle(Token):
+    @property
+    def describe(self) -> str:
+        return "`⟨`"
+
+
+@dataclass(frozen=True)
+class RAngle(Token):
+    @property
+    def describe(self) -> str:
+        return "`⟩`"
+
+
+@dataclass(frozen=True)
+class HashBracket(Token):
+    """`#[`: the ASCII opener of an array literal, closed by `]`."""
+
+    @property
+    def describe(self) -> str:
+        return "`#[`"
+
+
+@dataclass(frozen=True)
 class Prime(Token):
     """Postfix transpose `'`."""
 
@@ -299,6 +322,8 @@ _SINGLE_CHAR_TOKENS = {
     "]": RBracket,
     "'": Prime,
     "·": Middot,
+    "⟨": LAngle,
+    "⟩": RAngle,
 }
 
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
@@ -449,6 +474,11 @@ def tokenize(src: str) -> list[Token]:
             end = pos + len(c.encode("utf-8"))
             tokens.append(Radical(span=Span(pos, end)))
             i += 1
+            continue
+
+        if c == "#" and i + 1 < n and entries[i + 1][1] == "[":
+            tokens.append(HashBracket(span=Span(pos, entries[i + 1][0] + 1)))
+            i += 2
             continue
 
         if c == ":":

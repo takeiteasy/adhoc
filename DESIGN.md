@@ -229,12 +229,12 @@ Three distinct types, each with a different contract — collapsing them would l
 ```
 Rank ≥ 3 literals nest `[...]`; see below.
 
-**Array** — `⟨...⟩` (unicode) / `\arr(...)` (ASCII sugar), general-purpose ordered container. Can be ragged and hold heterogeneous element types (numbers, tensors, other arrays). No implied elementwise algebra — just indexing/iteration. `\arr(...)` is unambiguous with function calls since function/variable names are constrained to a single character and every multi-char name takes the `\` sigil, so `\arr` can never collide with a user identifier.
+**Array** — `⟨...⟩` (unicode) / `#[...]` and `\arr(...)` (ASCII), general-purpose ordered container. Can be ragged and hold heterogeneous element types (numbers, tensors, other arrays). No implied elementwise algebra — just indexing/iteration. `\arr(...)` is unambiguous with function calls since function/variable names are constrained to a single character and every multi-char name takes the `\` sigil, so `\arr` can never collide with a user identifier.
 ```
 > a = ⟨1, [1,2], 3.5⟩
-< a = ⟨1, [1,2], 3.5⟩
+< a = ⟨1, [1, 2], 7/2⟩
 > a = \arr(1, [1,2], 3.5)
-< a = ⟨1, [1,2], 3.5⟩
+< true
 > a[2]
 < = [1, 2]
 ```

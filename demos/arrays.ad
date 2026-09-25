@@ -1,0 +1,16 @@
+-- arrays.ad — ordered, heterogeneous, possibly ragged containers
+-- run with: adhoc run demos/arrays.ad
+
+-- three spellings of one value: ⟨…⟩, #[…], \arr(…)
+a = ⟨1, [1, 2], "three", ⟨4, 5⟩⟩
+b = #[1, [1, 2], "three", ⟨4, 5⟩]
+c = \arr(1, [1, 2], "three", ⟨4, 5⟩)
+a = b
+
+-- 1-based indexing; chain for nested arrays
+a[2]
+a[4][1]
+
+-- no implied algebra: arrays only index and iterate
+\len(a)
+\sum(x=⟨1, 2, 3⟩) x^2

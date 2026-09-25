@@ -348,7 +348,7 @@ through `_to_ad`:
 | any other `numbers.Real` (incl. numpy floats) | widened to `float` |
 | `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
 | `complex` | exact `Gaussian` — both components read through their shortest round-trip decimal (`complex(0.5, 0.25)` is `1/2+1/4i`) and collapse through `make` (a vanishing imaginary part returns the real); non-finite components are rejected |
-| an ad tensor (passed through Python) | passes through |
+| an ad tensor or array (passed through Python) | passes through |
 | anything else (list, dict, ndarray, ...) | rejected — names the type, never truncates silently |
 
 Internal prelude callables and user-defined functions already return ad values, so their

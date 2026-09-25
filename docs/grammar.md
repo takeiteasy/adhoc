@@ -37,8 +37,8 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / · ^ < > <= >= = .. ( ) [ ] ' , ? :`. Statement separator: `;`
-  (inside `[...]` it separates rows).
+- Operators: `+ - * / · ^ < > <= >= = .. ( ) [ ] ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
+  (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
   A backtick starts a quote: `` `(expression) `` or a statement-sequence quote.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
@@ -91,9 +91,11 @@ kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | lambda | radical | quote | tensor ;
+              | lambda | radical | quote | tensor | array ;
 tensor     ::= "[" expr ("," expr)* "]"
              | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
+array      ::= ("⟨" | "#[") (expr ("," expr)*)? ("⟩" | "]")
+             | "\\arr" "(" (expr ("," expr)*)? ")" ;
 quote      ::= ("\\expr" | "`") "(" expr ")"
              | ("\\expr" | "`") "(" "(" sequence ")" ")" ;
 eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
@@ -169,7 +171,7 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 ```
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `string`, `identifier`, `\`-name, `√`, `(`, and `[` — deliberately **not** `-` or `'`, so `a - b` always
+`number`, `string`, `identifier`, `\`-name, `√`, `(`, `[`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
 parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
 parses as the multiplication it spells and dies as the usual typed "strings are not
 numbers" at evaluation — the same shape as any other string reaching a numeric operator.
@@ -356,6 +358,26 @@ Folds bind over a tensor's outer slices: `\sum(x=[1, 2, 3]) x^2` is `14`, and
     on the shape mismatch. A name holding a number followed by `[...]` multiplies, matching
     the call rule (`k = 3; k[1, 2]` is `[3, 6]`); any other head is `` `…` is not indexable ``.
     Whitespace is not significant, so `v [1]` also indexes.
+
+## Arrays
+
+`⟨...⟩`, `#[...]`, and `\arr(...)` are three spellings of one ordered container. Elements
+are any values — numbers, strings, booleans, tensors, functions, other arrays — and
+lengths may differ.
+
+```
+a = ⟨1, [1, 2], "three", ⟨4, 5⟩⟩     -- = a = ⟨1, [1, 2], "three", ⟨4, 5⟩⟩
+a[2]      ->  = [1, 2]               a[4][1]  ->  = 4
+\len(a)   ->  = 4                     ⟨⟩       ->  = ⟨⟩
+\sum(x=⟨1, 2, 3⟩) x^2  ->  = 14
+```
+
+An array indexes with one 1-based exact-integer subscript (chain `a[i][j]` for nested
+arrays) and folds bind over its elements in order. It has no algebra: every arithmetic
+operator, comparison, and transpose on an array is a typed error. The binding rule's check
+compares arrays by length and elements in order. Literal heads do not index (`⟨1, 2⟩[1]`
+juxtaposes and fails), like tensor literals. `\arr` is reserved: it cannot be bound, and
+takes positional values only.
 
 ## Conditionals: the ternary
 

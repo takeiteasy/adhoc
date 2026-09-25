@@ -4,7 +4,7 @@ from dataclasses import dataclass, fields
 
 from .syntax import (
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
-    Assign, Fold, FuncDef, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit,
+    Assign, ArrayLit, Fold, FuncDef, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit,
     PyImport, Quote, Range, Seq, StrLit, TensorLit, Transpose, UnOp, Var,
 )
 
@@ -104,6 +104,8 @@ def show(node: Node) -> str:
             rows = [", ".join(show(item) for item in items[i:i + row_length])
                     for i in range(0, len(items), row_length)]
             return f"[{'; '.join(rows)};]" if len(rows) == 1 else f"[{'; '.join(rows)}]"
+        case ArrayLit(items=items):
+            return f"⟨{', '.join(show(item) for item in items)}⟩"
         case Index(head=head, items=items):
             return f"{show(head)}[{', '.join(show(item) for item in items)}]"
         case Transpose(operand=operand):

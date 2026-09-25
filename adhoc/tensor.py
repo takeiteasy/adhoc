@@ -25,6 +25,13 @@ class TensorValue:
         return len(self.shape)
 
 
+@dataclass(frozen=True)
+class ArrayValue:
+    """An ordered, possibly ragged and heterogeneous sequence; no elementwise algebra."""
+
+    items: tuple[Any, ...]
+
+
 def _strides(shape: tuple[int, ...]) -> list[int]:
     strides = [1] * len(shape)
     for k in range(len(shape) - 2, -1, -1):

@@ -151,3 +151,10 @@ def test_unclosed_tensor_literal_continues(tmp_path):
     out = run_repl("[1, 2;\n3, 4]\n", tmp_path).stdout
     assert "... " in out
     assert "< = [1, 2; 3, 4]" in out
+
+
+def test_unclosed_array_literals_continue(tmp_path):
+    for opener, closer in [("⟨", "⟩"), ("#[", "]")]:
+        out = run_repl(f"{opener}1,\n2{closer}\n", tmp_path).stdout
+        assert "... " in out
+        assert "< = ⟨1, 2⟩" in out

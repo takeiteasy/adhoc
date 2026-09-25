@@ -263,6 +263,13 @@ class TensorLit(Node):
 
 
 @dataclass(frozen=True)
+class ArrayLit(Node):
+    """`⟨a, b⟩`, `#[a, b]`, `\\arr(a, b)`: an ordered container of any values."""
+
+    items: tuple[Node, ...]
+
+
+@dataclass(frozen=True)
 class Index(Node):
     """`x[i, j]`: 1-based indexing. A head that is not indexable multiplies instead
     (the call rule's paper-product fallback)."""

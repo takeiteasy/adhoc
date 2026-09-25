@@ -192,10 +192,10 @@ from .syntax import Seq
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
-from .tensor import TensorError, TensorValue
+from .tensor import ArrayValue, TensorError, TensorValue
 
 AdValue = (int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA
-           | ExpressionValue | TensorValue)
+           | ExpressionValue | TensorValue | ArrayValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -220,7 +220,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"let", "expr", "eval", "cdot"})
+RESERVED_NAMES = frozenset({"let", "expr", "eval", "cdot", "arr"})
 
 
 class PreludeFn:
@@ -420,6 +420,8 @@ def _transpose_call(value: Any) -> AdValue:
 def _len_call(value: Any) -> int:
     if isinstance(value, TensorValue):
         return value.shape[0]
+    if isinstance(value, ArrayValue):
+        return len(value.items)
     raise NumError("\\len needs a collection")
 
 
@@ -524,6 +526,8 @@ def _reject_non_numeric(*vals: AdValue) -> None:
     guard runs) or a bound callable reaching an operator. The failure must stay a
     spanned NumError, never a TypeError escaping the engine."""
     for v in vals:
+        if isinstance(v, ArrayValue):
+            raise NumError("arrays do not support arithmetic")
         if isinstance(v, bool):
             raise NumError("booleans are not numbers")
         if isinstance(v, str):
@@ -800,6 +804,10 @@ def ntranspose(a: AdValue) -> AdValue:
 
 
 def neq(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, ArrayValue) or isinstance(b, ArrayValue):
+        return (isinstance(a, ArrayValue) and isinstance(b, ArrayValue)
+                and len(a.items) == len(b.items)
+                and all(neq(x, y) for x, y in zip(a.items, b.items)))
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return (isinstance(a, TensorValue) and isinstance(b, TensorValue)
                 and a.shape == b.shape
@@ -858,6 +866,8 @@ def _show_tensor(t: TensorValue, digits: int | None) -> str:
 
 
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
+    if isinstance(v, ArrayValue):
+        return "⟨" + ", ".join(nshow(x, digits) for x in v.items) + "⟩"
     if isinstance(v, TensorValue):
         return _show_tensor(v, digits)
     if isinstance(v, ExpressionValue):
@@ -1253,7 +1263,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction | ExpressionValue | TensorValue):
+    if isinstance(value, AdFunction | ExpressionValue | TensorValue | ArrayValue):
         return value
     if isinstance(value, RangeValue):
         return value
@@ -1562,6 +1572,8 @@ class Engine:
             items = value
         elif isinstance(value, TensorValue):
             items = tn.slices(value)
+        elif isinstance(value, ArrayValue):
+            items = value.items
         else:
             self._fail(f"{label} folds over a range or collection, got {nshow(value)}", sid)
         fn = nmul if op_name == "mul" else nadd
@@ -1660,6 +1672,9 @@ class Engine:
         except (NumError, TensorError) as e:
             self._fail(e.args[0], sid)
 
+    def array(self, items, sid):
+        return ArrayValue(tuple(items))
+
     def index(self, head, items, sid, spelling=None):
         """`x[i, j]`: index a tensor (1-based, exact integers); any other number
         multiplies by the bracketed tensor, like the call rule's product fallback."""
@@ -1671,6 +1686,15 @@ class Engine:
                 return tn.index(head, tuple(items))
             except TensorError as e:
                 self._fail(e.args[0], sid)
+        if isinstance(head, ArrayValue):
+            if len(items) != 1:
+                self._fail("an array takes one index; chain `a[i][j]` for nested arrays", sid)
+            (i,) = items
+            if isinstance(i, bool) or not isinstance(i, int):
+                self._fail(f"index must be an exact integer, got {nshow(i)}", sid)
+            if not 1 <= i <= len(head.items):
+                self._fail(f"index {i} out of range 1..{len(head.items)}", sid)
+            return head.items[i - 1]
         if not isinstance(head, _NUMERIC_TYPES) or isinstance(head, bool):
             self._fail(f"{spelling or nshow(head)} is not indexable", sid)
         return self.mul(head, self.tensor(items, None, sid), sid)

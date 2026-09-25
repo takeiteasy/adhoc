@@ -73,6 +73,7 @@ from .lexer import (
     Eq,
     Eof,
     Ident,
+    LAngle,
     LBracket,
     LexError,
     LParen,
@@ -85,6 +86,7 @@ from .lexer import (
     Plus,
     Prime,
     Question,
+    RAngle,
     Radical,
     RBracket,
     RParen,
@@ -95,6 +97,7 @@ from .lexer import (
     Token,
     Greater,
     GreaterEq,
+    HashBracket,
     DotDot,
     UnterminatedString,
     tokenize,
@@ -102,6 +105,7 @@ from .lexer import (
 from .runtime import PRELUDE, RESERVED_NAMES
 from .span import Span
 from .syntax import (
+    ArrayLit,
     Assign,
     BackslashRef,
     BinOp,
@@ -147,7 +151,8 @@ class IncompleteInput(ParseError):
     "parsing failed" can catch ParseError and get the same msg/span fields."""
 
 
-_ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, Str, Radical)
+_ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, HashBracket,
+                  Str, Radical)
 
 # Backslash names that are infix operators, never atoms: they end a juxtaposition run
 # and cannot be bound or used as values.
@@ -835,6 +840,11 @@ class _Parser:
                     raise ParseError("`\\eval` takes one expression value followed by bindings",
                                      node.span)
                 node = Eval(value=node.args[0], bindings=node.kwargs, span=node.span)
+            if isinstance(node, Call) and isinstance(node.head, BackslashRef) \
+                    and node.head.name == "arr":
+                if node.kwargs:
+                    raise ParseError("`\\arr` takes positional values", node.span)
+                node = ArrayLit(items=node.args, span=node.span)
             if (
                 isinstance(node, Call)
                 and isinstance(node.head, BackslashRef)
@@ -897,6 +907,23 @@ class _Parser:
         if any(n != row_lengths[0] for n in row_lengths):
             raise ParseError("tensor rows have different lengths", span)
         return TensorLit(items=tuple(items), row_length=row_lengths[0], span=span)
+
+    # array ::= "⟨" (expr ("," expr)*)? "⟩" | "#[" (expr ("," expr)*)? "]"
+    def _array_literal(self, closer: type, closer_text: str) -> ArrayLit:
+        opener = self.advance()
+        self._skip_newlines()
+        items: list[Node] = []
+        if not isinstance(self.peek(), closer):
+            items.append(self.expr())
+            self._skip_newlines()
+            while isinstance(self.peek(), Comma):
+                self.advance()
+                self._skip_newlines()
+                items.append(self.expr())
+                self._skip_newlines()
+        close = self.expect(closer, closer_text)
+        self._nl = False
+        return ArrayLit(items=tuple(items), span=opener.span.to(close.span))
 
     def _quote(self, head: Token) -> Quote:
         self.expect(LParen, "`(`")
@@ -1055,6 +1082,10 @@ class _Parser:
                 return self._name_node(tok.ch, tok.span)
             case LBracket():
                 return self._tensor_literal()
+            case LAngle():
+                return self._array_literal(RAngle, "`⟩`")
+            case HashBracket():
+                return self._array_literal(RBracket, "`]`")
             case Backslash():
                 if tok.name in _INFIX_NAMES:
                     raise ParseError(f"`\\{tok.name}` is an infix operator", tok.span)

@@ -159,9 +159,13 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   products). Folds bind over a tensor's outer slices; `\len`, `\shape`, and
   `\transpose` are prelude functions (docs/grammar.md, `## Tensors`).
 
+- Arrays: `⟨1, [1, 2], "a"⟩`, `#[...]`, and `\arr(...)` build an ordered container of
+  any values, possibly ragged. They index (`a[2]`, chain `a[i][j]`), fold, and report
+  `\len`, with no elementwise algebra (docs/grammar.md, `## Arrays`).
+
 ## Not yet implemented
 
-Logical operators, arrays/sets, symbolic rewriting and solving
+Logical operators, sets, symbolic rewriting and solving
 (`\solve`/`\simplify`/...), and graphing. See `ROADMAP.md` and the tracker for
 status.
 
