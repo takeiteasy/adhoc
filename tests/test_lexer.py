@@ -10,13 +10,17 @@ from adhoc.lexer import (
     Eof,
     Ident,
     LexError,
+    LBracket,
     LParen,
+    Middot,
     Minus,
     Newline,
     Number,
     Plus,
+    Prime,
     Question,
     Radical,
+    RBracket,
     RParen,
     Semi,
     Slash,
@@ -284,3 +288,8 @@ def test_radical_token():
     assert [type(t) for t in toks] == [Radical, Number, Eof]
     assert toks[0].span == Span(0, 3)
     assert kinds("√") == [Radical, Eof]
+
+
+def test_bracket_prime_and_middot_tokens():
+    kinds = [type(t) for t in tokenize("[1]'·")]
+    assert kinds == [LBracket, Number, RBracket, Prime, Middot, Eof]

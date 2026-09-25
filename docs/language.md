@@ -153,9 +153,15 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   without evaluating arithmetic or expanding named functions. Free names remain free;
   `\eval` can bind them later. Statement quotes are not reducible.
 
+- Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors rank 1, matrices rank 2,
+  higher ranks nest). Indexing is 1-based (`m[2, 1]`), `'` transposes, `+ - * / ^` are
+  elementwise with scalar broadcast, and `·` / `\cdot` contracts (dot and matrix
+  products). Folds bind over a tensor's outer slices; `\len`, `\shape`, and
+  `\transpose` are prelude functions (docs/grammar.md, `## Tensors`).
+
 ## Not yet implemented
 
-Logical operators, tensors/arrays/sets, symbolic rewriting and solving
+Logical operators, arrays/sets, symbolic rewriting and solving
 (`\solve`/`\simplify`/...), and graphing. See `ROADMAP.md` and the tracker for
 status.
 

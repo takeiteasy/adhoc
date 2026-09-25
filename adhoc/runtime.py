@@ -183,6 +183,7 @@ import types
 from typing import Any, Callable, NoReturn
 
 from . import algebraic, gauss, rra, symbolic
+from . import tensor as tn
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
@@ -191,8 +192,10 @@ from .syntax import Seq
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
+from .tensor import TensorError, TensorValue
 
-AdValue = int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA | ExpressionValue
+AdValue = (int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA
+           | ExpressionValue | TensorValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -217,7 +220,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"let", "expr", "eval"})
+RESERVED_NAMES = frozenset({"let", "expr", "eval", "cdot"})
 
 
 class PreludeFn:
@@ -410,6 +413,22 @@ def _reduce_call(value: Any) -> ExpressionValue:
         raise NumError(str(error)) from error
 
 
+def _transpose_call(value: Any) -> AdValue:
+    return ntranspose(value)
+
+
+def _len_call(value: Any) -> int:
+    if isinstance(value, TensorValue):
+        return value.shape[0]
+    raise NumError("\\len needs a collection")
+
+
+def _shape_call(value: Any) -> TensorValue:
+    if not isinstance(value, TensorValue):
+        raise NumError("\\shape needs a tensor")
+    return TensorValue((value.rank,), value.shape)
+
+
 PRELUDE: dict[str, Any] = {
     "pi": symbolic.PI,
     "e": symbolic.E,
@@ -432,6 +451,9 @@ PRELUDE: dict[str, Any] = {
     "prec": PreludeFn("prec", _prec_call),
     "body": PreludeFn("body", _body_call),
     "reduce": PreludeFn("reduce", _reduce_call),
+    "transpose": PreludeFn("transpose", _transpose_call),
+    "len": PreludeFn("len", _len_call),
+    "shape": PreludeFn("shape", _shape_call),
 }
 
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
@@ -545,7 +567,16 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
         raise NumError(e.args[0])
 
 
+def _tensor_op(f: Callable, a: AdValue, b: AdValue) -> AdValue:
+    try:
+        return tn.map2(f, a, b)
+    except TensorError as e:
+        raise NumError(e.args[0]) from e
+
+
 def nadd(a: AdValue, b: AdValue) -> AdValue:
+    if isinstance(a, TensorValue) or isinstance(b, TensorValue):
+        return _tensor_op(nadd, a, b)
     if isinstance(a, str) and isinstance(b, str):
         return a + b  # string + string concatenates; mixed never coerces
     _reject_non_numeric(a, b)
@@ -564,6 +595,8 @@ def nadd(a: AdValue, b: AdValue) -> AdValue:
 
 
 def nsub(a: AdValue, b: AdValue) -> AdValue:
+    if isinstance(a, TensorValue) or isinstance(b, TensorValue):
+        return _tensor_op(nsub, a, b)
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         if _is_complex(a) or _is_complex(b):
@@ -580,6 +613,8 @@ def nsub(a: AdValue, b: AdValue) -> AdValue:
 
 
 def nmul(a: AdValue, b: AdValue) -> AdValue:
+    if isinstance(a, TensorValue) or isinstance(b, TensorValue):
+        return _tensor_op(nmul, a, b)
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         if _is_complex(a) or _is_complex(b):
@@ -596,6 +631,8 @@ def nmul(a: AdValue, b: AdValue) -> AdValue:
 
 
 def ndiv(a: AdValue, b: AdValue) -> AdValue:
+    if isinstance(a, TensorValue) or isinstance(b, TensorValue):
+        return _tensor_op(ndiv, a, b)
     _reject_non_numeric(a, b)
     if _is_float(a) or _is_float(b):
         if _is_complex(a) or _is_complex(b):
@@ -629,6 +666,8 @@ def _fdiv(fa: float, fb: float) -> float:
 
 
 def npow(a: AdValue, b: AdValue) -> AdValue:
+    if isinstance(a, TensorValue) or isinstance(b, TensorValue):
+        return _tensor_op(npow, a, b)
     _reject_non_numeric(a, b)
     n = _integer_exponent(b)
     if n is not None:
@@ -730,6 +769,8 @@ def _fpow(base: float, exp: float) -> float:
 
 
 def nneg(a: AdValue) -> AdValue:
+    if isinstance(a, TensorValue):
+        return tn.map1(nneg, a)
     _reject_non_numeric(a)
     if isinstance(a, Symbolic):
         return symbolic.negate(a)  # negating a coefficient×atom form stays one
@@ -742,7 +783,27 @@ def nneg(a: AdValue) -> AdValue:
     return -a
 
 
+def ndot(a: AdValue, b: AdValue) -> AdValue:
+    """`a · b`: contract the last axis of `a` with the first of `b`; a scalar operand scales."""
+    if isinstance(a, TensorValue) and isinstance(b, TensorValue):
+        try:
+            return tn.contract(nmul, nadd, a, b)
+        except TensorError as e:
+            raise NumError(e.args[0]) from e
+    return nmul(a, b)
+
+
+def ntranspose(a: AdValue) -> AdValue:
+    if not isinstance(a, TensorValue):
+        raise NumError("transpose needs a tensor")
+    return tn.transpose(a)
+
+
 def neq(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, TensorValue) or isinstance(b, TensorValue):
+        return (isinstance(a, TensorValue) and isinstance(b, TensorValue)
+                and a.shape == b.shape
+                and all(neq(x, y) for x, y in zip(a.items, b.items)))
     if isinstance(a, ExpressionValue) or isinstance(b, ExpressionValue):
         return a == b if isinstance(a, ExpressionValue) and isinstance(b, ExpressionValue) else False
     if isinstance(a, str) or isinstance(b, str):
@@ -785,7 +846,20 @@ def neq(a: AdValue, b: AdValue) -> bool:
     return Fraction(a) == Fraction(b)
 
 
+def _show_tensor(t: TensorValue, digits: int | None) -> str:
+    if t.rank == 1:
+        return "[" + ", ".join(nshow(x, digits) for x in t.items) + "]"
+    if t.rank == 2:
+        rows, cols = t.shape
+        body = "; ".join(", ".join(nshow(t.items[r * cols + c], digits) for c in range(cols))
+                         for r in range(rows))
+        return f"[{body};]" if rows == 1 else f"[{body}]"
+    return "[" + ", ".join(_show_tensor(part, digits) for part in tn.slices(t)) + "]"
+
+
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
+    if isinstance(v, TensorValue):
+        return _show_tensor(v, digits)
     if isinstance(v, ExpressionValue):
         return show_quote(v.node, v.statement_body)
     if isinstance(v, bool):
@@ -1179,7 +1253,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction | ExpressionValue):
+    if isinstance(value, AdFunction | ExpressionValue | TensorValue):
         return value
     if isinstance(value, RangeValue):
         return value
@@ -1484,21 +1558,27 @@ class Engine:
         display_name = _display_name(name, var_spelling)
         if self._protected(name):
             self._fail(f"`{display_name}` is protected", sid)
-        if not isinstance(value, RangeValue):
-            self._fail(f"{label} folds over a range, got {nshow(value)}", sid)
+        if isinstance(value, RangeValue):
+            items = value
+        elif isinstance(value, TensorValue):
+            items = tn.slices(value)
+        else:
+            self._fail(f"{label} folds over a range or collection, got {nshow(value)}", sid)
         fn = nmul if op_name == "mul" else nadd
         unit = 1 if op_name == "mul" else 0
         body = self.definitions[sid]
         acc: AdValue = unit
-        infinite = value.end is None
+        infinite = isinstance(value, RangeValue) and value.end is None
         previous: AdValue | None = None
         # Sums-only tail estimation (products keep the plateau — see
         # _FoldTailEstimator); finite folds never estimate.
         estimator = _FoldTailEstimator() if infinite and op_name == "add" else None
         count = 0
-        for item in value:
+        for item in items:
             binding = _as_float(item) if infinite else item
             term = self._eval_bound(body, {name: binding}, label, sid)
+            if infinite and isinstance(term, TensorValue):
+                self._fail(f"{label} over an infinite range needs numeric terms", sid)
             acc = self._binop(fn, acc, term, sid)
             count += 1
             if infinite:
@@ -1568,6 +1648,41 @@ class Engine:
                 f"{display_label} does not exist: left and right estimates disagree", sid)
         mid = self._binop(nadd, left, right, sid)
         return self._binop(ndiv, mid, 2, sid)
+
+    def tensor(self, items, row_length, sid):
+        try:
+            for item in items:
+                if not isinstance(item, TensorValue):
+                    _reject_non_numeric(item)
+            if row_length is None:
+                return tn.stack(list(items))
+            return tn.from_rows(list(items), row_length)
+        except (NumError, TensorError) as e:
+            self._fail(e.args[0], sid)
+
+    def index(self, head, items, sid, spelling=None):
+        """`x[i, j]`: index a tensor (1-based, exact integers); any other number
+        multiplies by the bracketed tensor, like the call rule's product fallback."""
+        if isinstance(head, TensorValue):
+            for item in items:
+                if isinstance(item, bool) or not isinstance(item, int):
+                    self._fail(f"index must be an exact integer, got {nshow(item)}", sid)
+            try:
+                return tn.index(head, tuple(items))
+            except TensorError as e:
+                self._fail(e.args[0], sid)
+        if not isinstance(head, _NUMERIC_TYPES) or isinstance(head, bool):
+            self._fail(f"{spelling or nshow(head)} is not indexable", sid)
+        return self.mul(head, self.tensor(items, None, sid), sid)
+
+    def transpose(self, value, sid):
+        try:
+            return ntranspose(value)
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def dot(self, a, b, sid):
+        return self._binop(ndot, a, b, sid)
 
     def if_expr(self, condition, then, otherwise, sid):
         """The ternary `c ? a : b` — the one conditional. Only the selected branch's

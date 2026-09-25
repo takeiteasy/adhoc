@@ -20,6 +20,7 @@ class BinOperator(Enum):
     MUL = auto()
     DIV = auto()
     POW = auto()
+    DOT = auto()
 
 
 class CompareOperator(Enum):
@@ -114,13 +115,13 @@ class IfExpr(Node):
 
 @dataclass(frozen=True)
 class Fold(Node):
-    """`\\sum`/`\\prod` (≡ `Σ`/`Π`): bind a loop variable over a range and fold
-    ADD/MUL over the body. The bound variable scopes like a function parameter:
+    """`\\sum`/`\\prod` (≡ `Σ`/`Π`): bind a loop variable over a range or
+    collection and fold ADD/MUL over the body. The bound variable scopes like a function parameter:
     reads of other names fall through to globals, writes stay local."""
 
     op: BinOperator
     var: str
-    rng: Range
+    bound: Node
     body: Node
     spelling: str | None = field(default=None, compare=False)
     var_spelling: str | None = field(default=None, compare=False)
@@ -250,3 +251,28 @@ class PyImport(Node):
     path: str
     members: tuple[str, ...]
     member_spellings: tuple[str, ...] = field(default=(), compare=False)
+
+
+@dataclass(frozen=True)
+class TensorLit(Node):
+    """`[a, b, c]`, `[a, b; c, d]`: a tensor literal. `items` is flat; `row_length`
+    is set only for the `;` row form, where the items are scalar rows of that length."""
+
+    items: tuple[Node, ...]
+    row_length: int | None = None
+
+
+@dataclass(frozen=True)
+class Index(Node):
+    """`x[i, j]`: 1-based indexing. A head that is not indexable multiplies instead
+    (the call rule's paper-product fallback)."""
+
+    head: Node
+    items: tuple[Node, ...]
+
+
+@dataclass(frozen=True)
+class Transpose(Node):
+    """Postfix `x'`."""
+
+    operand: Node

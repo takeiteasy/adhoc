@@ -73,16 +73,20 @@ from .lexer import (
     Eq,
     Eof,
     Ident,
+    LBracket,
     LexError,
     LParen,
     Less,
     LessEq,
+    Middot,
     Minus,
     Newline,
     Number,
     Plus,
+    Prime,
     Question,
     Radical,
+    RBracket,
     RParen,
     Semi,
     Slash,
@@ -109,6 +113,7 @@ from .syntax import (
     FuncDef,
     IfExpr,
     Import,
+    Index,
     KwArg,
     Lambda,
     Limit,
@@ -121,6 +126,8 @@ from .syntax import (
     Range,
     Seq,
     StrLit,
+    TensorLit,
+    Transpose,
     UnOp,
     UnaryOperator,
     Var,
@@ -140,7 +147,11 @@ class IncompleteInput(ParseError):
     "parsing failed" can catch ParseError and get the same msg/span fields."""
 
 
-_ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, Str, Radical)
+_ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, Str, Radical)
+
+# Backslash names that are infix operators, never atoms: they end a juxtaposition run
+# and cannot be bound or used as values.
+_INFIX_NAMES = frozenset({"cdot"})
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
 # a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
@@ -230,7 +241,10 @@ class _Parser:
         raise self.error_at_current(f"expected {what}, found {found}")
 
     def _is_atom_starter(self) -> bool:
-        return isinstance(self.peek(), _ATOM_STARTERS)
+        tok = self.peek()
+        if isinstance(tok, Backslash) and tok.name in _INFIX_NAMES:
+            return False
+        return isinstance(tok, _ATOM_STARTERS)
 
     # -- alias normalization (docs/grammar.md, `## Name aliases`) ---------------
     # A single-character spelling with an alias entry reads as its canonical name
@@ -696,14 +710,17 @@ class _Parser:
             lhs = BinOp(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
         return lhs
 
-    # multiplicative ::= juxtaposed (("*" | "/") juxtaposed)* ;
+    # multiplicative ::= juxtaposed (("*" | "/" | "·" | "\cdot") juxtaposed)* ;
     def multiplicative(self) -> Node:
         lhs = self.juxtaposed()
         while True:
-            if isinstance(self.peek(), Star):
+            tok = self.peek()
+            if isinstance(tok, Star):
                 op = BinOperator.MUL
-            elif isinstance(self.peek(), Slash):
+            elif isinstance(tok, Slash):
                 op = BinOperator.DIV
+            elif isinstance(tok, Middot) or (isinstance(tok, Backslash) and tok.name == "cdot"):
+                op = BinOperator.DOT
             else:
                 break
             self.advance()
@@ -745,7 +762,8 @@ class _Parser:
     # A parenthesized lambda in head position applies: `(\fn(x) x)(5)`. Unparenthesized,
     # the greedy body has already consumed any trailer (`\fn(x) x(5)` is a lambda whose
     # body is the call/product `x(5)`).
-    _NAMEISH = (Var, BackslashRef, Call, Lambda, Eval)
+    _NAMEISH = (Var, BackslashRef, Call, Lambda, Eval, Index)
+    _INDEXABLE = _NAMEISH + (Transpose,)
 
     # Special forms recognized in postfix position (DESIGN.md "equality and =", case 3):
     # a closed list of builtins whose first argument is a binding, not a general
@@ -777,7 +795,16 @@ class _Parser:
             # Binder shape committed: bare `=` cannot occur in a general expression,
             # so from here on malformed binders are genuine parse errors.
             return self._special_form(node, fold_op)
-        while isinstance(node, _Parser._NAMEISH) and isinstance(self.peek(), LParen):
+        while True:
+            if isinstance(node, _Parser._INDEXABLE) and isinstance(self.peek(), LBracket):
+                node = self._index(node)
+                continue
+            if isinstance(self.peek(), Prime):
+                tick = self.advance()
+                node = Transpose(operand=node, span=node.span.to(tick.span))
+                continue
+            if not (isinstance(node, _Parser._NAMEISH) and isinstance(self.peek(), LParen)):
+                break
             self.advance()
             self._skip_newlines()  # arguments may start on the line after `(`
             args: tuple[Node, ...] = ()
@@ -818,12 +845,66 @@ class _Parser:
                     f"`{self._form_label(node.head)}` takes exactly one argument", node.span)
         return node
 
+    # index ::= "[" expr ("," expr)* "]" — a trailer on name-ish heads and transposes.
+    def _index(self, head: Node) -> Index:
+        self.advance()  # `[`
+        self._skip_newlines()
+        items = [self.expr()]
+        self._skip_newlines()
+        while isinstance(self.peek(), Comma):
+            self.advance()
+            self._skip_newlines()
+            items.append(self.expr())
+            self._skip_newlines()
+        close = self.expect(RBracket, "`]`")
+        self._nl = False
+        return Index(head=head, items=tuple(items), span=head.span.to(close.span))
+
+    # tensor ::= "[" expr ("," expr)* "]" | "[" row (";" row)* ";"? "]"
+    # A `;` makes every item a scalar in a row of equal length; a trailing `;` keeps
+    # a single row a matrix (`[1, 2;]` is 1x2, `[1, 2]` a vector).
+    def _tensor_literal(self) -> TensorLit:
+        opener = self.advance()  # `[`
+        self._skip_newlines()
+        if isinstance(self.peek(), RBracket):
+            raise ParseError("empty tensor", opener.span.to(self.peek().span))
+        items: list[Node] = []
+        row_lengths: list[int] = []
+        current = 0
+        while True:
+            items.append(self.expr())
+            current += 1
+            self._skip_newlines()
+            if isinstance(self.peek(), Comma):
+                self.advance()
+                self._skip_newlines()
+            elif isinstance(self.peek(), Semi):
+                self.advance()
+                self._skip_newlines()
+                row_lengths.append(current)
+                current = 0
+                if isinstance(self.peek(), RBracket):
+                    break
+            else:
+                break
+        close = self.expect(RBracket, "`]`")
+        self._nl = False
+        span = opener.span.to(close.span)
+        if not row_lengths:
+            return TensorLit(items=tuple(items), span=span)
+        if current:
+            row_lengths.append(current)
+        if any(n != row_lengths[0] for n in row_lengths):
+            raise ParseError("tensor rows have different lengths", span)
+        return TensorLit(items=tuple(items), row_length=row_lengths[0], span=span)
+
     def _quote(self, head: Token) -> Quote:
         self.expect(LParen, "`(`")
         group_end = None
         has_separator = False
         if isinstance(self.peek(), LParen):
             depth = 0
+            brackets = 0
             for index in range(self.pos, len(self.tokens)):
                 if isinstance(self.tokens[index], LParen):
                     depth += 1
@@ -832,7 +913,12 @@ class _Parser:
                     if depth == 0:
                         group_end = index
                         break
-                elif depth == 1 and isinstance(self.tokens[index], (Semi, Newline)):
+                elif isinstance(self.tokens[index], LBracket):
+                    brackets += 1
+                elif isinstance(self.tokens[index], RBracket):
+                    brackets -= 1
+                elif (depth == 1 and brackets == 0
+                        and isinstance(self.tokens[index], (Semi, Newline))):
                     has_separator = True
         if (group_end is not None and has_separator
                 and isinstance(self.tokens[group_end + 1], RParen)):
@@ -912,13 +998,7 @@ class _Parser:
         body = self.expr()
         span = head.span.to(body.span)
         if fold_op is not None:
-            if not isinstance(bound, Range):
-                raise ParseError(
-                    f"{self._form_label(head)} needs a range to fold over: "
-                    f"{self._form_label(head)}(i=1..10)",
-                    bound.span,
-                )
-            return Fold(op=fold_op, var=var, rng=bound, body=body, span=span,
+            return Fold(op=fold_op, var=var, bound=bound, body=body, span=span,
                         spelling=label, var_spelling=_spelling(var_tok))
         return Limit(var=var, point=bound, body=body, span=span,
                      spelling=label, var_spelling=_spelling(var_tok))
@@ -973,7 +1053,11 @@ class _Parser:
             case Ident():
                 self.advance()
                 return self._name_node(tok.ch, tok.span)
+            case LBracket():
+                return self._tensor_literal()
             case Backslash():
+                if tok.name in _INFIX_NAMES:
+                    raise ParseError(f"`\\{tok.name}` is an infix operator", tok.span)
                 if tok.name == "expr" and isinstance(self.peek2(), LParen):
                     self.advance()
                     return self._quote(tok)

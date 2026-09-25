@@ -56,7 +56,7 @@ def _encode(node: Node, context: tuple[str, ...]) -> Node:
     if isinstance(node, Lambda):
         return replace(node, body=_encode(node.body, tuple(reversed(node.params)) + context))
     if isinstance(node, Fold):
-        return replace(node, rng=_encode(node.rng, context),
+        return replace(node, bound=_encode(node.bound, context),
                        body=_encode(node.body, (node.var,) + context))
     if isinstance(node, Limit):
         return replace(node, point=_encode(node.point, context),
@@ -72,7 +72,7 @@ def _shift(node: Node, amount: int, depth: int = 0) -> Node:
     if isinstance(node, Lambda):
         return replace(node, body=_shift(node.body, amount, depth + len(node.params)))
     if isinstance(node, Fold):
-        return replace(node, rng=_shift(node.rng, amount, depth),
+        return replace(node, bound=_shift(node.bound, amount, depth),
                        body=_shift(node.body, amount, depth + 1))
     if isinstance(node, Limit):
         return replace(node, point=_shift(node.point, amount, depth),
@@ -93,7 +93,7 @@ def _substitute(node: Node, args: tuple[Node, ...], depth: int = 0) -> Node:
     if isinstance(node, Lambda):
         return replace(node, body=_substitute(node.body, args, depth + len(node.params)))
     if isinstance(node, Fold):
-        return replace(node, rng=_substitute(node.rng, args, depth),
+        return replace(node, bound=_substitute(node.bound, args, depth),
                        body=_substitute(node.body, args, depth + 1))
     if isinstance(node, Limit):
         return replace(node, point=_substitute(node.point, args, depth),
@@ -210,7 +210,7 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
         inner = ((name, spelling),) + context
         if isinstance(node, Fold):
             return replace(node, var=name, var_spelling=spelling,
-                           rng=_reify(node.rng, context, fresh),
+                           bound=_reify(node.bound, context, fresh),
                            body=_reify(node.body, inner, fresh))
         return replace(node, var=name, var_spelling=spelling,
                        point=_reify(node.point, context, fresh),

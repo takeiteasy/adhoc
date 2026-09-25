@@ -145,3 +145,9 @@ def test_unclosed_group_blank_line_cancels(tmp_path):
     out = run_repl("(\n1\n\n2\n", tmp_path).stdout
     assert "-- input cancelled" in out
     assert "< = 2" in out
+
+
+def test_unclosed_tensor_literal_continues(tmp_path):
+    out = run_repl("[1, 2;\n3, 4]\n", tmp_path).stdout
+    assert "... " in out
+    assert "< = [1, 2; 3, 4]" in out

@@ -53,6 +53,7 @@ from .syntax import (
     FuncDef,
     IfExpr,
     Import,
+    Index,
     Lambda,
     Limit,
     Node,
@@ -64,6 +65,8 @@ from .syntax import (
     Range,
     Seq,
     StrLit,
+    TensorLit,
+    Transpose,
     UnOp,
     UnaryOperator,
     Var,
@@ -77,6 +80,7 @@ _BIN_METHODS = {
     BinOperator.MUL: "mul",
     BinOperator.DIV: "div",
     BinOperator.POW: "pow",
+    BinOperator.DOT: "dot",
 }
 
 # The fold operator each Fold node accumulates with; the runtime maps these back to
@@ -239,6 +243,23 @@ class _Lowerer:
             case Compare(op=op, lhs=lhs, rhs=rhs, span=span):
                 sid = self._push(span)
                 return _call(_CMP_METHODS[op], [self.expr(lhs), self.expr(rhs), pyast.Constant(sid)])
+            case TensorLit(items=items, row_length=row_length, span=span):
+                sid = self._push(span)
+                return _call("tensor", [pyast.Tuple(elts=[self.expr(i) for i in items],
+                                                    ctx=pyast.Load()),
+                                        pyast.Constant(row_length), pyast.Constant(sid)])
+            case Index(head=head, items=items, span=span):
+                head_expr = self.expr(head)
+                sid = self._push(span)
+                return _call("index", [head_expr,
+                                       pyast.Tuple(elts=[self.expr(i) for i in items],
+                                                   ctx=pyast.Load()),
+                                       pyast.Constant(sid),
+                                       pyast.Constant(_call_spelling(head))])
+            case Transpose(operand=operand, span=span):
+                inner = self.expr(operand)
+                sid = self._push(span)
+                return _call("transpose", [inner, pyast.Constant(sid)])
             case Range(start=start, second=second, end=end, span=span):
                 sid = self._push(span)
                 return _call("range", [self.expr(start),
@@ -250,14 +271,14 @@ class _Lowerer:
                 return _call("if_expr", [self.expr(condition), self._thunk(then_branch),
                     self._thunk(otherwise) if otherwise is not None else pyast.Constant(None),
                     pyast.Constant(sid)])
-            case Fold(op=op, var=var, rng=rng, body=body, spelling=spelling,
+            case Fold(op=op, var=var, bound=bound, body=body, spelling=spelling,
                       var_spelling=var_spelling, span=span):
                 # Same shape as FuncDef: the folded body is compiled once into
                 # `definitions[sid]`; the engine evaluates it per term in a child frame.
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(body, self.source)
                 return _call("fold", [pyast.Constant(_FOLD_METHODS[op]),
-                    pyast.Constant(var), self.expr(rng), pyast.Constant(sid),
+                    pyast.Constant(var), self.expr(bound), pyast.Constant(sid),
                     pyast.Constant(spelling), pyast.Constant(var_spelling)])
             case Limit(var=var, point=point, body=body, spelling=spelling,
                       var_spelling=var_spelling, span=span):

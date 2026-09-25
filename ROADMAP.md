@@ -101,13 +101,12 @@ independent of it.
 
 Independent of phases 1-2; nothing else depends on it.
 
-- Tensor (`[...]`): vector (1D) / matrix (2D) as special cases, `,`/`;` separators, 1-indexing,
-  `+`/`*`/dot product/transpose.
-  - Open: elementwise vs. matrix multiply/divide distinction (MATLAB's `.*`/`./` or similar).
-  - Rank ≥ 3: nested `[...]` (settled).
+- Tensor (`[...]`): implemented — vector (1D) / matrix (2D) as special cases, `,`/`;`
+  separators, 1-indexing, elementwise `+ - * / ^` with scalar broadcast, `·`/`\cdot`
+  contraction (dot and matrix products), `'` transpose, rank ≥ 3 by nesting.
 - Array (`⟨...⟩` / `\arr(...)`): ragged, heterogeneous, ordered, indexing/iteration only, no
   implied algebra.
-- Set (`{...}`): unordered, deduplicated, `∪ ∩ ∈ \ ⊆`.
+- Set (`{...}`): unordered, deduplicated, `∪ ∩ ∈ ∖ ⊆`.
 
 ### phase 4 — symbolic algebra & metaprogramming
 

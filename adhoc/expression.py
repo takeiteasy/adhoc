@@ -4,8 +4,8 @@ from dataclasses import dataclass, fields
 
 from .syntax import (
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
-    Assign, Fold, FuncDef, IfExpr, Import, KwArg, Lambda, Limit, Node, NumLit,
-    PyImport, Quote, Range, Seq, StrLit, UnOp, Var,
+    Assign, Fold, FuncDef, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit,
+    PyImport, Quote, Range, Seq, StrLit, TensorLit, Transpose, UnOp, Var,
 )
 
 
@@ -33,7 +33,7 @@ def _shape(value):
 
 _BIN = {
     BinOperator.ADD: "+", BinOperator.SUB: "-", BinOperator.MUL: "*",
-    BinOperator.DIV: "/", BinOperator.POW: "^",
+    BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "·",
 }
 _CMP = {
     CompareOperator.LT: "<", CompareOperator.LE: "<=",
@@ -87,10 +87,10 @@ def show(node: Node) -> str:
             values = [show(arg) for arg in args]
             values += [f"{show(kw_name(kw))}={show(kw.value)}" for kw in kwargs]
             return f"{show(head)}({', '.join(values)})"
-        case Fold(op=op, var=var, rng=rng, body=body, spelling=spelling,
+        case Fold(op=op, var=var, bound=bound, body=body, spelling=spelling,
                   var_spelling=var_spelling):
             head = spelling or ("\\sum" if op is BinOperator.ADD else "\\prod")
-            return f"({head}({var_spelling or var}={show(rng)}) {show(body)})"
+            return f"({head}({var_spelling or var}={show(bound)}) {show(body)})"
         case Limit(var=var, point=point, body=body, spelling=spelling,
                    var_spelling=var_spelling):
             head = spelling or "\\lim"
@@ -98,6 +98,16 @@ def show(node: Node) -> str:
         case Lambda(params=params, body=body, param_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name for i, name in enumerate(params)]
             return f"(\\fn({', '.join(names)}) {show(body)})"
+        case TensorLit(items=items, row_length=row_length):
+            if row_length is None:
+                return f"[{', '.join(show(item) for item in items)}]"
+            rows = [", ".join(show(item) for item in items[i:i + row_length])
+                    for i in range(0, len(items), row_length)]
+            return f"[{'; '.join(rows)};]" if len(rows) == 1 else f"[{'; '.join(rows)}]"
+        case Index(head=head, items=items):
+            return f"{show(head)}[{', '.join(show(item) for item in items)}]"
+        case Transpose(operand=operand):
+            return f"{show(operand)}'"
         case Quote(body=body, statement_body=statement_body):
             return show_quote(body, statement_body)
         case Eval(value=value, bindings=bindings):

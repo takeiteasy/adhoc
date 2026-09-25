@@ -212,7 +212,7 @@ $ adhoc run script.ad
 
 - Bracket + row/column-separator syntax (`,` for columns, `;` for rows) follows the same convention as MATLAB/Octave — well-worn, math-notation-adjacent, and reuses `;` without conflict since it's scoped inside `[...]`.
 - Indexing is 1-based, matching standard math notation (`m[1,2]` not `m[0,1]`).
-- `'` for transpose (common shorthand); TODO: distinguish elementwise vs. matrix multiply/divide (e.g. MATLAB's `.*`/`./`) once operator design happens.
+- `'` for transpose (common shorthand). `*` `/` `^` are elementwise and `·`/`\cdot` is the contraction (dot and matrix products).
 - Strings are values, deliberately minimal (revised from the original "no string type" stance once text round-trips mattered for data loading and `\graph`-style export flows). `"…"` binds, concatenates via `+` (the only string operator; mixed arithmetic is the usual typed rejection), and composes `\py` paths; a standalone string statement remains the comment-like literate note. There is no string indexing, ordering, or equality *operator* — the language has no `==` at all.
 - Vector/matrix are special cases (1D/2D) of a general **tensor** type — see below. `[...]` syntax and its rules (1-indexed, `,`/`;` separators, transpose) apply uniformly to tensors of any rank.
 
@@ -227,7 +227,7 @@ Three distinct types, each with a different contract — collapsing them would l
 > t + t
 < = [2, 4; 6, 8]
 ```
-TODO: literal syntax for rank ≥ 3 (nested `[...]` vs. a per-dimension separator) not yet decided.
+Rank ≥ 3 literals nest `[...]`; see below.
 
 **Array** — `⟨...⟩` (unicode) / `\arr(...)` (ASCII sugar), general-purpose ordered container. Can be ragged and hold heterogeneous element types (numbers, tensors, other arrays). No implied elementwise algebra — just indexing/iteration. `\arr(...)` is unambiguous with function calls since function/variable names are constrained to a single character and every multi-char name takes the `\` sigil, so `\arr` can never collide with a user identifier.
 ```

@@ -37,7 +37,8 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / ^ < > <= >= = .. ( ) , ? :`. Statement separator: `;`.
+- Operators: `+ - * / · ^ < > <= >= = .. ( ) [ ] ' , ? :`. Statement separator: `;`
+  (inside `[...]` it separates rows).
   A backtick starts a quote: `` `(expression) `` or a statement-sequence quote.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
@@ -77,20 +78,22 @@ range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? 
 comparison ::= additive (("<" | ">" | "<=" | ">=") additive)? ;
 additive   ::= multiplicative (("+" | "-") multiplicative)* ;
 multiplicative
-           ::= juxtaposed (("*" | "/") juxtaposed)* ;
+           ::= juxtaposed (("*" | "/" | "·" | "\\cdot") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
 power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
-trailer    ::= "(" args? ")" ;
+trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" ;
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | lambda | radical | quote ;
+              | lambda | radical | quote | tensor ;
+tensor     ::= "[" expr ("," expr)* "]"
+             | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
 quote      ::= ("\\expr" | "`") "(" expr ")"
              | ("\\expr" | "`") "(" "(" sequence ")" ")" ;
 eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
@@ -141,11 +144,11 @@ Loosest to tightest:
 | 3 | `..` (range) | non-associative |
 | 4 | `<` `>` `<=` `>=` | non-associative |
 | 5 | `+` `-` (binary) | left |
-| 6 | `*` `/` | left |
+| 6 | `*` `/` `·` | left |
 | 7 | juxtaposition (implicit `*`) | left |
 | 8 | unary `-`, `√` | prefix |
 | 9 | `^` | right |
-| 10 | postfix `(…)` application | left |
+| 10 | postfix `(…)` application, `[…]` index, `'` transpose | left |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -166,7 +169,7 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 ```
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `string`, `identifier`, `\`-name, `√`, and `(` — deliberately **not** `-`, so `a - b` always
+`number`, `string`, `identifier`, `\`-name, `√`, `(`, and `[` — deliberately **not** `-` or `'`, so `a - b` always
 parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
 parses as the multiplication it spells and dies as the usual typed "strings are not
 numbers" at evaluation — the same shape as any other string reaching a numeric operator.
@@ -308,6 +311,51 @@ input — the REPL offers a continuation prompt, and a blank line cancels.
 
 Braces `{}` are deliberately **not** given a grouping meaning — they are reserved for
 future set literals (see `## Deferred`).
+
+## Tensors
+
+`[...]` builds a uniform numeric tensor: vectors are rank 1, matrices rank 2, and higher
+ranks nest. Indexing is 1-based.
+
+```
+v = [1, 2, 3]                   -- rank 1
+m = [1, 2; 3, 4]                -- `,` separates columns, `;` rows
+[[1, 2; 3, 4], [5, 6; 7, 8]]    -- rank 3: nested tensors of one shape
+m[2, 1]  ->  = 3                m[1]  ->  = [1, 2]
+```
+
+| Form | Meaning |
+|---|---|
+| `[a, b]` | vector; entries are numbers of any tier, or equal-shape tensors that stack |
+| `[a, b; c, d]` | matrix; `;` rows hold numbers and have one length |
+| `[a, b;]` / `[a; b]` | one-row / one-column matrix — a trailing `;` keeps a single row a matrix |
+| `x[i, j]` | 1-based index; fewer indices than axes gives the sub-tensor |
+| `x'` | transpose: reverses the axes; a vector is unchanged |
+| `a · b`, `a \cdot b` | contraction of `a`'s last axis with `b`'s first: dot product, matrix product |
+| `+ - * / ^` | elementwise; a scalar broadcasts, two tensors need one shape |
+
+```
+m * m        ->  = [1, 4; 9, 16]        m · m   ->  = [7, 10; 15, 22]
+m + 1        ->  = [2, 3; 4, 5]         m'      ->  = [1, 3; 2, 4]
+[1, 2] · [3, 4]  ->  = 11
+```
+
+Entries stay on their exact tiers (`[√2, 1/3] * 3`). Booleans, strings, and other
+collections are typed errors, as are the empty tensor `[]`, shape mismatches, and an
+index that is not an exact integer within range.[^tensor-index] Tensors compare with the
+binding rule's check: same shape and equal entries. `\len(t)` is the outer length,
+`\shape(t)` the shape as a vector, `\transpose(t)` the prelude spelling of `t'`.
+
+Folds bind over a tensor's outer slices: `\sum(x=[1, 2, 3]) x^2` is `14`, and
+`\sum(r=m) r` adds the rows.
+
+`\cdot` is an infix operator, never a name: it cannot stand alone, bind, or be aliased.
+
+[^tensor-index]: A `[` trailer attaches only to name-ish heads (a name, a call, another
+    index, a transpose), so `[1, 2][1]` is not an index: it juxtaposes two tensors and fails
+    on the shape mismatch. A name holding a number followed by `[...]` multiplies, matching
+    the call rule (`k = 3; k[1, 2]` is `[3, 6]`); any other head is `` `…` is not indexable ``.
+    Whitespace is not significant, so `v [1]` also indexes.
 
 ## Conditionals: the ternary
 
@@ -644,6 +692,7 @@ in a prelude scope protected by the same mechanism:
 | `\isnan` / `\isinf` / `\isfinite` | test the float tier's non-finite states; exact-tier values are finite, so `\isnan` and `\isinf` are false and `\isfinite` is true. Non-numeric arguments are typed errors. Display as `<fn \isnan(x)>`, `<fn \isinf(x)>`, and `<fn \isfinite(x)>` |
 | `\complex` | builds a complex value from two real components: `\complex(2, 3)` is `2+3i`, a vanishing imaginary part collapses to the real; float components read as their exact decimals |
 | `\re` / `\im` | project the real or imaginary side (`\re(2+3i)` is `2`, `\im(π·i)` is `π`); a float's imaginary side is `0.0` |
+| `\len` / `\shape` / `\transpose` | collection length, tensor shape (a vector), and tensor transpose. Display as `<fn \len(x)>` etc. |
 | `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
 
 Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
@@ -684,7 +733,7 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators, collections (sets will take the `{}` spelling — it is deliberately
+Logical operators, arrays and sets (sets will take the `{}` spelling — it is deliberately
 unused today; see `## Groups`),
 symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding

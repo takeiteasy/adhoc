@@ -198,6 +198,38 @@ class RParen(Token):
 
 
 @dataclass(frozen=True)
+class LBracket(Token):
+    @property
+    def describe(self) -> str:
+        return "`[`"
+
+
+@dataclass(frozen=True)
+class RBracket(Token):
+    @property
+    def describe(self) -> str:
+        return "`]`"
+
+
+@dataclass(frozen=True)
+class Prime(Token):
+    """Postfix transpose `'`."""
+
+    @property
+    def describe(self) -> str:
+        return "`'`"
+
+
+@dataclass(frozen=True)
+class Middot(Token):
+    """The contraction operator `·` (ASCII spelling `\\cdot`)."""
+
+    @property
+    def describe(self) -> str:
+        return "`·`"
+
+
+@dataclass(frozen=True)
 class Semi(Token):
     @property
     def describe(self) -> str:
@@ -263,6 +295,10 @@ _SINGLE_CHAR_TOKENS = {
     ";": Semi,
     ",": Comma,
     "?": Question,
+    "[": LBracket,
+    "]": RBracket,
+    "'": Prime,
+    "·": Middot,
 }
 
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}

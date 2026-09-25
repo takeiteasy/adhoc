@@ -459,7 +459,7 @@ def test_sum_finite_fold_ast_and_spans():
     assert node == Fold(
         op=B.ADD,
         var="i",
-        rng=Range(start=NumLit(text="1", span=Span(7, 8)), second=None,
+        bound=Range(start=NumLit(text="1", span=Span(7, 8)), second=None,
                   end=NumLit(text="10", span=Span(10, 12)), span=Span(7, 12)),
         body=BinOp(op=B.POW, lhs=Var(ch="i", span=Span(14, 15)),
                    rhs=NumLit(text="2", span=Span(16, 17)), span=Span(14, 17)),
@@ -470,7 +470,7 @@ def test_sum_finite_fold_ast_and_spans():
 def test_prod_folds_with_mul():
     node = parse_program("\\prod(j=1..5) j")
     match node:
-        case Fold(op=B.MUL, var="j", rng=Range(), body=Var(ch="j")):
+        case Fold(op=B.MUL, var="j", bound=Range(), body=Var(ch="j")):
             pass
         case _:
             pytest.fail(f"expected product fold, got {node!r}")
@@ -488,7 +488,7 @@ def test_unicode_and_ascii_folds_have_identical_structure():
 def test_infinite_binder_range_has_no_end():
     node = parse_program("\\sum(n=1..) n^2")
     match node:
-        case Fold(rng=Range(second=None, end=None)):
+        case Fold(bound=Range(second=None, end=None)):
             pass
         case _:
             pytest.fail(f"expected infinite binder range, got {node!r}")
@@ -497,7 +497,7 @@ def test_infinite_binder_range_has_no_end():
 def test_binder_accepts_step_form_ranges():
     node = parse_program("\\sum(k=1,3..9) k")
     match node:
-        case Fold(rng=Range(start=NumLit(text="1"), second=NumLit(text="3"),
+        case Fold(bound=Range(start=NumLit(text="1"), second=NumLit(text="3"),
                             end=NumLit(text="9"))):
             pass
         case _:
@@ -538,10 +538,12 @@ def test_limit_ast_shape():
     )
 
 
-def test_fold_requires_a_range_to_bind():
-    with pytest.raises(ParseError) as e:
-        parse_program("\\sum(i=1) i")
-    assert "needs a range" in e.value.msg
+def test_fold_bound_is_any_expression():
+    match parse_program("\\sum(i=1) i"):
+        case Fold(bound=NumLit(text="1")):
+            pass
+        case other:
+            raise AssertionError(other)
 
 
 def test_incomplete_special_forms_offer_continuation():
