@@ -293,11 +293,13 @@ def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr]) -> Expres
     return quote(result, origin.bridge, origin.source)
 
 
-def derivative(value: Any, unknown: Any = None) -> ExpressionValue:
+def derivative(value: Any, unknown: Any = None, order: Any = 1) -> ExpressionValue:
+    if not isinstance(order, int) or isinstance(order, bool) or order < 1:
+        raise RewriteError("needs the order to be a positive integer")
     origin = bridge_value(value)
     symbol = _unknown(origin, unknown)
     with time_limit():
-        result = sympy.diff(origin.expr, symbol)
+        result = sympy.diff(origin.expr, symbol, order)
     return quote(result, origin.bridge, origin.source)
 
 

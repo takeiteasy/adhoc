@@ -13,6 +13,7 @@ free names stay symbols.
 | `\solve(e, `(y))` | the same, solving for `y` |
 | `\deriv(e)` | the exact derivative with respect to the one free name |
 | `\deriv(e, `(y))` | the same, with respect to `y` |
+| `\deriv(e, `(y), n)` | the `n`th derivative, `n` a positive integer |
 
 ```
 \simplify(\expr((x^2 - 1)/(x - 1)))   ->  = \expr((x + 1))
@@ -77,7 +78,7 @@ their numeric path.[^timer]
 | `\solve(e)` solves `e = 0`; `lhs = rhs` is not read as an equation | [#113](https://todo.sr.ht/~takeiteasy/adhoc/113) |
 | Infinite solution families are an error; no real-domain option | [#114](https://todo.sr.ht/~takeiteasy/adhoc/114) |
 | The time limit needs SIGALRM on the main thread | [#119](https://todo.sr.ht/~takeiteasy/adhoc/119) |
-| `\deriv` has no order argument; third derivatives are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
+| Numeric third and higher derivatives (float points, non-symbolic bodies) are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
 
 [^timer]: A `setitimer(ITIMER_REAL)` interrupt. Off the main thread, without SIGALRM, or while
     another interval timer runs, the rewrite is unlimited.

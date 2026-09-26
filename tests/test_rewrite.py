@@ -124,6 +124,18 @@ def test_deriv_of_quotes_functions_and_lambdas():
     assert ev(r"\deriv(\expr(\ln(x)))") == r"= \expr((1 / x))"
 
 
+def test_deriv_order_argument():
+    assert ev(r"\deriv(\expr(x^4), \expr(x), 3)") == r"= \expr((24 * x))"
+    assert ev("f(x) = x^3\n\\deriv(f, \\expr(x), 2)") == r"= \expr((6 * x))"
+    assert ev(r"\deriv(\expr(x^2), \expr(x), 1)") == r"= \expr((2 * x))"
+
+
+def test_deriv_order_errors():
+    fails(r"\deriv(\expr(x^2), \expr(x), 0)", "positive integer")
+    fails(r"\deriv(\expr(x^2), \expr(x), 1.5)", "positive integer")
+    fails(r"\deriv(\expr(x^2), \expr(x), 2, 3)", "takes")
+
+
 def test_deriv_errors():
     fails(r"\deriv(\expr(a x))", "needs the unknown")
     fails(r"\deriv(\expr(x < 1))", "cannot rewrite compare")

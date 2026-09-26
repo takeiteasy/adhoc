@@ -131,10 +131,15 @@ def test_prime_is_exact_at_exact_points_only_for_bridgeable_bodies():
     assert ev(r"(x ↦ \sin(x))'(0)", env) == "= 1"
 
 
-def test_third_derivative_is_an_error():
+def test_third_derivative_is_exact_or_an_error():
     env = {}
-    run_source("f(x) = x^4", env)
-    fails("f'''(1)", "above the second order", env)
+    run_source("f(x) = x^4\ng(x) = (y = x; y^4)", env)
+    assert ev("f'''(1)", env) == "= 24"
+    assert ev("f''''(1)", env) == "= 24"
+    assert ev("f'''", env) == "= <fn f′′′>"
+    fails("f'''(1.)", "above the second order", env)
+    fails("g'''(1)", "above the second order", env)
+    fails(r"\sin'''(1)", "above the second order", env)
 
 
 def test_prime_on_tensors_still_transposes():

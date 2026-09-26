@@ -9,7 +9,7 @@ converge. `f'`, `f''` and `f⁻¹` are exact when the function body is symbolic 
 | `\diff(x=a) body`, `∂(x=a) body` | derivative of `body` at `a` |
 | `\int(x=a..b) body`, `∫(x=a..b) body` | integral of `body` over `[a, b]` |
 | `\int(x=a..) body` | integral over `[a, ∞)` |
-| `f'`, `f''` | the first and second derivative of a function, as a function; exact where the body allows |
+| `f'`, `f''`, `f'''`... | the derivatives of a function, as a function; exact where the body allows, numeric to order 2 |
 | `f⁻¹` | the numeric inverse of a function, as a function |
 
 ```
@@ -36,11 +36,11 @@ variable scopes like a function parameter. `∂` and `∫` are aliases of the `\
 within `1e-9` (relatively scaled) and is otherwise a `did not converge` error. The anchor is
 real; the body may be complex.
 
-`f'` and `f''` apply to any function value: a definition, a lambda, a composition, a prelude
+`f'`, `f''`, `f'''` and so on apply to any function value: a definition, a lambda, a composition, a prelude
 function or a Python callable. At an exact point (an integer, fraction or Gaussian), a
 one-parameter definition or lambda whose body bridges to sympy is differentiated exactly, once
-per function: `f'(1/2)` is `3/4` for `x^3`. Anything else, and any float point, is numeric:
-`f''` uses second differences (tolerance `1e-6`) and does evaluate `f(a)`. Postfix `'` on a tensor is still the transpose, so `A'` is unchanged; `ᵀ` is
+per function, to any order: `f'(1/2)` is `3/4` for `x^3`. Anything else, and any float point,
+is numeric, and only orders 1 and 2 exist there: `f''` uses second differences (tolerance `1e-6`) and does evaluate `f(a)`. Postfix `'` on a tensor is still the transpose, so `A'` is unchanged; `ᵀ` is
 always the transpose and is an error on a function. The result of `f'` is an ordinary
 function: it passes to `\map`, composes, and displays as `<fn f′>`.
 

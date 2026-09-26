@@ -485,10 +485,10 @@ def _solve_call(value: Any, unknown: Any = None) -> SetValue:
         raise NumError(f"\\solve {error}") from None
 
 
-def _deriv_call(value: Any, unknown: Any = None) -> ExpressionValue:
+def _deriv_call(value: Any, unknown: Any = None, order: Any = 1) -> ExpressionValue:
     from . import rewrite
     try:
-        return rewrite.derivative(value, unknown)
+        return rewrite.derivative(value, unknown, order)
     except rewrite.RewriteError as error:
         raise NumError(f"\\deriv {error}") from None
 
@@ -3587,8 +3587,6 @@ class Engine:
             if glyph != "'":
                 self._fail("`ᵀ` transposes tensors; a function's derivative is `f'`", sid)
             order = value.order + 1 if isinstance(value, Derivative) else 1
-            if order > 2:
-                self._fail("derivatives above the second order are not supported", sid)
             return Derivative(value.fn if isinstance(value, Derivative) else value, order)
         try:
             return ntranspose(value)
