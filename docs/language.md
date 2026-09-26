@@ -146,7 +146,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Numeric limits: `\lim(x=0) x/x` → `= 1.0` approximates by two-sided shrinking-step
   probing without ever evaluating at the anchor. Disagreeing one-sided limits (jump
   discontinuities) report `` limit does not exist ``. Complex bodies and complex anchors
-  work (a complex anchor probes eight rays).
+  work (a complex anchor probes eight rays at golden-angle spacing).
 - Expression values: `q = \expr(x^2 - 4)` or ``q = `(x^2 - 4)`` stores a quoted AST;
   `\eval(q, x=3)` returns `5`. Bindings evaluate in the caller's scope and remain local to
   that evaluation. Other names resolve where `\eval` runs. Values display as parseable
@@ -228,7 +228,7 @@ phases add bindings without touching the lexer.
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
 - Numeric calculus stops at finite bounds and order 2 — see docs/calculus.md, `## Limitations`.
-- `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
+- `f⁻¹` on a user function is numeric and single-branch — see docs/calculus.md, `## Limitations`.
 - `/` is elementwise on tensors; matrix division is `\inv` or `\linsolve` (docs/stdlib.md).
 - `{1..}` is a parse error: an open range does not end at a closing brace —
   [#107](https://todo.sr.ht/~takeiteasy/adhoc/107).

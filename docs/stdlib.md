@@ -127,4 +127,4 @@ Tensors are limited to 1,000,000 entries when built by `\eye`, `\zeros`, `\ones`
 - Float elimination tests pivots against exact zero, so a nearly singular float matrix
   inverts to huge values and `\rank` counts round-off — [#98](https://todo.sr.ht/~takeiteasy/adhoc/98).
 - No `\eig` — [#99](https://todo.sr.ht/~takeiteasy/adhoc/99).
-- `\lim` with a complex anchor probes eight rays, so a body that vanishes on all of them (`\im((x - a)^4)/\abs(x - a)^4`) reads as a limit — [#97](https://todo.sr.ht/~takeiteasy/adhoc/97).
+- `\lim` with a complex anchor probes eight fixed rays; a body tuned to vanish on exactly those angles still reads as a limit. No finite set of probes is airtight.

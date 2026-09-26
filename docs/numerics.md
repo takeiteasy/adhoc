@@ -263,7 +263,8 @@ The two riders:
   further apart than *twice* the (relatively scaled) tolerance report `` limit does not
   exist `` (each side legitimately plateaus up to one tolerance-radius away, so two
   matching estimates may sit
-  2× apart). A complex anchor probes eight rays (`a ± h`, `a ± h·i`, and the four diagonals) that
+  2× apart). A complex anchor probes eight rays (four at multiples of the golden angle, and their
+  opposites) that
   must all agree; a body value may be complex either way, and a complex result drops a
   part below the tolerance (scaled by the modulus), so `\lim(x=i) x^2` is `-1.0`. Eight rays
   are a heuristic, not a proof of the two-dimensional limit (see

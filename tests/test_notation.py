@@ -11,6 +11,10 @@ def ev(src):
     return run_source(src, {})[-1]
 
 
+def value(src):
+    return float(ev(src)[2:])
+
+
 def fails(src, message):
     with pytest.raises(EvalError, match=message):
         run_source(src, {})
@@ -417,8 +421,25 @@ def test_function_power_on_a_number_is_still_a_product():
     assert ev("x = 3; x²(2)") == "= 18"
 
 
-def test_function_inverse_notation_is_a_typed_error():
-    fails("f(x) = x + 1\nf⁻¹(2)", "no inverse")
+def test_user_function_inverse_is_numeric():
+    assert value("f(x) = x + 1\nf⁻¹(2)") == pytest.approx(1.0)
+    assert value("f(x) = x^3\nf⁻¹(8)") == pytest.approx(2.0)
+    assert value("g = x ↦ 2x\ng⁻¹(6)") == pytest.approx(3.0)
+
+
+def test_user_inverse_takes_the_root_nearest_the_value():
+    assert value("f(x) = x^2\nf⁻¹(4)") == pytest.approx(2.0)
+
+
+def test_user_inverse_is_a_function_value():
+    assert ev("f(x) = x + 1\nf⁻¹") == "= <fn f⁻¹>"
+    assert float(ev("f(x) = x + 1\ng = f⁻¹\ng(5)")[2:]) == pytest.approx(4.0)
+    assert ev("f(x) = x + 1\nh = (f⁻¹)⁻¹\nh(2)") == "= 3"
+
+
+def test_user_inverse_without_a_preimage_is_an_error():
+    fails("f(x) = x^2\nf⁻¹(-1)", "no value maps")
+    fails("\\floor⁻¹(2.5)", "no value maps")
 
 
 def test_function_power_roundtrips():
@@ -462,7 +483,7 @@ def test_only_minus_one_is_an_inverse():
 
 def test_inverse_follows_the_function_value():
     assert ev("g(f) = f⁻¹(1/2)\ng(\\sin)") == ev("\\asin(1/2)")
-    fails("g(f) = f⁻¹(2)\nh(x) = x + 1\ng(h)", "no inverse")
+    assert value("g(f) = f⁻¹(2)\nh(x) = x + 1\ng(h)") == pytest.approx(1.0)
 
 
 def test_ascii_subscript_without_a_glyph():

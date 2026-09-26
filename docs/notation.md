@@ -111,7 +111,8 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 
 - `|A|` on a square matrix is an error, not the determinant — [#100](https://todo.sr.ht/~takeiteasy/adhoc/100).
 - Bars in set-builder notation `{x ∈ s | p}` are not read yet — [#79](https://todo.sr.ht/~takeiteasy/adhoc/79).
-- `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
+- `f⁻¹` on a user function is numeric and single-branch — [#108](https://todo.sr.ht/~takeiteasy/adhoc/108).
+- `(x ↦ 2x)⁻¹(6)` with a parenthesised non-name head is an error — [#109](https://todo.sr.ht/~takeiteasy/adhoc/109).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
     spelling: `x⁻¹⁰` is `x^-10`, `2ⁿᵏ` is `2^(n k)`. Glyphs exist for every letter but `q`
@@ -128,7 +129,7 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
     `(f^n)(x)`, so `x²(2)` on a number is `18` when `x = 3`. A negative exponent on a
     callable is a typed error unless it is exactly `⁻¹` on `\sin \cos \tan \exp \sinh \cosh \tanh` or
     their inverses, which give the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other
-    function has no inverse, and `\sin⁻²(x)` is an error.
+    function gives its numeric inverse (`docs/calculus.md`), and `\sin⁻²(x)` is an error.
 [^logic]: `∧` `∨` and `→` skip their right operand once the left decides (`false ∧ …`,
     `true ∨ …`, `false → …`); a non-boolean operand is a typed error at that operand. `∀` and
     `∃` are special forms like `\sum` (docs/grammar.md, `## Special forms`) and use the same

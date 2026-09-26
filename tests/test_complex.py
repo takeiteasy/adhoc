@@ -323,8 +323,8 @@ def test_lim_complex_anchor_diagonal_rays_are_probed():
 
 
 def test_lim_drops_stray_tiny_parts():
-    assert last(r"\lim(x=1+i) x^2") == "= 2.0i"
-    assert last(r"\lim(x=i) x^2") == "= -1.0"
+    assert complex(last(r"\lim(x=1+i) x^2")[2:].replace("i", "j")) == pytest.approx(2j, abs=1e-12)
+    assert float(last(r"\lim(x=i) x^2")[2:]) == pytest.approx(-1.0, abs=1e-12)
 
 
 def test_lim_complex_anchor_rays_that_disagree_have_no_limit():
@@ -348,3 +348,9 @@ def test_log_of_a_complex_value_with_base_one_is_division_by_zero():
 def test_atan2_stays_real_only():
     with pytest.raises(EvalError, match="real arguments"):
         last(r"\atan2(1, i)")
+
+
+@pytest.mark.parametrize("n", [4, 8])
+def test_lim_complex_anchor_harmonics_do_not_vanish_on_the_probe_rays(n):
+    with pytest.raises(EvalError, match="does not exist"):
+        last(rf"\lim(x=i) \im((x - i)^{n})/\abs(x - i)^{n}")

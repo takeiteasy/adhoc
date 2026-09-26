@@ -1135,7 +1135,7 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
             return rra.show(v, digits)
         except rra.DomainError as e:
             raise NumError(e.args[0])
-    if isinstance(v, Composed | Partial | OperatorFn | Derivative):
+    if isinstance(v, Composed | Partial | OperatorFn | Derivative | Inverse):
         return f"<fn {_callable_label(v)}>"
     if isinstance(v, PreludeFn):
         return f"<fn \\{v.name}(x)>"
@@ -1250,8 +1250,8 @@ def _as_inexact(value: AdValue) -> float | complex:
     return _as_float(value)
 
 
-_RAYS = (1.0, -1.0, 1j, -1j) + tuple(complex(a, b) / math.sqrt(2)
-                                     for a in (1, -1) for b in (1, -1))
+_GOLDEN_ANGLE = math.pi * (3 - math.sqrt(5))
+_RAYS = tuple(sign * cmath.exp(1j * k * _GOLDEN_ANGLE) for k in range(4) for sign in (1, -1))
 
 
 def _drop_stray_parts(value: AdValue) -> AdValue:
@@ -1697,7 +1697,8 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | Derivative | ExpressionValue
+    if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | Derivative | Inverse
+                      | ExpressionValue
                       | TensorValue | ArrayValue | SetValue):
         return value
     if isinstance(value, RangeValue | LazySeq):
@@ -2071,7 +2072,90 @@ class Derivative:
                         _callable_label(self))
 
 
-_INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial, OperatorFn, Derivative)
+class Inverse:
+    """`f⁻¹` of a function with no paired inverse: `f⁻¹(y)` is the float root of `f(x) = y`
+    nearest `y`. A bracket grows outward from `y` and bisects; a root with no sign change
+    (a tangent one) falls to a secant walk. The residual is checked, so a jump or a
+    value outside the range is an error rather than a wrong answer."""
+
+    SPREAD_STEPS = 60
+
+    def __init__(self, fn: Any):
+        self.fn = fn
+
+    def __call__(self, *args):
+        label = _callable_label(self)
+        if len(args) != 1:
+            raise NumError(f"{label} takes 1 argument, got {len(args)}")
+        _reject_non_numeric(args[0])
+        target = _as_inexact(args[0])
+        if isinstance(target, complex) or not math.isfinite(target):
+            raise NumError(f"{label} needs a finite real value")
+
+        def gap(x: float) -> float:
+            value = _as_inexact(_invoke(self.fn, (x,)))
+            if isinstance(value, complex):
+                raise NumError(f"{label}: the function is not real-valued near {nshow(x)}")
+            return value - target
+
+        root = self._bracket(gap, target) or self._secant(gap, target)
+        scale = max(1.0, abs(target))
+        if root is None or abs(gap(root)) > 1e-9 * scale:
+            raise NumError(f"{label}: no value maps to {nshow(args[0])} near it")
+        return root
+
+    def _bracket(self, gap: Callable[[float], float], seed: float) -> float | None:
+        centre = gap(seed)
+        if centre == 0:
+            return seed
+        width = max(abs(seed), 1.0) / 16
+        for _ in range(self.SPREAD_STEPS):
+            for side in (width, -width):
+                try:
+                    value = gap(seed + side)
+                except (NumError, EvalError):
+                    continue
+                if not math.isfinite(value):
+                    continue
+                if value == 0:
+                    return seed + side
+                if (value < 0) != (centre < 0):
+                    return self._bisect(gap, seed, seed + side)
+            width *= 2
+        return None
+
+    @staticmethod
+    def _bisect(gap: Callable[[float], float], a: float, b: float) -> float:
+        low, high = (a, b) if a < b else (b, a)
+        low_negative = gap(low) < 0
+        for _ in range(MAX_PROBES):
+            mid = (low + high) / 2
+            if mid in (low, high):
+                break
+            if (gap(mid) < 0) == low_negative:
+                low = mid
+            else:
+                high = mid
+        return min(low, high, key=lambda x: abs(gap(x)))
+
+    @staticmethod
+    def _secant(gap: Callable[[float], float], seed: float) -> float | None:
+        x0, x1 = seed, seed + max(abs(seed), 1.0) / 16
+        try:
+            f0, f1 = gap(x0), gap(x1)
+            for _ in range(MAX_PROBES):
+                if f1 == f0:
+                    break
+                x0, x1, f0 = x1, x1 - f1 * (x1 - x0) / (f1 - f0), f1
+                f1 = gap(x1)
+                if abs(f1) <= 1e-13:
+                    return x1
+        except (NumError, EvalError):
+            return None
+        return x1 if math.isfinite(x1) else None
+
+
+_INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial, OperatorFn, Derivative, Inverse)
 
 
 def _callable_label(fn: Any) -> str:
@@ -2089,6 +2173,8 @@ def _callable_label(fn: Any) -> str:
         return fn.symbol
     if isinstance(fn, Derivative):
         return f"{_callable_label(fn.fn)}{'′' * fn.order}"
+    if isinstance(fn, Inverse):
+        return f"{_callable_label(fn.fn)}⁻¹"
     return _show_callable(fn)[len("<py "):-1]
 
 
@@ -3179,7 +3265,8 @@ class Engine:
         """`\\lim(x=a) body`, numeric only: probe each side with geometrically shrinking
         steps — never evaluating at `a` itself; the ulp guard halts each side when a
         step would round back onto the anchor. A real anchor has two sides (right, left),
-        a complex anchor eight rays (±1, ±i and the four diagonals). Each side must stabilize within
+        a complex anchor eight rays: four at multiples of the golden angle and their opposites (the
+        opposites cancel the first-order bias of the averaged estimate). Each side must stabilize within
         CONVERGENCE_TOLERANCE (same relatively-scaled plateau test as infinite folds)
         inside MAX_PROBES;
         sides stabilizing apart means the limit does not exist. Probes evaluate in the
@@ -3609,11 +3696,9 @@ class Engine:
     def _inverse(self, fn: Any, exponent: AdValue, sid: int) -> Callable:
         if exponent != -1:
             self._fail("only `⁻¹` denotes an inverse function", sid)
-        inverse = _INVERSES.get(id(fn))
-        if inverse is None:
-            # User functions have no inverse notation (#87).
-            self._fail(f"`{nshow(fn)}` has no inverse", sid)
-        return inverse
+        if isinstance(fn, Inverse):
+            return fn.fn
+        return _INVERSES.get(id(fn)) or Inverse(fn)
 
     def _binop(self, f, a: AdValue, b: AdValue, sid: int) -> AdValue:
         try:
