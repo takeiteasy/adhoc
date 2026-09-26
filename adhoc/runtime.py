@@ -485,12 +485,20 @@ def _solve_call(value: Any, unknown: Any = None) -> SetValue:
         raise NumError(f"\\solve {error}") from None
 
 
-def _deriv_call(value: Any, unknown: Any = None, order: Any = 1) -> ExpressionValue:
+def _deriv_call(value: Any, unknown: Any = None, order: Any = 1) -> ExpressionValue | ArrayValue:
     from . import rewrite
     try:
         return rewrite.derivative(value, unknown, order)
     except rewrite.RewriteError as error:
         raise NumError(f"\\deriv {error}") from None
+
+
+def _grad_call(value: Any, unknown: Any = None) -> ArrayValue:
+    from . import rewrite
+    try:
+        return rewrite.gradient(value, unknown)
+    except rewrite.RewriteError as error:
+        raise NumError(f"\\grad {error}") from None
 
 
 def _transpose_call(value: Any) -> AdValue:
@@ -2747,6 +2755,7 @@ PRELUDE.update({
     "expand": _rewrite_call("expand", sympy.expand),
     "solve": PreludeFn("solve", _solve_call),
     "deriv": PreludeFn("deriv", _deriv_call),
+    "grad": PreludeFn("grad", _grad_call),
     "gcd": PreludeFn("gcd", _gcd_call),
     "lcm": PreludeFn("lcm", _lcm_call),
     "divmod": PreludeFn("divmod", _divmod_call),

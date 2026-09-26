@@ -11,9 +11,11 @@ free names stay symbols.
 | `\factor(e)` | the factored expression (`\factor(12)` on a number is prime factors, docs/stdlib.md) |
 | `\solve(e)` | the set of `x` with `e = 0`, over the complex numbers |
 | `\solve(e, `(y))` | the same, solving for `y` |
-| `\deriv(e)` | the exact derivative with respect to the one free name |
+| `\deriv(e)` | the exact derivative with respect to the one free name (several names: the gradient) |
 | `\deriv(e, `(y))` | the same, with respect to `y` |
 | `\deriv(e, `(y), n)` | the `n`th derivative, `n` a positive integer |
+| `\deriv(e, ⟨`(x), `(y)⟩)` | the mixed partial, differentiating by each name in turn |
+| `\grad(e)`, `\grad(e, ⟨`(x), `(y)⟩)` | the array of first partials, over every name or the listed ones |
 
 ```
 \simplify(\expr((x^2 - 1)/(x - 1)))   ->  = \expr((x + 1))
@@ -30,6 +32,22 @@ f(x) = x^2 - 9
 
 `\deriv` names its unknown the way `\solve` does. Numeric derivatives at a point are `f'` and
 `\diff` (docs/calculus.md); `f'` uses the exact derivative when the body bridges.
+
+## Partial derivatives
+
+With no unknown and several candidates (free names in name order, or a function's parameters),
+`\deriv` and `\grad` answer with an array of quotes, one partial per name. Repeat a name in the
+array for higher orders.
+
+```
+\deriv(\expr(x^2 y))                    ->  = ⟨\expr(((2 * x) * y)), \expr((x ^ 2))⟩
+f(x, y) = x y^2
+\grad(f)                                ->  = ⟨\expr((y ^ 2)), \expr(((2 * x) * y))⟩
+\deriv(\expr(x^3 y), ⟨`(x), `(x), `(y)⟩) ->  = \expr((6 * x))
+```
+
+An order argument takes a single unknown. The gradient is an array, not a tensor, because
+tensors hold numbers only; it indexes and maps but has no vector algebra.
 
 ## Inputs
 
@@ -78,6 +96,7 @@ their numeric path.[^timer]
 | `\solve(e)` solves `e = 0`; `lhs = rhs` is not read as an equation | [#113](https://todo.sr.ht/~takeiteasy/adhoc/113) |
 | Infinite solution families are an error; no real-domain option | [#114](https://todo.sr.ht/~takeiteasy/adhoc/114) |
 | The time limit needs SIGALRM on the main thread | [#119](https://todo.sr.ht/~takeiteasy/adhoc/119) |
+| Gradients are arrays of quotes, without vector algebra | [#121](https://todo.sr.ht/~takeiteasy/adhoc/121) |
 | Numeric third and higher derivatives (float points, non-symbolic bodies) are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
 
 [^timer]: A `setitimer(ITIMER_REAL)` interrupt. Off the main thread, without SIGALRM, or while

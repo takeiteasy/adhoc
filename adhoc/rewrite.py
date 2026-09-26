@@ -16,6 +16,7 @@ from typing import Any, Callable, Iterator
 import sympy
 
 from .expression import ExpressionValue
+from .tensor import ArrayValue
 from .span import Span
 from .syntax import (
     BackslashRef, BinOp, BinOperator, Call, Node, NumLit, PowCall, Seq, UnaryOperator, UnOp,
@@ -293,14 +294,60 @@ def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr]) -> Expres
     return quote(result, origin.bridge, origin.source)
 
 
-def derivative(value: Any, unknown: Any = None, order: Any = 1) -> ExpressionValue:
+def derivative(value: Any, unknown: Any = None, order: Any = 1) -> Any:
+    """The exact derivative: one quote for a single unknown or a list of them (a mixed
+    partial), the gradient (an array of quotes) when several names are candidates."""
     if not isinstance(order, int) or isinstance(order, bool) or order < 1:
         raise RewriteError("needs the order to be a positive integer")
     origin = bridge_value(value)
-    symbol = _unknown(origin, unknown)
+    if isinstance(unknown, ArrayValue):
+        if order != 1:
+            raise RewriteError("takes an order only with a single unknown")
+        return _diff(origin, _listed(unknown))
+    if unknown is None:
+        names = _candidates(origin)
+        if len(names) > 1:
+            if order != 1:
+                raise RewriteError("takes an order only with a single unknown")
+            return _gradient(origin, names)
+    return _diff(origin, [_unknown(origin, unknown)] * order)
+
+
+def gradient(value: Any, unknown: Any = None) -> Any:
+    """The array of first partials over the listed names, or over every candidate."""
+    origin = bridge_value(value)
+    if unknown is None:
+        return _gradient(origin, _candidates(origin))
+    if not isinstance(unknown, ArrayValue):
+        raise RewriteError("the unknowns must be an array of quoted names, like ⟨`(x), `(y)⟩")
+    return _gradient(origin, _listed(unknown))
+
+
+def _diff(origin: Source, symbols: list[sympy.Symbol]) -> ExpressionValue:
     with time_limit():
-        result = sympy.diff(origin.expr, symbol, order)
+        result = sympy.diff(origin.expr, *symbols)
     return quote(result, origin.bridge, origin.source)
+
+
+def _gradient(origin: Source, symbols: list[sympy.Symbol]) -> ArrayValue:
+    return ArrayValue(tuple(_diff(origin, [symbol]) for symbol in symbols))
+
+
+def _listed(unknowns: ArrayValue) -> list[sympy.Symbol]:
+    if not unknowns.items:
+        raise RewriteError("needs at least one unknown in the array")
+    return [_quoted_name(item) for item in unknowns.items]
+
+
+def _candidates(origin: Source) -> list[sympy.Symbol]:
+    """The names to differentiate over when none is given: a function's parameters, else
+    the free names in order."""
+    if origin.params:
+        return list(origin.params)
+    names = sorted(origin.expr.free_symbols, key=lambda s: s.name)
+    if not names:
+        raise RewriteError("has no unknown")
+    return names
 
 
 def solve(value: Any, unknown: Any = None) -> Any:
@@ -328,13 +375,17 @@ def solve(value: Any, unknown: Any = None) -> Any:
     return SetValue(_dedup(items))
 
 
+def _quoted_name(unknown: Any) -> sympy.Symbol:
+    if not isinstance(unknown, ExpressionValue) or not isinstance(
+            unknown.node, Var | BackslashRef):
+        raise RewriteError("the unknown must be a quoted name, like `(x)")
+    return sympy.Symbol(unknown.node.ch if isinstance(unknown.node, Var)
+                        else unknown.node.name)
+
+
 def _unknown(origin: Source, unknown: Any) -> sympy.Symbol:
     if unknown is not None:
-        if not isinstance(unknown, ExpressionValue) or not isinstance(
-                unknown.node, Var | BackslashRef):
-            raise RewriteError("the unknown must be a quoted name, like `(x)")
-        return sympy.Symbol(unknown.node.ch if isinstance(unknown.node, Var)
-                            else unknown.node.name)
+        return _quoted_name(unknown)
     free = sorted(origin.expr.free_symbols, key=lambda s: s.name)
     if origin.params:
         if len(origin.params) != 1:
@@ -342,7 +393,7 @@ def _unknown(origin: Source, unknown: Any) -> sympy.Symbol:
         return origin.params[0]
     if len(free) != 1:
         if not free:
-            raise RewriteError("has no unknown to solve for")
+            raise RewriteError("has no unknown")
         names = ", ".join(s.name for s in free)
         raise RewriteError(f"needs the unknown when there are several free names: {names}")
     return free[0]

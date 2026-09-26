@@ -137,7 +137,7 @@ def test_deriv_order_errors():
 
 
 def test_deriv_errors():
-    fails(r"\deriv(\expr(a x))", "needs the unknown")
+    fails(r"\deriv(\expr(2))", "no unknown")
     fails(r"\deriv(\expr(x < 1))", "cannot rewrite compare")
     fails(r"\deriv(3)", "expression quote")
     fails(r"\deriv(\expr((y = 1; y)))", "statement")
@@ -212,3 +212,29 @@ def test_time_limit_restores_the_timer_and_handler():
         pass
     assert signal.getsignal(signal.SIGALRM) is before
     assert signal.getitimer(signal.ITIMER_REAL)[0] == 0
+
+
+def test_deriv_defaults_to_the_gradient_with_several_names():
+    assert ev(r"\deriv(\expr(x^2 y))") == r"= ⟨\expr(((2 * x) * y)), \expr((x ^ 2))⟩"
+    assert ev("f(x, y) = x y^2\n\\deriv(f)") == r"= ⟨\expr((y ^ 2)), \expr(((2 * x) * y))⟩"
+    assert ev(r"\deriv(\expr(x^2 y))[2]") == r"= \expr((x ^ 2))"
+
+
+def test_deriv_of_an_array_of_names_is_a_mixed_partial():
+    assert ev(r"\deriv(\expr(x^2 y), ⟨`(x), `(y)⟩)") == r"= \expr((2 * x))"
+    assert ev(r"\deriv(\expr(x^3 y), ⟨`(x), `(x), `(y)⟩)") == r"= \expr((6 * x))"
+
+
+def test_grad_over_chosen_names():
+    assert ev(r"\grad(\expr(x^2 y + z), ⟨`(x), `(y)⟩)") == r"= ⟨\expr(((2 * x) * y)), \expr((x ^ 2))⟩"
+    assert ev(r"\grad(\expr(x))") == r"= ⟨\expr(1)⟩"
+    assert ev(r"\grad(\expr(a x + b y))") == r"= ⟨\expr(x), \expr(y), \expr(a), \expr(b)⟩"
+
+
+def test_grad_and_partial_errors():
+    fails(r"\deriv(\expr(x^2 y), ⟨`(x)⟩, 2)", "only with a single unknown")
+    fails(r"\deriv(\expr(x^2 y), ⟨⟩)", "at least one unknown")
+    fails(r"\deriv(\expr(x^2 y), ⟨2⟩)", "quoted name")
+    fails(r"\grad(\expr(x^2 y), `(x))", "array of quoted names")
+    fails(r"\grad(\expr(2))", "no unknown")
+    fails(r"\grad(3)", "expression quote")

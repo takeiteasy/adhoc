@@ -168,7 +168,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   parameters (docs/grammar.md, `## Lambdas`).
 - Piecewise definitions `{x < 0: -x; x}` and set-builder `{x ∈ 1..10 | x^2 < 50}`
   (docs/grammar.md, `## Sets`, `## Conditionals`).
-- Symbolic rewriting: `\simplify(q)`, `\expand(q)`, `\factor(q)`, `\solve(q)` and `\deriv(q)` take a
+- Symbolic rewriting: `\simplify(q)`, `\expand(q)`, `\factor(q)`, `\solve(q)`, `\deriv(q)` and `\grad(q)` take a
   quote or a function and return a quote (`\solve`: a set of solutions), e.g.
   `\solve(\expr(x^2 - 4))` is `{-2, 2}` (docs/symbolic.md).
 - `\tex(e)` returns LaTeX for a quote, function or value (docs/tex.md).
