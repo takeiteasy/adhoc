@@ -109,6 +109,19 @@ class Superscript(Token):
 
 
 @dataclass(frozen=True)
+class NthRoot(Token):
+    """The prefix radicals `∛` and `∜`; `index` is the root (3 or 4). Like `√`, not a
+    name; the parser rewrites `∛x` to `\\root(x, 3)`."""
+
+    ch: str
+    index: int
+
+    @property
+    def describe(self) -> str:
+        return f"`{self.ch}`"
+
+
+@dataclass(frozen=True)
 class Bang(Token):
     """Postfix factorial `!`."""
 
@@ -401,6 +414,8 @@ _SET_OPERATORS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "�
                   "∘": "circ"}
 _SET_SYMBOLS = {name: symbol for symbol, name in _SET_OPERATORS.items()}
 
+_ROOT_INDEX = {"∛": 3, "∜": 4}
+
 _SUPERSCRIPT_DIGITS = {c: str(d) for d, c in enumerate("⁰¹²³⁴⁵⁶⁷⁸⁹")}
 
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
@@ -560,6 +575,12 @@ def tokenize(src: str) -> list[Token]:
             end = entries[j][0] if j < n else eof_off
             tokens.append(Ident(ch=src[i:j], span=Span(pos, end)))
             i = j
+            continue
+
+        if c in _ROOT_INDEX:
+            tokens.append(NthRoot(ch=c, index=_ROOT_INDEX[c],
+                                  span=Span(pos, pos + len(c.encode("utf-8")))))
+            i += 1
             continue
 
         if c == "!":

@@ -77,6 +77,7 @@ from .lexer import (
     Comma,
     Bang,
     Caret,
+    NthRoot,
     DoubleBang,
     Superscript,
     Eq,
@@ -169,7 +170,7 @@ class IncompleteInput(ParseError):
 
 
 _ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, LBrace,
-                  HashBracket, Str, Radical)
+                  HashBracket, Str, Radical, NthRoot)
 
 _NO_HOLE_FORMS = frozenset({"py", "arr", "eval"})
 
@@ -765,12 +766,20 @@ class _Parser:
         tok = self.look(k)
         if isinstance(tok, Radical):
             return BackslashRef(name="sqrt", span=tok.span, spelling="√")
+        if isinstance(tok, NthRoot):
+            return Call(head=self._root_ref(tok),
+                        args=(Hole(span=tok.span), NumLit(text=str(tok.index), span=tok.span)),
+                        span=tok.span)
         key = _SYMBOL_OPERATORS.get(type(tok))
         if key is None:
             name = (tok.name if isinstance(tok, SetOp) else "contract" if isinstance(tok, At)
                     else tok.name if isinstance(tok, Backslash) else None)
             key = _INFIX_OPERATORS.get(name)
         return None if key is None else OpRef(name=key, span=tok.span)
+
+    @staticmethod
+    def _root_ref(tok: NthRoot) -> BackslashRef:
+        return BackslashRef(name="root", span=tok.span, spelling="\\root")
 
     def _closes_section(self, keys: frozenset[str] | None = None) -> bool:
         """The cursor is an operator (of `keys`, or any) directly before a `)`: the end of
@@ -1322,6 +1331,14 @@ class _Parser:
                 operand = self.unary()
                 return Call(head=BackslashRef(name="sqrt", span=rad.span, spelling="√"),
                             args=(operand,), span=rad.span.to(operand.span))
+            case NthRoot():
+                # `∛x` / `∜x`: the operand parses at the unary level like `√`'s, and the
+                # node is the ordinary `\\root(x, n)` call.
+                rad = self.advance()
+                operand = self.unary()
+                return Call(head=self._root_ref(rad),
+                            args=(operand, NumLit(text=str(rad.index), span=rad.span)),
+                            span=rad.span.to(operand.span))
             case LParen() if (self.look(2).__class__ is RParen
                               and self._operator_value(1) is not None):
                 self.advance()
@@ -1330,7 +1347,7 @@ class _Parser:
                 close = self.advance()
                 return replace(operator, span=tok.span.to(close.span))
             case LParen() if (self._operator_value(1) is not None
-                              and not isinstance(self.look(1), (Minus, Radical, Bang, DoubleBang))):
+                              and not isinstance(self.look(1), (Minus, Radical, NthRoot, Bang, DoubleBang))):
                 return self._right_section(tok)
             case LParen():
                 group_top_level = (

@@ -433,6 +433,17 @@ def _shape_call(value: Any) -> TensorValue:
     return TensorValue((value.rank,), value.shape)
 
 
+def _root_call(*args: AdValue) -> AdValue:
+    if len(args) != 2:
+        raise NumError("\\root takes a value and a root index: \\root(x, n)")
+    x, index = args
+    _reject_non_numeric(x)
+    n = _integer_exponent(index) if not isinstance(index, bool) else None
+    if n is None or n < 1:
+        raise NumError(f"\\root needs a positive exact integer index, got {nshow(index)}")
+    return npow(x, Fraction(1, n))
+
+
 PRELUDE: dict[str, Any] = {
     "pi": symbolic.PI,
     "e": symbolic.E,
@@ -446,6 +457,7 @@ PRELUDE: dict[str, Any] = {
     "tan": _prelude_fn("tan", math.tan),
     "ln": _prelude_fn("ln", math.log),
     "sqrt": _prelude_fn("sqrt", math.sqrt),
+    "root": PreludeFn("root", _root_call),
     "isnan": _predicate_fn("isnan", math.isnan, False),
     "isinf": _predicate_fn("isinf", math.isinf, False),
     "isfinite": _predicate_fn("isfinite", math.isfinite, True),

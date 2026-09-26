@@ -155,3 +155,42 @@ def test_factorial_error_span_is_the_postfix_node():
     with pytest.raises(EvalError) as e:
         run_source("x = 2.5\nx!", {})
     assert (e.value.span.start, e.value.span.end) == (8, 10)
+
+
+# --- roots ---
+
+
+def test_cube_and_fourth_roots():
+    assert ev("∛8") == "= 2"
+    assert ev("∛-8") == "= -2"
+    assert ev("∜16") == "= 2"
+    assert ev("∛(-27)") == "= -3"
+    assert ev("∛2") == "= 1.25992104989487..."
+    assert ev("∛2.") == "= 1.2599210498948732"
+
+
+def test_root_precedence_matches_sqrt():
+    assert ev("2∛8") == "= 4"
+    assert ev("∛2^3") == "= 2"
+    assert ev("x = 27; ∛x²") == "= 9"
+
+
+def test_root_prelude_function():
+    assert ev(r"\root(32, 5)") == "= 2"
+    assert ev(r"\root(9, 1)") == "= 9"
+    fails(r"\root(8, 0)", "positive exact integer")
+    fails(r"\root(8, 1.5)", "positive exact integer")
+    fails(r"\root(8)", "takes a value and a root index")
+    fails(r'\root("a", 3)', "not numbers")
+
+
+def test_root_is_protected_and_operator_valued():
+    fails(r"\let \root = 3", "protected")
+    assert ev(r"\map((∛), [1, 8])") == "= [1, 2]"
+    assert ev(r"\map(∜, ⟨16, 81⟩)") == "= ⟨2, 3⟩"
+    assert ev("(∛)(27)") == "= 3"
+
+
+def test_root_quotes_print_as_the_prelude_call():
+    assert roundtrip("∛x + ∜y") == r"(\root(x, 3) + \root(y, 4))"
+    assert ev(r"\eval(\expr(∛x), x=8)") == "= 2"
