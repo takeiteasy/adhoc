@@ -734,13 +734,15 @@ class _Parser:
     # line breaks — `1..` NL `5` is one range — but a bare newline before any range
     # delimiter is a statement boundary, never a continuation.
     def range_expr(self) -> Node:
-        start = self.comparison()
+        return self._range_from(self.comparison(), self.comparison)
+
+    def _range_from(self, start: Node, bound) -> Node:
         second = None
         if isinstance(self.peek(), Comma) and not self._in_list:
             saved = self.pos
             self.advance()
             self._skip_newlines()
-            candidate = self.comparison()
+            candidate = bound()
             if not isinstance(self.peek(), DotDot):
                 self.pos = saved
             else:
@@ -751,8 +753,7 @@ class _Parser:
         self._skip_newlines()
         # A closing delimiter terminates the range just like `,` `)` `;` and EOF —
         # `( r = 1.. )` is the infinite range, not a broken one.
-        end = None if isinstance(self.peek(), (Comma, RParen, Semi, Eof)) \
-            else self.comparison()
+        end = None if isinstance(self.peek(), (Comma, RParen, Semi, Eof)) else bound()
         return Range(start=start, second=second, end=end,
                      span=start.span.to((end or dotdot).span))
 
@@ -815,6 +816,8 @@ class _Parser:
                          else self.unary if operator.name == "pow" else self.additive)
         self.advance()
         operand = operand_level()
+        if operator.name in ("member", "notmember"):
+            operand = self._range_from(operand, operand_level)
         if not isinstance(self.peek(), (RParen, Eof)):
             raise ParseError(
                 f"a section's operand ends at `)`, found {self.peek().describe}; "
@@ -850,6 +853,8 @@ class _Parser:
         else:
             return lhs
         rhs = self.additive()
+        if op in (CompareOperator.IN, CompareOperator.NOTIN):
+            rhs = self._range_from(rhs, self.additive)
         return Compare(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
 
     # additive ::= multiplicative (("+" | "-" | "∪" | "∖") multiplicative)* ;

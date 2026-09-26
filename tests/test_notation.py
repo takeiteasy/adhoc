@@ -303,8 +303,19 @@ def test_membership_in_arrays():
 
 
 def test_membership_in_ranges():
-    # `..` binds looser than `∈`, so a range operand is parenthesized.
     assert ev("3 ∈ (1..5)") == "= true"
+    assert ev("3 ∈ 1..5") == "= true"
+    assert ev("4 ∉ 1..3") == "= true"
+    assert ev("5 ∈ 1,3..9") == "= true"
+    assert ev("1000000 ∈ 1..") == "= true"
+    assert ev("(∈ 1..5)(3)") == "= true"
+    assert ev("(∉ 1,3..9)(4)") == "= true"
+
+
+def test_membership_range_operand_keeps_other_comparisons_and_lists():
+    fails("3 < 1..5", "booleans are not numbers")
+    assert ev("\\arr(1 ∈ 1..3, 9)") == "= ⟨true, 9⟩"
+    assert roundtrip("3 ∈ 1..5") == "(3 ∈ (1..5))"
     assert ev("6 ∈ (1..5)") == "= false"
     assert ev("0 ∈ (1..5)") == "= false"
     assert ev("2.5 ∈ (1..5)") == "= false"
