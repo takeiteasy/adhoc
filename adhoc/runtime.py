@@ -2026,11 +2026,21 @@ def _round_call(*args: AdValue) -> AdValue:
     return ndiv(_integral(nmul(x, scale), "round"), scale)
 
 
+def _simplified(v: AdValue) -> AdValue:
+    """An algebraic or RRA result simplified, back in the lowest tier that holds it."""
+    if not isinstance(v, algebraic.Algebraic | rra.RRA):
+        return v
+    try:
+        return _sympy_to_ad(rra.simplify(v), "value")
+    except NumError:
+        return v
+
+
 def _abs_call(v: AdValue) -> AdValue:
     _reject_non_numeric(v)
     if _is_complex(v):
-        return npow(nadd(nmul(_re_call(v), _re_call(v)), nmul(_im_call(v), _im_call(v))),
-                    Fraction(1, 2))
+        return _simplified(npow(nadd(nmul(_re_call(v), _re_call(v)),
+                                     nmul(_im_call(v), _im_call(v))), Fraction(1, 2)))
     return nneg(v) if ncompare("lt", v, 0) else v
 
 
@@ -2374,7 +2384,7 @@ def _arg_call(v: AdValue) -> AdValue:
     _reject_non_numeric(v)
     if isinstance(v, (int, Fraction)) and v == 0:
         raise NumError("\\arg is not defined at zero")
-    return PRELUDE["atan2"](_im_call(v), _re_call(v))
+    return _simplified(PRELUDE["atan2"](_im_call(v), _re_call(v)))
 
 
 PRELUDE.update({

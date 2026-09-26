@@ -289,8 +289,8 @@ Exactness of the standard library ([`stdlib.md`](stdlib.md)):
   Negative or complex-valued cases give the complex principal value, like `\ln(-1)`.
 - `\gamma(x)` and `x!` of a half-integer are `√π` multiples; other non-integers are held
   to arbitrary precision (RRA).
-- `r∠θ` of a non-special angle is RRA, so `\abs(2∠1)` is `2` only to display precision
-  (see Limitations in `stdlib.md`).
+- `r∠θ` of a non-special angle is RRA; `\abs` and `\arg` simplify their result, so
+  `\abs(2∠1)` is `2` and `\arg(2∠3)` is `3`.
 
 ## Non-finite values
 

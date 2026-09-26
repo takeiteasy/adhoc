@@ -16,7 +16,11 @@ the float tier. Every name is protected: it cannot be rebound or shadowed.
 `∠` binds looser than `+` and tighter than comparison, so `2∠π/2` is `2∠(π/2)` and
 `2∠π/2 ≈ 2i` is `true`. It does not chain: `1∠2∠3` is a parse error. `(∠)` is its function
 value, and `(2 ∠)` and `(∠ π)` are sections. A float radius or angle cannot build a complex
-value (complex values do not mix with floats).
+value (see Limitations).
+
+`\abs` and `\arg` simplify trig identities in their result, so `\abs(2∠1)` is `2` and
+`\arg(2∠3)` is `3`. The components of `r∠θ` for a non-special angle stay decimal-displayed
+(`1∠π/3` shows `0.5...+0.866025403784439...i`).
 
 ## Aggregates
 
@@ -90,4 +94,4 @@ Complex arguments are a typed error, except for `\abs`.
 ## Limitations
 
 - `\gcd`, `\lcm` and `\factor` reject Gaussian integers — [#92](https://todo.sr.ht/~takeiteasy/adhoc/92).
-- `r∠θ` and `\abs` of a non-special angle are held approximately (`\abs(2∠1)` shows `2...`) — [#91](https://todo.sr.ht/~takeiteasy/adhoc/91).
+- A float radius or angle cannot build a complex value (`2.∠1`) — [#93](https://todo.sr.ht/~takeiteasy/adhoc/93).

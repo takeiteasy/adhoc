@@ -334,6 +334,12 @@ def apply(name: str, *args) -> Fraction | Gaussian | RRA:
         raise DomainError(_DOMAIN_MESSAGES[name]) from None
 
 
+def simplify(v) -> sympy.Expr:
+    """An algebraic or RRA value's expression simplified (`sqrt(4cos²1+4sin²1)` is `2`,
+    `atan(sin(π/7)/cos(π/7))` is `π/7`); the seam reclassifies the result through the tiers."""
+    return sympy.simplify(_to_expr(v))
+
+
 def approximate(v: RRA, tolerance: int | Fraction | float) -> Fraction:
     """The ticket's spelling made concrete: evaluate the stored expression to
     within `tolerance` and return the rational. sympy evaluates at escalating

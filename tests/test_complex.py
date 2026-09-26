@@ -223,3 +223,20 @@ def test_seam_complex_tiers():
     assert isinstance(PRELUDE["sin"](nadd(1, i)), RRA)
     # π*i is symbolic (pure-imaginary with a recognized real shape).
     assert isinstance(nmul(PRELUDE["pi"], i), Symbolic)
+
+
+# --- exact modulus and argument of trig-built values (ticket #91) ---
+
+
+@pytest.mark.parametrize("src, out", [
+    (r"\abs(2∠1)", "= 2"), (r"\abs(1∠π/7)", "= 1"), (r"\abs(5∠π/7)", "= 5"),
+    (r"\abs(1∠π/3)", "= 1"), (r"\abs(3+4i)", "= 5"),
+    (r"\arg(2∠1)", "= 1"), (r"\arg(2∠3)", "= 3"), (r"\arg(2∠-2)", "= -2"),
+    (r"\arg(1∠π/7) - π/7", "= 0"),
+])
+def test_polar_modulus_and_argument_are_exact(src, out):
+    assert last(src) == out
+
+
+def test_abs_of_an_unsimplifiable_complex_stays_approximate():
+    assert last(r"\abs(π+e i)") == "= 4.15435440231331..."
