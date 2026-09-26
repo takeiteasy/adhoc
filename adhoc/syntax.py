@@ -44,6 +44,10 @@ class CompareOperator(Enum):
     SUBSETEQ = auto()
     NE = auto()
     APPROX = auto()
+    NOTIN = auto()
+    SUBSET = auto()
+    SUPSETEQ = auto()
+    SUPSET = auto()
 
 
 class UnaryOperator(Enum):
@@ -195,6 +199,7 @@ OP_SYMBOLS = {
     "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "@",
     "fact": "!", "dfact": "‼", "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
     "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆", "ne": "≠", "approx": "≈",
+    "notmember": "∉", "subset": "⊂", "supseteq": "⊇", "supset": "⊃",
 }
 
 

@@ -44,6 +44,8 @@ _CMP = {
     CompareOperator.GT: ">", CompareOperator.GE: ">=",
     CompareOperator.IN: "∈", CompareOperator.SUBSETEQ: "⊆",
     CompareOperator.NE: "≠", CompareOperator.APPROX: "≈",
+    CompareOperator.NOTIN: "∉", CompareOperator.SUBSET: "⊂",
+    CompareOperator.SUPSETEQ: "⊇", CompareOperator.SUPSET: "⊃",
 }
 
 

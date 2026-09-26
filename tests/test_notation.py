@@ -256,3 +256,82 @@ def test_comparison_glyphs_roundtrip():
     assert roundtrip("a ≠ b") == "(a ≠ b)"
     assert roundtrip(r"a \approx b") == "(a ≈ b)"
     assert roundtrip("a ≤ b") == "(a <= b)"
+
+
+# --- set extras ---
+
+
+def test_not_in():
+    assert ev("3 ∉ {1, 2}") == "= true"
+    assert ev("2 ∉ {1, 2}") == "= false"
+    assert ev(r"2 \notin {1, 2}") == "= false"
+    assert ev(r"\filter(\fn(x) x ∉ {2}, ⟨1, 2, 3⟩)") == "= ⟨1, 3⟩"
+    assert ev("(∉ {2})(3)") == "= true"
+
+
+def test_subset_and_superset_family():
+    assert ev("{1} ⊂ {1, 2}") == "= true"
+    assert ev("{1, 2} ⊂ {1, 2}") == "= false"
+    assert ev(r"{1} \subset {1, 2}") == "= true"
+    assert ev("{1, 2} ⊇ {1, 2}") == "= true"
+    assert ev("{1, 2} ⊇ {3}") == "= false"
+    assert ev(r"{1, 2} \supseteq {1}") == "= true"
+    assert ev("{1, 2} ⊃ {1}") == "= true"
+    assert ev("{1, 2} ⊃ {1, 2}") == "= false"
+    assert ev(r"{1, 2} \supset {1}") == "= true"
+    assert ev("∅ ⊂ {1}") == "= true"
+    fails("1 ⊂ {1}", "needs two sets")
+    fails("{1} ⊇ 1", "needs two sets")
+
+
+def test_empty_set():
+    assert ev("∅") == "= {}"
+    assert ev(r"\emptyset") == "= {}"
+    assert ev("s = {}; s = ∅") == "true"
+    assert ev(r"\len(∅)") == "= 0"
+    assert ev("∅ ∪ {1}") == "= {1}"
+    fails("∅ = 3", "protected")
+    fails(r"\let \emptyset = 3", "protected")
+
+
+def test_membership_in_arrays():
+    assert ev('2 ∈ ⟨1, 2, 3⟩') == "= true"
+    assert ev('4 ∉ ⟨1, 2, 3⟩') == "= true"
+    assert ev('"a" ∈ ⟨1, "a"⟩') == "= true"
+    assert ev("[1, 2] ∈ ⟨[1, 2]⟩") == "= true"
+
+
+def test_membership_in_ranges():
+    # `..` binds looser than `∈`, so a range operand is parenthesized.
+    assert ev("3 ∈ (1..5)") == "= true"
+    assert ev("6 ∈ (1..5)") == "= false"
+    assert ev("0 ∈ (1..5)") == "= false"
+    assert ev("2.5 ∈ (1..5)") == "= false"
+    assert ev("4 ∈ (1,3..9)") == "= false"
+    assert ev("5 ∈ (1,3..9)") == "= true"
+    assert ev("10 ∈ (10,8..1)") == "= true"
+    assert ev("9 ∈ (10,8..1)") == "= false"
+    assert ev("1 ∈ (10,8..1)") == "= false"
+    assert ev("1000000 ∈ (1..)") == "= true"
+    assert ev("0 ∈ (1..)") == "= false"
+    assert ev("1/2 ∈ (0,1/2..2)") == "= true"
+    assert ev("3 ∉ (1..2)") == "= true"
+    assert ev('"a" ∈ (1..3)') == "= false"
+    assert ev("i ∈ (1..3)") == "= false"
+    assert ev("1.5 ∈ (0.5,1.5..3.5)") == "= true"
+    assert ev("2. ∈ (1.,1.5..3.)") == "= true"
+
+
+def test_membership_still_rejects_other_right_operands():
+    fails("1 ∈ 1", "needs a set, array, or range")
+    fails("1 ∉ [1, 2]", "needs a set, array, or range")
+
+
+def test_set_extras_roundtrip_and_operator_values():
+    assert roundtrip("a ∉ b") == "(a ∉ b)"
+    assert roundtrip(r"a \subset b") == "(a ⊂ b)"
+    assert roundtrip("a ⊇ b") == "(a ⊇ b)"
+    assert roundtrip("a ⊃ b") == "(a ⊃ b)"
+    assert ev("(∉)(1, {2})") == "= true"
+    assert ev("(⊂)({1}, {1, 2})") == "= true"
+    fails(r"\let \notin = 1", "protected")

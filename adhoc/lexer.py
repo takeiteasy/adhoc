@@ -411,7 +411,8 @@ _SINGLE_CHAR_TOKENS = {
 }
 
 _INFIX_GLYPHS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
-                  "∘": "circ", "≠": "neq", "≈": "approx"}
+                  "∘": "circ", "≠": "neq", "≈": "approx", "∉": "notin", "⊂": "subset",
+                  "⊇": "supseteq", "⊃": "supset"}
 _GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
 
 _ROOT_INDEX = {"∛": 3, "∜": 4}
@@ -566,6 +567,11 @@ def tokenize(src: str) -> list[Token]:
             tokens.append(Superscript(text=("-" if c == "⁻" else "") + digits,
                                       span=Span(pos, end)))
             i = j
+            continue
+
+        if c == "∅":
+            tokens.append(Ident(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
+            i += 1
             continue
 
         if c.isalpha():

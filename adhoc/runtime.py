@@ -222,7 +222,8 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "arr", "cup", "cap", "setminus",
-                           "in", "subseteq", "circ", "neq", "approx"})
+                           "in", "subseteq", "circ", "neq", "approx", "notin", "subset",
+                           "supseteq", "supset"})
 
 
 class PreludeFn:
@@ -458,6 +459,7 @@ PRELUDE: dict[str, Any] = {
     "ln": _prelude_fn("ln", math.log),
     "sqrt": _prelude_fn("sqrt", math.sqrt),
     "root": PreludeFn("root", _root_call),
+    "emptyset": SetValue(()),
     "isnan": _predicate_fn("isnan", math.isnan, False),
     "isinf": _predicate_fn("isinf", math.isinf, False),
     "isfinite": _predicate_fn("isfinite", math.isfinite, True),
@@ -1521,10 +1523,54 @@ def nsubseteq(a: AdValue, b: AdValue) -> bool:
     return all(_contains(b.items, x) for x in a.items)
 
 
+def _range_contains(r: RangeValue, x: AdValue) -> bool:
+    """`x` is a term of the progression: `(x - start)/step` is a non-negative integer
+    (float quotients must be whole floats) and `x` has not passed the end."""
+    if (isinstance(x, bool) or not isinstance(x, _NUMERIC_TYPES) or _is_complex(x)):
+        return False
+    k = ndiv(nsub(x, r.start), r.step)
+    if isinstance(k, float):
+        if not k.is_integer():
+            return False
+    elif _integer_exponent(k) is None:
+        return False
+    if ncompare("lt", k, 0):
+        return False
+    if r.end is None:
+        return True
+    return ncompare("le" if ncompare("gt", r.step, 0) else "ge", x, r.end)
+
+
+def _membership(symbol: str, value: AdValue, collection: AdValue) -> bool:
+    if isinstance(collection, SetValue | ArrayValue):
+        return _contains(collection.items, value)
+    if isinstance(collection, RangeValue):
+        return _range_contains(collection, value)
+    raise NumError(f"`{symbol}` needs a set, array, or range on the right, "
+                   f"got {nshow(collection)}")
+
+
 def nmember(value: AdValue, collection: AdValue) -> bool:
-    if not isinstance(collection, SetValue):
-        raise NumError(f"`∈` needs a set on the right, got {nshow(collection)}")
-    return _contains(collection.items, value)
+    return _membership("∈", value, collection)
+
+
+def nnotmember(value: AdValue, collection: AdValue) -> bool:
+    return not _membership("∉", value, collection)
+
+
+def nsubset(a: AdValue, b: AdValue) -> bool:
+    _need_sets("⊂", a, b)
+    return len(a.items) < len(b.items) and nsubseteq(a, b)
+
+
+def nsupseteq(a: AdValue, b: AdValue) -> bool:
+    _need_sets("⊇", a, b)
+    return nsubseteq(b, a)
+
+
+def nsupset(a: AdValue, b: AdValue) -> bool:
+    _need_sets("⊃", a, b)
+    return nsubset(b, a)
 
 
 APPROX_REL_TOL = 1e-9
@@ -1591,6 +1637,8 @@ _OPERATOR_IMPLS = {
     "gt": (_cmp("gt"), (2,)), "ge": (_cmp("ge"), (2,)),
     "member": (nmember, (2,)), "subseteq": (nsubseteq, (2,)),
     "ne": (nnotequal, (2,)), "approx": (napprox, (2,)),
+    "notmember": (nnotmember, (2,)), "subset": (nsubset, (2,)),
+    "supseteq": (nsupseteq, (2,)), "supset": (nsupset, (2,)),
 }
 OPERATORS = {name: OperatorFn(OP_SYMBOLS[name], fn, arities)
              for name, (fn, arities) in _OPERATOR_IMPLS.items()}
@@ -2188,6 +2236,11 @@ class Engine:
     def intersect(self, a, b, sid): return self._binop(nintersect, a, b, sid)
     def setminus(self, a, b, sid): return self._binop(nsetminus, a, b, sid)
     def subseteq(self, a, b, sid): return self._binop(nsubseteq, a, b, sid)
+    def notmember(self, value, collection, sid):
+        return self._binop(nnotmember, value, collection, sid)
+    def subset(self, a, b, sid): return self._binop(nsubset, a, b, sid)
+    def supseteq(self, a, b, sid): return self._binop(nsupseteq, a, b, sid)
+    def supset(self, a, b, sid): return self._binop(nsupset, a, b, sid)
     def ne(self, a, b, sid): return self._binop(nnotequal, a, b, sid)
     def approx(self, a, b, sid): return self._binop(napprox, a, b, sid)
     def member(self, value, collection, sid): return self._binop(nmember, value, collection, sid)

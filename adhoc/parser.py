@@ -185,19 +185,23 @@ _SYMBOL_OPERATORS = {Bang: "fact", DoubleBang: "dfact", Plus: "add", Minus: "sub
                      Less: "lt", LessEq: "le", Greater: "gt", GreaterEq: "ge"}
 _INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
-                    "subseteq": "subseteq", "neq": "ne", "approx": "approx"}
+                    "subseteq": "subseteq", "neq": "ne", "approx": "approx", "notin": "notmember",
+                    "subset": "subset", "supseteq": "supseteq", "supset": "supset"}
 
 # Operator key -> the parser level that reads its right-hand side, which is the extent of
 # a section's operand: `(+ 1*2)` fixes `1*2`, `(* 1 + 2)` is a parse error.
 _ADDITIVE_KEYS = frozenset({"add", "sub", "union", "setminus"})
 _MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose"})
-_COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq", "ne", "approx"})
+_COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq", "ne", "approx",
+                          "notmember", "subset", "supseteq", "supset"})
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE}
 _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ,
-                  "neq": CompareOperator.NE, "approx": CompareOperator.APPROX}
+                  "neq": CompareOperator.NE, "approx": CompareOperator.APPROX,
+                  "notin": CompareOperator.NOTIN, "subset": CompareOperator.SUBSET,
+                  "supseteq": CompareOperator.SUPSETEQ, "supset": CompareOperator.SUPSET}
 _INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_COMPARE_INFIX)
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
@@ -208,7 +212,7 @@ _LAMBDA_HEADS = ("λ", "fn")
 # Seed of the session alias map (short spelling → canonical name): the unicode
 # fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
 # hardcoded parser/prelude special cases (docs/grammar.md, `## Name aliases`).
-ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi"}
+ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi", "∅": "emptyset"}
 
 
 def _spelling(tok: Ident | Backslash) -> str:
