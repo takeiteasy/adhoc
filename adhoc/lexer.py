@@ -293,15 +293,15 @@ class RBrace(Token):
 
 
 @dataclass(frozen=True)
-class SetOp(Token):
-    """A unicode set operator; `name` is the canonical `\\`-name it shares with its
+class InfixOp(Token):
+    """A unicode infix operator (set operators, `∘`, `≠`, `≈`); `name` is the canonical `\\`-name it shares with its
     ASCII spelling (`∪` is `\\cup`)."""
 
     name: str
 
     @property
     def describe(self) -> str:
-        return f"`{_SET_SYMBOLS[self.name]}`"
+        return f"`{_GLYPH_SYMBOLS[self.name]}`"
 
 
 @dataclass(frozen=True)
@@ -410,9 +410,9 @@ _SINGLE_CHAR_TOKENS = {
     "}": RBrace,
 }
 
-_SET_OPERATORS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
-                  "∘": "circ"}
-_SET_SYMBOLS = {name: symbol for symbol, name in _SET_OPERATORS.items()}
+_INFIX_GLYPHS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
+                  "∘": "circ", "≠": "neq", "≈": "approx"}
+_GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
 
 _ROOT_INDEX = {"∛": 3, "∜": 4}
 
@@ -608,9 +608,9 @@ def tokenize(src: str) -> list[Token]:
             i += 1
             continue
 
-        if c in _SET_OPERATORS:
+        if c in _INFIX_GLYPHS:
             end = pos + len(c.encode("utf-8"))
-            tokens.append(SetOp(name=_SET_OPERATORS[c], span=Span(pos, end)))
+            tokens.append(InfixOp(name=_INFIX_GLYPHS[c], span=Span(pos, end)))
             i += 1
             continue
 
@@ -630,6 +630,12 @@ def tokenize(src: str) -> list[Token]:
         if c == "." and i + 1 < n and entries[i + 1][1] == ".":
             tokens.append(DotDot(span=Span(pos, entries[i + 1][0] + 1)))
             i += 2
+            continue
+
+        if c in "≤≥":
+            cls = LessEq if c == "≤" else GreaterEq
+            tokens.append(cls(span=Span(pos, pos + len(c.encode("utf-8")))))
+            i += 1
             continue
 
         if c in "<>":

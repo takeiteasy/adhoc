@@ -106,6 +106,7 @@ _CMP_METHODS = {
     CompareOperator.LT: "lt", CompareOperator.LE: "le",
     CompareOperator.GT: "gt", CompareOperator.GE: "ge",
     CompareOperator.IN: "member", CompareOperator.SUBSETEQ: "subseteq",
+    CompareOperator.NE: "ne", CompareOperator.APPROX: "approx",
 }
 
 

@@ -43,6 +43,7 @@ _CMP = {
     CompareOperator.LT: "<", CompareOperator.LE: "<=",
     CompareOperator.GT: ">", CompareOperator.GE: ">=",
     CompareOperator.IN: "∈", CompareOperator.SUBSETEQ: "⊆",
+    CompareOperator.NE: "≠", CompareOperator.APPROX: "≈",
 }
 
 

@@ -42,6 +42,8 @@ class CompareOperator(Enum):
     GE = auto()
     IN = auto()
     SUBSETEQ = auto()
+    NE = auto()
+    APPROX = auto()
 
 
 class UnaryOperator(Enum):
@@ -192,7 +194,7 @@ class Hole(Node):
 OP_SYMBOLS = {
     "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "@",
     "fact": "!", "dfact": "‼", "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
-    "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆",
+    "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆", "ne": "≠", "approx": "≈",
 }
 
 

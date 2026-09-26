@@ -194,3 +194,65 @@ def test_root_is_protected_and_operator_valued():
 def test_root_quotes_print_as_the_prelude_call():
     assert roundtrip("∛x + ∜y") == r"(\root(x, 3) + \root(y, 4))"
     assert ev(r"\eval(\expr(∛x), x=8)") == "= 2"
+
+
+# --- comparison glyphs ---
+
+
+def test_le_ge_glyphs_are_the_ascii_operators():
+    assert ev("1 ≤ 2") == "= true"
+    assert ev("2 ≤ 1") == "= false"
+    assert ev("2 ≥ 2") == "= true"
+    assert ev("1 ≥ 2") == "= false"
+    assert ev("1 ≤ 2 ? 5 : 6") == "= 5"
+    assert ev("\\filter((≤ 2), ⟨1, 2, 3⟩)") == "= ⟨1, 2⟩"
+    assert ev("(≥)(3, 2)") == "= true"
+
+
+def test_le_ge_spans_use_byte_lengths():
+    le = tokenize("a ≤ b")[1]
+    assert (le.span.start, le.span.end) == (2, 5)
+
+
+def test_not_equal():
+    assert ev("2 ≠ 3") == "= true"
+    assert ev("2 ≠ 2.") == "= false"
+    assert ev("1/2 ≠ 0.5") == "= false"
+    assert ev("{1, 2} ≠ {2, 1}") == "= false"
+    assert ev('"a" ≠ "b"') == "= true"
+    assert ev('"a" ≠ 1') == "= true"
+    assert ev(r"\nan ≠ \nan") == "= true"
+    assert ev(r"2 \neq 3") == "= true"
+    assert ev("2 ≠ 3 ? 1 : 0") == "= 1"
+
+
+def test_approx():
+    assert ev("1e-1 + 2e-1 ≈ 3e-1") == "= true"
+    assert ev("1e-13 ≈ 0") == "= true"
+    assert ev("1 ≈ 1.001") == "= false"
+    assert ev("π ≈ 3.14159265358979") == "= true"
+    assert ev("(1+i) ≈ (1+i)") == "= true"
+    assert ev("(1+i) ≈ (1.0000000001+i)") == "= true"
+    assert ev("(1+i) ≈ (1+2i)") == "= false"
+    assert ev(r"\nan ≈ \nan") == "= false"
+    assert ev(r"\inf ≈ \inf") == "= true"
+    assert ev(r"1 \approx 1") == "= true"
+
+
+def test_approx_rejects_non_numbers():
+    fails('"a" ≈ "a"', "not numbers")
+    fails("{1} ≈ {1}", "sets do not support")
+    fails("[1, 2] ≈ [1, 2]", "operands must be numbers")
+
+
+def test_new_comparison_operators_are_reserved_and_operator_valued():
+    fails(r"\let \neq = 3", "protected")
+    assert ev("(≠)(1, 2)") == "= true"
+    assert ev(r"\map((≈ 1), ⟨1, 2⟩)") == "= ⟨true, false⟩"
+    assert ev("g = (≠); g = (\\neq)") == "true"
+
+
+def test_comparison_glyphs_roundtrip():
+    assert roundtrip("a ≠ b") == "(a ≠ b)"
+    assert roundtrip(r"a \approx b") == "(a ≈ b)"
+    assert roundtrip("a ≤ b") == "(a <= b)"

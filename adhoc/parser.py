@@ -103,7 +103,7 @@ from .lexer import (
     RBracket,
     RParen,
     Semi,
-    SetOp,
+    InfixOp,
     Slash,
     Star,
     Str,
@@ -185,18 +185,19 @@ _SYMBOL_OPERATORS = {Bang: "fact", DoubleBang: "dfact", Plus: "add", Minus: "sub
                      Less: "lt", LessEq: "le", Greater: "gt", GreaterEq: "ge"}
 _INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
-                    "subseteq": "subseteq"}
+                    "subseteq": "subseteq", "neq": "ne", "approx": "approx"}
 
 # Operator key -> the parser level that reads its right-hand side, which is the extent of
 # a section's operand: `(+ 1*2)` fixes `1*2`, `(* 1 + 2)` is a parse error.
 _ADDITIVE_KEYS = frozenset({"add", "sub", "union", "setminus"})
 _MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose"})
-_COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq"})
+_COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq", "ne", "approx"})
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE}
-_COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ}
+_COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ,
+                  "neq": CompareOperator.NE, "approx": CompareOperator.APPROX}
 _INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_COMPARE_INFIX)
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
@@ -752,7 +753,7 @@ class _Parser:
     # unicode or its `\\`-name form (`∪` and `\\cup` are both "cup").
     def _infix_name(self) -> str | None:
         tok = self.peek()
-        if isinstance(tok, SetOp):
+        if isinstance(tok, InfixOp):
             return tok.name
         if isinstance(tok, At):
             return "contract"
@@ -772,7 +773,7 @@ class _Parser:
                         span=tok.span)
         key = _SYMBOL_OPERATORS.get(type(tok))
         if key is None:
-            name = (tok.name if isinstance(tok, SetOp) else "contract" if isinstance(tok, At)
+            name = (tok.name if isinstance(tok, InfixOp) else "contract" if isinstance(tok, At)
                     else tok.name if isinstance(tok, Backslash) else None)
             key = _INFIX_OPERATORS.get(name)
         return None if key is None else OpRef(name=key, span=tok.span)

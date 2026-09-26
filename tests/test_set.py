@@ -1,7 +1,7 @@
 import pytest
 
 from adhoc.driver import run_source
-from adhoc.lexer import SetOp, tokenize
+from adhoc.lexer import InfixOp, tokenize
 from adhoc.parser import IncompleteInput, ParseError, parse_program
 from adhoc.runtime import EvalError
 from adhoc.syntax import BinOp, BinOperator, Compare, CompareOperator, SetLit
@@ -162,7 +162,7 @@ def test_parse_shapes():
 
 
 def test_lexing():
-    tokens = [t for t in tokenize("∪∩∖∈⊆") if isinstance(t, SetOp)]
+    tokens = [t for t in tokenize("∪∩∖∈⊆") if isinstance(t, InfixOp)]
     assert [t.name for t in tokens] == ["cup", "cap", "setminus", "in", "subseteq"]
 
 

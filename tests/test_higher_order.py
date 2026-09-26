@@ -1,7 +1,7 @@
 import pytest
 
 from adhoc.driver import run_source
-from adhoc.lexer import Placeholder, SetOp, tokenize
+from adhoc.lexer import Placeholder, InfixOp, tokenize
 from adhoc.parser import ParseError, parse_program
 from adhoc.runtime import EvalError
 from adhoc.span import Span
@@ -35,7 +35,7 @@ def parse_fails(src, message):
 
 
 def test_circ_lexes_as_set_style_operator():
-    assert isinstance(tokenize("∘")[0], SetOp)
+    assert isinstance(tokenize("∘")[0], InfixOp)
     assert tokenize("∘")[0].name == "circ"
 
 

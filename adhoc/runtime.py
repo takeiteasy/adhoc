@@ -222,7 +222,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "arr", "cup", "cap", "setminus",
-                           "in", "subseteq", "circ"})
+                           "in", "subseteq", "circ", "neq", "approx"})
 
 
 class PreludeFn:
@@ -1527,6 +1527,29 @@ def nmember(value: AdValue, collection: AdValue) -> bool:
     return _contains(collection.items, value)
 
 
+APPROX_REL_TOL = 1e-9
+APPROX_ABS_TOL = 1e-12
+
+
+def _approx_reals(a: AdValue, b: AdValue) -> bool:
+    try:
+        return math.isclose(float(a), float(b), rel_tol=APPROX_REL_TOL, abs_tol=APPROX_ABS_TOL)
+    except OverflowError:
+        return neq(a, b)
+
+
+def napprox(a: AdValue, b: AdValue) -> bool:
+    _reject_non_numeric(a, b)
+    if _is_complex(a) or _is_complex(b):
+        return (_approx_reals(_re_call(a), _re_call(b))
+                and _approx_reals(_im_call(a), _im_call(b)))
+    return _approx_reals(a, b)
+
+
+def nnotequal(a: AdValue, b: AdValue) -> bool:
+    return not neq(a, b)
+
+
 def ncompose(f: Any, g: Any) -> Any:
     if not callable(f) or not callable(g):
         raise NumError(f"`∘` needs two functions, got {nshow(f)} and {nshow(g)}")
@@ -1567,6 +1590,7 @@ _OPERATOR_IMPLS = {
     "lt": (_cmp("lt"), (2,)), "le": (_cmp("le"), (2,)),
     "gt": (_cmp("gt"), (2,)), "ge": (_cmp("ge"), (2,)),
     "member": (nmember, (2,)), "subseteq": (nsubseteq, (2,)),
+    "ne": (nnotequal, (2,)), "approx": (napprox, (2,)),
 }
 OPERATORS = {name: OperatorFn(OP_SYMBOLS[name], fn, arities)
              for name, (fn, arities) in _OPERATOR_IMPLS.items()}
@@ -2164,6 +2188,8 @@ class Engine:
     def intersect(self, a, b, sid): return self._binop(nintersect, a, b, sid)
     def setminus(self, a, b, sid): return self._binop(nsetminus, a, b, sid)
     def subseteq(self, a, b, sid): return self._binop(nsubseteq, a, b, sid)
+    def ne(self, a, b, sid): return self._binop(nnotequal, a, b, sid)
+    def approx(self, a, b, sid): return self._binop(napprox, a, b, sid)
     def member(self, value, collection, sid): return self._binop(nmember, value, collection, sid)
 
     def index(self, head, items, sid, spelling=None):
