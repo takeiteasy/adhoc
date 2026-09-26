@@ -17,11 +17,19 @@ SUBSCRIPTS = dict(zip("₀₁₂₃₄₅₆₇₈₉ₐₑₕᵢⱼₖₗₘₙ
 ASCII_SUBSCRIPTS = {ascii_: glyph for glyph, ascii_ in SUBSCRIPTS.items() if ascii_.isascii()}
 
 
+def is_ascii_subscript_char(c: str) -> bool:
+    return c.isascii() and c.isalnum()
+
+
 def is_short_name(name: str) -> bool:
     """A canonical name written without a sigil: one letter plus an optional subscript
-    run (`x`, `x₁`, `xᵢⱼ`, `α₂₃`). Every other name is `\\`-prefixed."""
-    return (bool(name) and name[0].isalpha() and name[0] not in SUBSCRIPTS
-            and all(c in SUBSCRIPTS for c in name[1:]))
+    run (`x`, `x₁`, `xᵢⱼ`, `α₂₃`), or a letter, `_` and ASCII alphanumerics for subscripts
+    with no glyph (`x_b`, `x_ib`). Every other name is `\\`-prefixed."""
+    if not name or not name[0].isalpha() or name[0] in SUBSCRIPTS:
+        return False
+    if name[1:2] == "_":
+        return len(name) > 2 and all(is_ascii_subscript_char(c) for c in name[2:])
+    return all(c in SUBSCRIPTS for c in name[1:])
 
 
 class BinOperator(Enum):

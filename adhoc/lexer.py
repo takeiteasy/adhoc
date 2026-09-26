@@ -24,7 +24,7 @@ unclosed parenthesis.
 from dataclasses import dataclass, field, replace
 
 from .span import Span
-from .syntax import ASCII_SUBSCRIPTS, SUBSCRIPTS
+from .syntax import ASCII_SUBSCRIPTS, SUBSCRIPTS, is_ascii_subscript_char
 
 
 class LexError(Exception):
@@ -614,15 +614,17 @@ def tokenize(src: str) -> list[Token]:
                 j += 1
             name = src[i:j]
             spelling = None
-            # ASCII subscript: `x_1`, `x_ij`. A `_` with no subscriptable character
-            # after it stays the placeholder.
+            # ASCII subscript: `x_1`, `x_ij`, `x_b`. A `_` with no alphanumeric after it stays
+            # the placeholder. The canonical name uses glyphs when every character has one.
             if j == i + 1 and j + 1 < n and entries[j][1] == "_" \
-                    and entries[j + 1][1] in ASCII_SUBSCRIPTS:
+                    and is_ascii_subscript_char(entries[j + 1][1]):
                 k = j + 1
-                while k < n and entries[k][1] in ASCII_SUBSCRIPTS:
+                while k < n and is_ascii_subscript_char(entries[k][1]):
                     k += 1
+                run = "".join(entries[m][1] for m in range(j + 1, k))
                 spelling = src[i:k]
-                name = c + "".join(ASCII_SUBSCRIPTS[entries[m][1]] for m in range(j + 1, k))
+                name = (c + "".join(ASCII_SUBSCRIPTS[ch] for ch in run)
+                        if all(ch in ASCII_SUBSCRIPTS for ch in run) else spelling)
                 j = k
             end = entries[j][0] if j < n else eof_off
             tokens.append(Ident(ch=name, spelling=spelling, span=Span(pos, end)))

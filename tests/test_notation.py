@@ -381,7 +381,7 @@ def test_ascii_subscript_spelling():
 def test_placeholder_underscore_is_unchanged():
     assert ev("f(x, y) = x - y\ng = f(5, _)\ng(2)") == "= 3"
     with pytest.raises(ParseError):
-        parse_program("x_q")
+        parse_program("x_+")
 
 
 def test_superscript_expression_exponents():
@@ -463,3 +463,23 @@ def test_only_minus_one_is_an_inverse():
 def test_inverse_follows_the_function_value():
     assert ev("g(f) = f⁻¹(1/2)\ng(\\sin)") == ev("\\asin(1/2)")
     fails("g(f) = f⁻¹(2)\nh(x) = x + 1\ng(h)", "no inverse")
+
+
+def test_ascii_subscript_without_a_glyph():
+    assert ev("x_b = 3; x_b") == "= 3"
+    assert ev("x_A = 1; x_A + 1") == "= 2"
+    assert ev("x_ib = 4; x_ib") == "= 4"
+    tok = tokenize("x_ib")[0]
+    assert (tok.ch, tok.spelling, tok.span.end) == ("x_ib", "x_ib", 4)
+    assert tokenize("x_ij")[0].ch == "xᵢⱼ"
+
+
+def test_ascii_subscript_without_a_glyph_is_a_distinct_short_name():
+    assert ev("x_ib = 4\nx_i = 1\nx_ib") == "= 4"
+    assert ev("f(x_b) = x_b + 1\nf(2)") == "= 3"
+    assert roundtrip("f(x_b) = x_b + 1") == "f(x_b) = (x_b + 1)"
+    assert roundtrip("`(x_b + 1)") == "\\expr((x_b + 1))"
+
+
+def test_underscore_hole_survives_the_ascii_subscript_rule():
+    assert ev("g(a, b) = a\ng(_, 2)(5)") == "= 5"
