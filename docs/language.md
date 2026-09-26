@@ -207,8 +207,10 @@ phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
 
-- Operators cannot be passed as functions (`\fold(+, xs)`); use a lambda —
-  [#67](https://todo.sr.ht/~takeiteasy/adhoc/67).
+- A user function cannot return a prelude function (`h(x) = \sqrt`) —
+  [#70](https://todo.sr.ht/~takeiteasy/adhoc/70).
+- Operator sections with one operand fixed (`(+ 1)`) are not supported; write `(+)(_, 1)` —
+  [#71](https://todo.sr.ht/~takeiteasy/adhoc/71).
 - `\map`/`\filter`/`\fold` reject infinite ranges instead of iterating lazily —
   [#68](https://todo.sr.ht/~takeiteasy/adhoc/68).
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).

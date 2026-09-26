@@ -61,6 +61,7 @@ from .syntax import (
     Node,
     NoOp,
     NumLit,
+    OpRef,
     PyImport,
     Quote,
     Eval,
@@ -231,6 +232,8 @@ class _Lowerer:
                 return _call("lit", [pyast.Constant(text), pyast.Constant(sid)])
             case StrLit(text=text):
                 return pyast.Constant(value=text)
+            case OpRef(name=name, span=span):
+                return _call("op", [pyast.Constant(name), pyast.Constant(self._push(span))])
             case Var(ch=ch, spelling=spelling, span=span):
                 sid = self._push(span)
                 return _call("var", [pyast.Constant(ch), pyast.Constant(sid),

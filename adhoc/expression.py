@@ -4,7 +4,7 @@ from dataclasses import dataclass, fields
 
 from .syntax import (
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
-    Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit,
+    Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef,
     PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnOp, Var,
 )
 
@@ -73,6 +73,8 @@ def show(node: Node) -> str:
             return text
         case Hole():
             return "_"
+        case OpRef(name=name):
+            return f"({OP_SYMBOLS[name]})"
         case StrLit(text=text):
             return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t") + '"'
         case Var(ch=name, spelling=spelling) | BackslashRef(name=name, spelling=spelling):

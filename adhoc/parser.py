@@ -14,7 +14,8 @@ precedence table in docs/grammar.md:
     power       ::= postfix ("^" unary)? ;  -- right-associative
     postfix     ::= atom ("(" args ")")* ;  -- trailers attach only to name-ish heads
     args        ::= (expr | string | kwarg) ("," ...)* ;   kwarg ::= name "=" value ;
-    atom        ::= number | string | identifier | "\\"-name | "(" expr ")" ;
+    atom        ::= number | string | identifier | "\\"-name | "(" expr ")"
+                  | "(" operator ")" ;   -- an operator value; also a whole call argument
 
 `power`'s exponent recurses into `unary`, not `power` — that's what makes `2^-1` parse
 (unary minus binds inside the exponent) and `2^3^2` right-associate. The base of `^` is a
@@ -65,6 +66,7 @@ would clobber that inner node's own (narrower) span with the paren-inclusive one
 """
 
 from contextlib import contextmanager
+from dataclasses import replace
 
 from .lexer import (
     Backtick,
@@ -131,6 +133,7 @@ from .syntax import (
     Node,
     NoOp,
     NumLit,
+    OpRef,
     PyImport,
     Quote,
     Eval,
@@ -168,6 +171,14 @@ _NO_HOLE_FORMS = frozenset({"py", "arr", "eval"})
 # and cannot be bound or used as values.
 _OPENERS = (LBracket, HashBracket, LBrace, LAngle)
 _CLOSERS = (RBracket, RBrace, RAngle)
+
+# Operators that can stand as function values, by token (`(+)`, or a whole call
+# argument like `\\fold(+, xs)`); infix-only spellings go through `_infix_name`.
+_SYMBOL_OPERATORS = {Plus: "add", Minus: "sub", Star: "mul", Slash: "div", Caret: "pow",
+                     Less: "lt", LessEq: "le", Greater: "gt", GreaterEq: "ge"}
+_INFIX_OPERATORS = {"cdot": "dot", "cup": "union", "cap": "intersect",
+                    "setminus": "setminus", "circ": "compose", "in": "member",
+                    "subseteq": "subseteq"}
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"cdot": BinOperator.DOT, "cap": BinOperator.INTERSECT,
@@ -735,6 +746,19 @@ class _Parser:
             return tok.name
         return None
 
+    def _operator_value(self, k: int = 0) -> Node | None:
+        """The function value spelled by the operator token `k` ahead — an `OpRef`, or
+        `\\sqrt` for the radical — else None."""
+        tok = self.look(k)
+        if isinstance(tok, Radical):
+            return BackslashRef(name="sqrt", span=tok.span, spelling="√")
+        key = _SYMBOL_OPERATORS.get(type(tok))
+        if key is None:
+            name = (tok.name if isinstance(tok, SetOp) else "cdot" if isinstance(tok, Middot)
+                    else tok.name if isinstance(tok, Backslash) else None)
+            key = _INFIX_OPERATORS.get(name)
+        return None if key is None else OpRef(name=key, span=tok.span)
+
     # comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "⊆") additive)? ;
     def comparison(self) -> Node:
         lhs = self.additive()
@@ -819,7 +843,7 @@ class _Parser:
     # A parenthesized lambda in head position applies: `(\fn(x) x)(5)`. Unparenthesized,
     # the greedy body has already consumed any trailer (`\fn(x) x(5)` is a lambda whose
     # body is the call/product `x(5)`).
-    _NAMEISH = (Var, BackslashRef, Call, Lambda, Eval, Index)
+    _NAMEISH = (Var, BackslashRef, Call, Lambda, Eval, Index, OpRef)
     _INDEXABLE = _NAMEISH + (Transpose,)
 
     # Special forms recognized in postfix position (DESIGN.md "equality and =", case 3):
@@ -1150,6 +1174,11 @@ class _Parser:
                     else name_tok.name)
             return KwArg(name=name, value=value, span=name_tok.span.to(value.span),
                          spelling=_spelling(name_tok))
+        if isinstance(self.look(1), (Comma, RParen)):
+            operator = self._operator_value()
+            if operator is not None:
+                self.advance()
+                return operator
         return self.call_value()
 
     def call_value(self) -> Node:
@@ -1208,6 +1237,13 @@ class _Parser:
                 operand = self.unary()
                 return Call(head=BackslashRef(name="sqrt", span=rad.span, spelling="√"),
                             args=(operand,), span=rad.span.to(operand.span))
+            case LParen() if (self.look(2).__class__ is RParen
+                              and self._operator_value(1) is not None):
+                self.advance()
+                operator = self._operator_value()
+                self.advance()
+                close = self.advance()
+                return replace(operator, span=tok.span.to(close.span))
             case LParen():
                 group_top_level = (
                     self._top_level_statement and self.pos == self._statement_start

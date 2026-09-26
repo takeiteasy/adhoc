@@ -178,6 +178,22 @@ class Hole(Node):
     a partial application, awaiting a value for each hole (docs/grammar.md)."""
 
 
+# Engine key -> written symbol of every operator that can be a function value.
+OP_SYMBOLS = {
+    "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "·",
+    "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
+    "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆",
+}
+
+
+@dataclass(frozen=True)
+class OpRef(Node):
+    """An operator standing as a function value: a whole call argument (`\\fold(+, xs)`)
+    or a parenthesized `(+)`. `name` is a key of `OP_SYMBOLS` (docs/grammar.md)."""
+
+    name: str
+
+
 @dataclass(frozen=True)
 class FuncDef(Node):
     """A function definition with a semicolon-sequenced body. Definitions are

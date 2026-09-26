@@ -264,4 +264,5 @@ def test_prelude_names_are_protected():
 def test_demo_script_runs():
     with open("demos/functions.ad", encoding="utf-8") as f:
         out = run_source(f.read(), {})
-    assert out[-5:] == ["= 7", "= [1, 4, 9]", "= {2, 3}", "= 6", "= ⟨1, 2, 3⟩"]
+    assert out[-8:] == ["= 7", "= [1, 4, 9]", "= {2, 3}", "= 6", "= ⟨1, 2, 3⟩",
+                        "= 55", "= [2, 3]", "= ⟨1, 2⟩"]

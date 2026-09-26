@@ -89,12 +89,15 @@ power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
 trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" ;
 args       ::= arg ("," arg)* ;
-arg        ::= expr | string | kwarg | "_" ;   (* "_" only as a whole argument *)
+arg        ::= expr | string | kwarg | "_" | operator ;   (* "_" and operators only as a whole argument *)
+operator   ::= "+" | "-" | "*" | "/" | "^" | "·" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
+             | ">=" | "∈" | "⊆" | "√" | "\\cdot" | "\\circ" | "\\cup" | "\\cap" | "\\setminus"
+             | "\\in" | "\\subseteq" ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | lambda | radical | quote | tensor | array | set ;
+              | "(" operator ")" | lambda | radical | quote | tensor | array | set ;
 tensor     ::= "[" expr ("," expr)* "]"
              | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
 set        ::= "{" (expr ("," expr)*)? "}" ;
@@ -357,7 +360,8 @@ binding rule's check: same shape and equal entries. `\len(t)` is the outer lengt
 Folds bind over a tensor's outer slices: `\sum(x=[1, 2, 3]) x^2` is `14`, and
 `\sum(r=m) r` adds the rows.
 
-`\cdot` is an infix operator, never a name: it cannot stand alone, bind, or be aliased.
+`\cdot` is an infix operator, never a name: it cannot bind or be aliased, and stands as a
+value only as `(\cdot)` or a whole call argument (`## Operator values`).
 
 [^tensor-index]: A `[` trailer attaches only to name-ish heads (a name, a call, another
     index, a transpose), so `[1, 2][1]` is not an index: it juxtaposes two tensors and fails
@@ -409,7 +413,8 @@ are duplicates when the binding rule's check would call them equal.
 
 Every operator is infix. `∪ ∖ ∩ ⊆` need sets on both sides and `∈` a set on the right;
 anything else is a typed error, as are arithmetic, ordering, and indexing on a set. The
-five `\`-names are operators, never values: they cannot stand alone, bind, or be aliased.
+five `\`-names are operators, never names: they cannot bind or be aliased, and stand as a
+value only as `(\cup)` or a whole call argument (`## Operator values`).
 
 Sets display in first-seen order and compare regardless of it: `{1, 2} = {2, 1}` is
 `true`. Sets nest (`{{1, 2}, {2, 1}}` is `{{1, 2}}`) and hold tensors, arrays, strings,
@@ -423,7 +428,7 @@ elements pairwise.[^set-cost]
 ## Composition and partial application
 
 `f ∘ g` (ASCII `f \circ g`) is the function that applies `g`, then `f` to the result. It is
-an infix operator at the `*` level, so `\circ` cannot stand alone, bind, or be aliased.
+an infix operator at the `*` level, so `\circ` cannot bind or be aliased.
 A `_` as a whole call argument leaves a hole: the call becomes a function of its holes,
 filled left to right.
 
@@ -468,10 +473,42 @@ iterate by outer slice, like folds.
 | `\fold(f, xs)` | left fold `f(f(x1, x2), x3)…`; an empty collection is an error |
 | `\fold(f, xs, init)` | left fold starting from `init`; an empty collection returns `init` |
 
-Infinite ranges are typed errors. Operators are not function values, so
-`\fold(+, xs)` is not available: write `\fold(\fn(a, b) a + b, xs)`.[^ho-operators]
+Infinite ranges are typed errors. Operators pass as values: `\fold(+, xs)`
+(`## Operator values`).
 
-[^ho-operators]: See [Known limitations](language.md#known-limitations-not-bugs).
+## Operator values
+
+An operator is a function value in two positions: as a **whole call argument**
+(`\fold(+, xs)`, like `_`) and **parenthesized** anywhere (`(+)`).
+
+```
+\fold(+, 1..10)                ->  = 55
+\map(√, [4, 9])                ->  = [2, 3]
+g = (+)                        ->  g = <fn +>
+g(1, 2)                        ->  = 3
+\filter((<)(_, 3), ⟨1, 5, 2⟩)  ->  = ⟨1, 2⟩
+((-) ∘ s)(2)                   ->  = -4          -- with s(x) = x^2
+```
+
+| Operator | Arguments | Meaning |
+|---|---|---|
+| `+ * / ^` | 2 | arithmetic |
+| `-` | 1 or 2 | negate, or subtract |
+| `·` `\cdot` | 2 | contraction — the same as infix `·` |
+| `∘` `\circ` | 2 | composition |
+| `∪ ∩ ∖` `\cup \cap \setminus` | 2 | set operations |
+| `< > <= >=` | 2 | ordering, returns a boolean |
+| `∈` `\in` | 2 | `x ∈ s`: the element, then the set |
+| `⊆` `\subseteq` | 2 | subset, returns a boolean |
+| `√` | 1 | `\sqrt` itself |
+
+| Rule | Detail |
+|---|---|
+| Values | Callable like any function: they bind, pass, compose, and take holes (`(+)(_, 1)`) |
+| Identity | Each operator is one value, so `(∪) = (\cup)` after `g = (∪)` checks `true` |
+| Arguments | Positional only; the wrong count is a typed error at the call |
+| Display | `<fn +>`; quotes print `(+)` |
+| Elsewhere | A bare operator is a parse error: `g = +`, `f(+ 1)`, `(+ 1)` |
 
 ## Conditionals: the ternary
 
@@ -856,7 +893,7 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators, symbolic algebra, graphing, operators as function values.
+Logical operators, symbolic algebra, graphing.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
 rule's check is the only equality today, with tier-aware semantics: exact for
 the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)

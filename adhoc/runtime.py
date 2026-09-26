@@ -188,7 +188,7 @@ from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
 from .expression import ExpressionValue, show_quote
-from .syntax import Seq
+from .syntax import OP_SYMBOLS, Seq
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
@@ -922,7 +922,7 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
             return rra.show(v, digits)
         except rra.DomainError as e:
             raise NumError(e.args[0])
-    if isinstance(v, Composed | Partial):
+    if isinstance(v, Composed | Partial | OperatorFn):
         return f"<fn {_callable_label(v)}>"
     if isinstance(v, PreludeFn):
         return f"<fn \\{v.name}(x)>"
@@ -1287,7 +1287,8 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction | Composed | Partial | ExpressionValue
+    # FIXME: PreludeFn is missing here, so a user function returning `\\sqrt` fails to convert.
+    if isinstance(value, AdFunction | Composed | Partial | OperatorFn | ExpressionValue
                       | TensorValue | ArrayValue | SetValue):
         return value
     if isinstance(value, RangeValue):
@@ -1436,7 +1437,106 @@ class Partial:
         return _invoke(self.fn, tuple(full), self.kwargs)
 
 
-_INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial)
+def ncompare(op: str, a: AdValue, b: AdValue) -> bool:
+    _reject_non_numeric(a, b)
+    if _is_complex(a) or _is_complex(b):
+        raise NumError("complex values are not ordered")
+    if isinstance(a, float) or isinstance(b, float):
+        a, b = float(a), float(b)
+    elif isinstance(a, RRA) or isinstance(b, RRA):
+        # Exact ordering across the exact + symbolic + algebraic + RRA
+        # tiers (a float operand takes the approximate float branch
+        # above).
+        return rra.compare(op, a, b)
+    elif isinstance(a, Algebraic) or isinstance(b, Algebraic):
+        # Exact ordering across the exact + symbolic + algebraic tiers
+        # (a float operand takes the approximate float branch above).
+        return algebraic.compare(op, a, b)
+    elif isinstance(a, Symbolic) or isinstance(b, Symbolic):
+        # Exact ordering across the exact + symbolic tiers (a float operand
+        # takes the approximate float branch above).
+        return symbolic.compare(op, a, b)
+    else:
+        a, b = Fraction(a), Fraction(b)
+    return {"lt": a < b, "le": a <= b, "gt": a > b, "ge": a >= b}[op]
+
+
+def _need_sets(symbol: str, a: AdValue, b: AdValue) -> None:
+    if not isinstance(a, SetValue) or not isinstance(b, SetValue):
+        raise NumError(f"`{symbol}` needs two sets, got {nshow(a)} and {nshow(b)}")
+
+
+def nunion(a: AdValue, b: AdValue) -> AdValue:
+    _need_sets("∪", a, b)
+    return SetValue(_dedup(a.items + b.items))
+
+
+def nintersect(a: AdValue, b: AdValue) -> AdValue:
+    _need_sets("∩", a, b)
+    return SetValue(tuple(x for x in a.items if _contains(b.items, x)))
+
+
+def nsetminus(a: AdValue, b: AdValue) -> AdValue:
+    _need_sets("∖", a, b)
+    return SetValue(tuple(x for x in a.items if not _contains(b.items, x)))
+
+
+def nsubseteq(a: AdValue, b: AdValue) -> bool:
+    _need_sets("⊆", a, b)
+    return all(_contains(b.items, x) for x in a.items)
+
+
+def nmember(value: AdValue, collection: AdValue) -> bool:
+    if not isinstance(collection, SetValue):
+        raise NumError(f"`∈` needs a set on the right, got {nshow(collection)}")
+    return _contains(collection.items, value)
+
+
+def ncompose(f: Any, g: Any) -> Any:
+    if not callable(f) or not callable(g):
+        raise NumError(f"`∘` needs two functions, got {nshow(f)} and {nshow(g)}")
+    return Composed(f, g)
+
+
+class OperatorFn:
+    """An operator as a function value: `(+)`, `\\fold(∪, xs)`. Positional only;
+    one singleton per operator (`OPERATORS`), so a binding check on two spellings of
+    the same operator is an identity match."""
+
+    __slots__ = ("symbol", "fn", "arities")
+
+    def __init__(self, symbol: str, fn: Callable, arities: tuple[int, ...] = (2,)):
+        self.symbol, self.fn, self.arities = symbol, fn, arities
+
+    def __call__(self, *args):
+        if len(args) not in self.arities:
+            wanted = " or ".join(str(n) for n in self.arities)
+            raise NumError(f"`{self.symbol}` takes {wanted} arguments, got {len(args)}")
+        return self.fn(*args)
+
+
+def _minus(*args):
+    return nneg(*args) if len(args) == 1 else nsub(*args)
+
+
+def _cmp(op: str) -> Callable:
+    return lambda a, b: ncompare(op, a, b)
+
+
+_OPERATOR_IMPLS = {
+    "add": (nadd, (2,)), "sub": (_minus, (1, 2)), "mul": (nmul, (2,)),
+    "div": (ndiv, (2,)), "pow": (npow, (2,)), "dot": (ndot, (2,)),
+    "compose": (ncompose, (2,)), "union": (nunion, (2,)),
+    "intersect": (nintersect, (2,)), "setminus": (nsetminus, (2,)),
+    "lt": (_cmp("lt"), (2,)), "le": (_cmp("le"), (2,)),
+    "gt": (_cmp("gt"), (2,)), "ge": (_cmp("ge"), (2,)),
+    "member": (nmember, (2,)), "subseteq": (nsubseteq, (2,)),
+}
+OPERATORS = {name: OperatorFn(OP_SYMBOLS[name], fn, arities)
+             for name, (fn, arities) in _OPERATOR_IMPLS.items()}
+
+
+_INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial, OperatorFn)
 
 
 def _callable_label(fn: Any) -> str:
@@ -1448,6 +1548,8 @@ def _callable_label(fn: Any) -> str:
         return f"{_callable_label(fn.outer)} ∘ {_callable_label(fn.inner)}"
     if isinstance(fn, Partial):
         return _partial_text(fn)
+    if isinstance(fn, OperatorFn):
+        return fn.symbol
     return _show_callable(fn)[len("<py "):-1]
 
 
@@ -1721,30 +1823,7 @@ class Engine:
         return value
 
     def _compare(self, op, a, b, sid):
-        try:
-            _reject_non_numeric(a, b)
-            if _is_complex(a) or _is_complex(b):
-                raise NumError("complex values are not ordered")
-            if isinstance(a, float) or isinstance(b, float):
-                a, b = float(a), float(b)
-            elif isinstance(a, RRA) or isinstance(b, RRA):
-                # Exact ordering across the exact + symbolic + algebraic + RRA
-                # tiers (a float operand takes the approximate float branch
-                # above).
-                return rra.compare(op, a, b)
-            elif isinstance(a, Algebraic) or isinstance(b, Algebraic):
-                # Exact ordering across the exact + symbolic + algebraic tiers
-                # (a float operand takes the approximate float branch above).
-                return algebraic.compare(op, a, b)
-            elif isinstance(a, Symbolic) or isinstance(b, Symbolic):
-                # Exact ordering across the exact + symbolic tiers (a float operand
-                # takes the approximate float branch above).
-                return symbolic.compare(op, a, b)
-            else:
-                a, b = Fraction(a), Fraction(b)
-            return {"lt": a < b, "le": a <= b, "gt": a > b, "ge": a >= b}[op]
-        except NumError as e:
-            self._fail(e.args[0], sid)
+        return self._binop(lambda x, y: ncompare(op, x, y), a, b, sid)
 
     def lt(self, a, b, sid): return self._compare("lt", a, b, sid)
     def le(self, a, b, sid): return self._compare("le", a, b, sid)
@@ -1921,30 +2000,11 @@ class Engine:
     def set_(self, items, sid):
         return SetValue(_dedup(items))
 
-    def _sets(self, symbol, a, b, sid):
-        if not isinstance(a, SetValue) or not isinstance(b, SetValue):
-            self._fail(f"`{symbol}` needs two sets, got {nshow(a)} and {nshow(b)}", sid)
-
-    def union(self, a, b, sid):
-        self._sets("∪", a, b, sid)
-        return SetValue(_dedup(a.items + b.items))
-
-    def intersect(self, a, b, sid):
-        self._sets("∩", a, b, sid)
-        return SetValue(tuple(x for x in a.items if _contains(b.items, x)))
-
-    def setminus(self, a, b, sid):
-        self._sets("∖", a, b, sid)
-        return SetValue(tuple(x for x in a.items if not _contains(b.items, x)))
-
-    def subseteq(self, a, b, sid):
-        self._sets("⊆", a, b, sid)
-        return all(_contains(b.items, x) for x in a.items)
-
-    def member(self, value, collection, sid):
-        if not isinstance(collection, SetValue):
-            self._fail(f"`∈` needs a set on the right, got {nshow(collection)}", sid)
-        return _contains(collection.items, value)
+    def union(self, a, b, sid): return self._binop(nunion, a, b, sid)
+    def intersect(self, a, b, sid): return self._binop(nintersect, a, b, sid)
+    def setminus(self, a, b, sid): return self._binop(nsetminus, a, b, sid)
+    def subseteq(self, a, b, sid): return self._binop(nsubseteq, a, b, sid)
+    def member(self, value, collection, sid): return self._binop(nmember, value, collection, sid)
 
     def index(self, head, items, sid, spelling=None):
         """`x[i, j]`: index a tensor (1-based, exact integers); any other number
@@ -1982,9 +2042,10 @@ class Engine:
         return self._binop(ndot, a, b, sid)
 
     def compose(self, f, g, sid):
-        if not callable(f) or not callable(g):
-            self._fail(f"`∘` needs two functions, got {nshow(f)} and {nshow(g)}", sid)
-        return Composed(f, g)
+        return self._binop(ncompose, f, g, sid)
+
+    def op(self, name, sid):
+        return OPERATORS[name]
 
     def partial(self, fn, slots, holes, kwargs, sid, spelling=None):
         """`f(a, _)`: fix some arguments now, take the rest later. The head must be a
