@@ -24,6 +24,9 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 | `¬` | `\not` | negation | prefix |
 | `∀` `∃` | `\forall` `\exists` | quantifiers over a range or collection | special form |
 | `r∠θ` | `\angle` `\polar(r, θ)` | polar form: modulus and angle | above `+`, below comparison |
+| `⌊x⌋` `⌈x⌉` | `\floor(x)` `\ceil(x)` | floor and ceiling | atom |
+| `\|x\|` | `\abs(x)` | absolute value, complex modulus | atom |
+| `‖v‖` `∥v∥` | `\norm(v)` | 2-norm of a vector, Frobenius norm of a matrix | atom |
 | `%` | `\mod` | floored modulo | with `*` |
 | `×` | `\times` `\cross(a, b)` | cross product of 3-vectors; scalar multiple with a scalar operand | with `*` |
 | `⊗` | `\otimes` `\outer(a, b)` | tensor product; scalar multiple with a scalar operand | with `*` |
@@ -103,6 +106,8 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 
 ## Limitations
 
+- `|A|` on a square matrix is an error, not the determinant — [#100](https://todo.sr.ht/~takeiteasy/adhoc/100).
+- Bars in set-builder notation `{x ∈ s | p}` are not read yet — [#79](https://todo.sr.ht/~takeiteasy/adhoc/79).
 - `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII

@@ -66,3 +66,8 @@ r > 0 ? r : -r;
 ρ(j=1..4) j;
 \dual \golden, γ = φ;
 γ;
+
+-- ⌊ ⌋ ⌈ ⌉ | | ‖ ‖ bracket \floor, \ceil, \abs and \norm
+|1 - |2 - 5||;
+⌊7/2⌋ + ⌈π⌉;
+‖[3, 4]‖;

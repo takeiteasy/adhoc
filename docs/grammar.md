@@ -48,6 +48,8 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. `\atan2` is the one name ending in a digit. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
+- The delimiters `⌊ ⌋ ⌈ ⌉` and the bars `|` and `‖` (`∥` reads as `‖`) bracket an expression
+  (`## Delimited forms`).
 - Operators: `+ - * / % @ × ⊗ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
   A lone `·` (U+00B7), `⋅` (U+22C5) or `_` is the partial-application placeholder
@@ -125,7 +127,8 @@ func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
               | "(" operator ")" | "(" operator operand ")" | "(" operand operator ")"
-              | lambda | radical | quote | tensor | array | set ;
+              | lambda | radical | delimited | quote | tensor | array | set ;
+delimited  ::= "⌊" expr "⌋" | "⌈" expr "⌉" | "|" expr "|" | "‖" expr "‖" ;
 tensor     ::= "[" expr ("," expr)* "]"
              | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
 set        ::= "{" (expr ("," expr)*)? "}" ;
@@ -226,6 +229,37 @@ A parenthesized composition is a call head: `(f ∘ g)(x)` applies. Unparenthesi
 parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
 parses as the multiplication it spells and dies as the usual typed "strings are not
 numbers" at evaluation — the same shape as any other string reaching a numeric operator.
+
+## Delimited forms
+
+Each delimited form is an atom that rewrites to a prelude call over the whole bracketed span.
+
+| Form | Call |
+|---|---|
+| `⌊x⌋` | `\floor(x)` |
+| `⌈x⌉` | `\ceil(x)` |
+| `\|x\|` | `\abs(x)` |
+| `‖x‖` `∥x∥` | `\norm(x)` |
+
+```
+|1 - |2 - 5||     ->  = 2
+|2||3|            ->  = 6
+2⌊3/2⌋            ->  = 2
+‖[3, 4]‖          ->  = 5
+```
+
+Where an operand is expected, a bar opens a form. After an operand, a bar closes the
+innermost open form of the same glyph, and opens a new factor when none is open, so
+`|a||b|` is `|a|·|b|`. A different glyph always opens: `|a ‖b‖|` nests. Brackets, braces, call
+arguments and groups start afresh, so `|f(2 |3|)|` reads the inner bars as a factor of the
+argument. A nested pair of the same glyph reached after an operand needs parentheses:
+`|a (|b|)|`, not `|a|b||`.[^bars]
+
+Trailers attach to the closer: `|x|²`, `⌊x⌋!`. A stray closer is an `unexpected token` error, a
+mismatched one ``expected `⌋`, found `⌉` ``, and an unclosed form is incomplete input.
+
+[^bars]: `|a|b||` reads as `|a|·b·|` and fails at the last bar. The `|` inside `{x ∈ s | p}`
+    is set-builder notation and does not exist yet ([#79](https://todo.sr.ht/~takeiteasy/adhoc/79)).
 
 ## Application: dynamic name-headed parens
 

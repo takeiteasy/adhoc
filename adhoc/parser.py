@@ -83,6 +83,7 @@ from .lexer import (
     Eq,
     Eof,
     Ident,
+    Delim,
     LAngle,
     LBrace,
     LBracket,
@@ -173,6 +174,9 @@ class IncompleteInput(ParseError):
 _ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, LBrace,
                   HashBracket, Str, Radical, NthRoot)
 
+_DELIMITED = {"⌊": ("⌋", "floor"), "⌈": ("⌉", "ceil"), "|": ("|", "abs"), "‖": ("‖", "norm")}
+_BARS = frozenset({"|", "‖"})
+
 _NO_HOLE_FORMS = frozenset({"py", "arr", "eval"})
 
 # Backslash names that are infix operators, never atoms: they end a juxtaposition run
@@ -262,14 +266,18 @@ class _Parser:
         # tensor/array/set literals, index brackets): there `,` always separates
         # items, so `a, b..c` is never a stepped range (docs/grammar.md, `## Ranges`).
         self._in_list = False
+        # The bar glyphs (`|`, `‖`) of the delimited forms being read, innermost last.
+        self._bars: list[str] = []
 
     @contextmanager
     def _list_context(self, in_list: bool):
         saved, self._in_list = self._in_list, in_list
+        saved_bars, self._bars = self._bars, []
         try:
             yield
         finally:
             self._in_list = saved
+            self._bars = saved_bars
 
     def peek(self) -> Token:
         return self.tokens[self.pos]
@@ -320,6 +328,10 @@ class _Parser:
         tok = self.peek()
         if isinstance(tok, Backslash) and tok.name in _INFIX_NAMES:
             return False
+        if isinstance(tok, Delim):
+            # After an operand, a bar closes the innermost open bar of its own glyph;
+            # otherwise it opens a factor (`|a||b|`).
+            return tok.ch in _DELIMITED and not (self._bars and self._bars[-1] == tok.ch)
         return isinstance(tok, _ATOM_STARTERS)
 
     # -- alias normalization (docs/grammar.md, `## Name aliases`) ---------------
@@ -1389,6 +1401,28 @@ class _Parser:
             return StrLit(text=tok.text, span=tok.span)
         return self.expr()
 
+    # delimited ::= "⌊" expr "⌋" | "⌈" expr "⌉" | "|" expr "|" | "‖" expr "‖" ; rewritten to
+    # `\floor`, `\ceil`, `\abs` and `\norm` applications over the whole delimited span.
+    def _delimited(self) -> Node:
+        opener = self.advance()
+        closer, name = _DELIMITED[opener.ch]
+        bar = opener.ch in _BARS
+        if bar:
+            self._bars.append(opener.ch)
+        try:
+            inner = self.expr()
+        finally:
+            if bar:
+                self._bars.pop()
+        self._skip_newlines()
+        close = self.peek()
+        if not (isinstance(close, Delim) and close.ch == closer):
+            raise self.error_at_current(f"expected `{closer}`, found {close.describe}")
+        self.advance()
+        span = opener.span.to(close.span)
+        return Call(head=BackslashRef(name=name, span=opener.span, spelling=f"\\{name}"),
+                    args=(inner,), span=span)
+
     # atom ::= number | string | identifier | "\"-name | "(" sequence ")"
     #          | lambda | radical ;
     def atom(self) -> Node:
@@ -1444,6 +1478,8 @@ class _Parser:
                 operand = self.unary()
                 return Call(head=BackslashRef(name="sqrt", span=rad.span, spelling="√"),
                             args=(operand,), span=rad.span.to(operand.span))
+            case Delim() if tok.ch in _DELIMITED:
+                return self._delimited()
             case NthRoot():
                 # `∛x` / `∜x`: the operand parses at the unary level like `√`'s, and the
                 # node is the ordinary `\\root(x, n)` call.

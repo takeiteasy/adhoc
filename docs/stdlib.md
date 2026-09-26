@@ -9,7 +9,7 @@ the float tier. Every name is protected: it cannot be rebound or shadowed.
 |---|---|---|
 | `\conj(z)` | complex conjugate | `\conj(3+4i)` -> `3-4i` |
 | `\arg(z)` | angle in `(-π, π]`, an error at zero | `\arg(-1)` -> `π` |
-| `\abs(z)` | modulus (see Rounding) | `\abs(3+4i)` -> `5` |
+| `\abs(z)` `\|z\|` | modulus (see Rounding) | `\abs(3+4i)` -> `5` |
 | `\polar(r, θ)` `r∠θ` `r \angle θ` | `r·cos θ + r·sin θ·i` | `2∠(π/2)` -> `2i` |
 | `\re(z)` `\im(z)` | components | `\im(3+4i)` -> `4` |
 
@@ -81,12 +81,12 @@ Exact arguments stay exact where a closed form exists (`\log(1/2, 8)` is `-3`,
 
 | Function | Result | Example |
 |---|---|---|
-| `\floor(x)` | greatest integer ≤ x | `\floor(-5/2)` -> `-3` |
-| `\ceil(x)` | least integer ≥ x | `\ceil(\pi)` -> `4` |
+| `\floor(x)` `⌊x⌋` | greatest integer ≤ x | `⌊-5/2⌋` -> `-3` |
+| `\ceil(x)` `⌈x⌉` | least integer ≥ x | `⌈\pi⌉` -> `4` |
 | `\trunc(x)` | toward zero | `\trunc(-5/2)` -> `-2` |
 | `\round(x)` | nearest integer, ties away from zero | `\round(-5/2)` -> `-3` |
 | `\round(x, n)` | round to `n` decimal digits (`n` may be negative) | `\round(22/7, 2)` -> `157/50` |
-| `\abs(x)` | magnitude; on a complex value, the modulus | `\abs(3+4i)` -> `5` |
+| `\abs(x)` `\|x\|` | magnitude; on a complex value, the modulus | `\|3+4i\|` -> `5` |
 | `\sign(x)` | `-1`, `0` or `1` | `\sign(-\pi)` -> `-1` |
 
 Exact and symbolic arguments give exact integers; non-finite floats pass through.
@@ -106,7 +106,7 @@ tiers; a float or complex-float matrix is pivoted by size.[^pivot]
 | `\eye(n)` | identity | `\eye(2)` -> `[1, 0; 0, 1]` |
 | `\zeros(n, …)` `\ones(n, …)` | filled tensor of the given dimensions | `\zeros(2, 3)` -> `[0, 0, 0; 0, 0, 0]` |
 | `\diag(v)` `\diag(A)` | a vector gives a diagonal matrix, a matrix gives its diagonal | `\diag([1, 2])` -> `[1, 0; 0, 2]` |
-| `\norm(x)` | 2-norm of a vector, Frobenius norm of a matrix, `\abs` of a number | `\norm([3, 4])` -> `5` |
+| `\norm(x)` `‖x‖` | 2-norm of a vector, Frobenius norm of a matrix, `\abs` of a number | `\norm([3, 4])` -> `5` |
 | `a × b` `\cross(a, b)` | cross product of two length-3 vectors | `[1, 0, 0] × [0, 1, 0]` -> `[0, 0, 1]` |
 | `a ⊗ b` `\outer(a, b)` | tensor product, shapes concatenate | `[1, 2] ⊗ [3, 4]` -> `[3, 4; 6, 8]` |
 | `\kron(a, b)` | Kronecker product of two vectors or two matrices | `\kron([1, 2], [3, 4])` -> `[3, 4, 6, 8]` |

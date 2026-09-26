@@ -114,6 +114,19 @@ class Superscript(Token):
 
 
 @dataclass(frozen=True)
+class Delim(Token):
+    """A delimiter glyph: `⌊ ⌋ ⌈ ⌉`, or a bar `|` / `‖` (`∥` reads as `‖`), which opens and
+    closes alike. The parser rewrites a delimited expression to `\\floor`, `\\ceil`,
+    `\\abs` or `\\norm`."""
+
+    ch: str
+
+    @property
+    def describe(self) -> str:
+        return f"`{self.ch}`"
+
+
+@dataclass(frozen=True)
 class NthRoot(Token):
     """The prefix radicals `∛` and `∜`; `index` is the root (3 or 4). Like `√`, not a
     name; the parser rewrites `∛x` to `\\root(x, 3)`."""
@@ -431,6 +444,8 @@ SUPERSCRIPTS = dict(zip(
     "0123456789+-()abcdefghijklmnoprstuvwxyzABDEGHIJKLMNOPRUVWαβγδεθφχ"))
 _TRANSPOSE_GLYPH = "ᵀ"
 
+DELIMITERS = {"⌊": "⌊", "⌋": "⌋", "⌈": "⌈", "⌉": "⌉", "|": "|", "‖": "‖", "∥": "‖"}
+
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
 
 
@@ -667,6 +682,11 @@ def tokenize(src: str) -> list[Token]:
             # the parser's prefix rule rewrites it to a `\sqrt(...)` application.
             end = pos + len(c.encode("utf-8"))
             tokens.append(Radical(span=Span(pos, end)))
+            i += 1
+            continue
+
+        if c in DELIMITERS:
+            tokens.append(Delim(ch=DELIMITERS[c], span=Span(pos, pos + len(c.encode("utf-8")))))
             i += 1
             continue
 
