@@ -24,6 +24,7 @@ and every result re-collapses through `make`, so `(2+2i)/(1+i)` is the
 integer `2`, never `2+0i`.
 """
 
+import math
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -212,6 +213,16 @@ def _from_pair(z: _Z) -> int | Gaussian:
     return make(*z)
 
 
+_Q = tuple[Fraction, Fraction]
+
+
+def scaled(*qs: _Q) -> tuple[int, list[_Z]]:
+    """The least common denominator D of Gaussian-rational pairs and the pairs scaled by D
+    into Gaussian integers."""
+    d = math.lcm(*(c.denominator for q in qs for c in q))
+    return d, [(int(q[0] * d), int(q[1] * d)) for q in qs]
+
+
 def gcd(*zs: _Z) -> int | Gaussian:
     """Greatest common divisor of Gaussian-integer pairs, the associate in the first quadrant."""
     g: _Z = (0, 0)
@@ -232,16 +243,27 @@ def lcm(*zs: _Z) -> int | Gaussian:
     return _from_pair(result)
 
 
-def factor(z: _Z) -> list[tuple[int | Gaussian, int]]:
-    """Prime factorization of a nonzero Gaussian integer as `(prime, exponent)` pairs, primes in the
-    first quadrant sorted by norm. A unit other than 1 leads as `(unit, 1)`."""
-    primes: list[tuple[_Z, int]] = []
-    remaining = z
-    for p, k in sorted(sympy.factorint(_norm(z)).items()):
+def gcd_q(*qs: _Q) -> int | Fraction | Gaussian:
+    """Greatest common divisor of Gaussian-rational pairs: the gcd of the scaled Gaussian integers over D."""
+    d, zs = scaled(*qs)
+    return div(gcd(*zs), d)
+
+
+def lcm_q(*qs: _Q) -> int | Fraction | Gaussian:
+    """Least common multiple of Gaussian-rational pairs: the lcm of the scaled Gaussian integers over D."""
+    d, zs = scaled(*qs)
+    return div(lcm(*zs), d)
+
+
+def _decompose(z: _Z, norm_factors: dict[int, int]) -> tuple[dict[_Z, int], _Z]:
+    """First-quadrant prime exponents of nonzero `z` given the factorization of its norm, and
+    the unit left over."""
+    primes: dict[_Z, int] = {}
+    for p, k in norm_factors.items():
         if p == 2:
-            primes.append(((1, 1), k))
+            primes[(1, 1)] = k
         elif p % 4 == 3:
-            primes.append(((p, 0), k // 2))
+            primes[(p, 0)] = k // 2
         else:
             x = int(sympy.sqrt_mod(-1, p))
             pi = _zgcd((p, 0), (x, 1))
@@ -252,14 +274,33 @@ def factor(z: _Z) -> list[tuple[int | Gaussian, int]]:
                 if rest is None:
                     break
                 a += 1
-            primes.extend(((pi, a), (conj, k - a)))
-    out: list[tuple[int | Gaussian, int]] = []
-    for prime, k in sorted(primes, key=lambda item: (_norm(item[0]), item[0])):
-        if k:
-            out.append((_from_pair(prime), k))
-    for prime, k in primes:
+            primes[pi] = a
+            primes[conj] = k - a
+    remaining = z
+    for prime, k in primes.items():
         for _ in range(k):
             remaining = _exact_quotient(remaining, prime)
-    if remaining != (1, 0):
-        out.insert(0, (_from_pair(remaining), 1))
+    return primes, remaining
+
+
+def factor_q(re: Fraction, im: Fraction) -> list[tuple[int | Gaussian, int]]:
+    """Prime factorization of a nonzero Gaussian rational as `(prime, exponent)` pairs, primes in the
+    first quadrant sorted by norm, denominator primes with negative exponents. A unit other than 1
+    leads as `(unit, 1)`."""
+    d, (w,) = scaled((re, im))
+    num, unit = _decompose(w, sympy.factorint(_norm(w)))
+    den, d_unit = _decompose((d, 0), {p: 2 * k for p, k in sympy.factorint(d).items()})
+    exponents = {p: num.get(p, 0) - den.get(p, 0) for p in num.keys() | den.keys()}
+    unit = _zmul(unit, (d_unit[0], -d_unit[1]))
+    out: list[tuple[int | Gaussian, int]] = []
+    for prime, k in sorted(exponents.items(), key=lambda item: (_norm(item[0]), item[0])):
+        if k:
+            out.append((_from_pair(prime), k))
+    if unit != (1, 0):
+        out.insert(0, (_from_pair(unit), 1))
     return out
+
+
+def factor(z: _Z) -> list[tuple[int | Gaussian, int]]:
+    """Prime factorization of a nonzero Gaussian integer; see `factor_q`."""
+    return factor_q(Fraction(z[0]), Fraction(z[1]))

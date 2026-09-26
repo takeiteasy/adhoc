@@ -1,3 +1,5 @@
+from fractions import Fraction
+
 import pytest
 
 from adhoc import gauss
@@ -102,6 +104,11 @@ def test_modulo_errors():
     (r"\factor(2i)", "= ⟨⟨1+i, 2⟩⟩"), (r"\factor(3i)", "= ⟨⟨i, 1⟩, ⟨3, 1⟩⟩"),
     (r"\factor(3+4i)", "= ⟨⟨2+i, 2⟩⟩"), (r"\factor(2+2i)", "= ⟨⟨-i, 1⟩, ⟨1+i, 3⟩⟩"),
     (r"\factor(-2i)", "= ⟨⟨-1, 1⟩, ⟨1+i, 2⟩⟩"),
+    (r"\gcd(1/2, i)", "= 1/2"), (r"\gcd(1/2+i, 1)", "= 1/2"), (r"\gcd(1/2+i, 0)", "= 1/2+i"),
+    (r"\lcm(1+i, 1/2+i)", "= 3+i"), (r"\lcm(1/2+i, 0)", "= 0"),
+    (r"\factor(1/2+i)", "= ⟨⟨i, 1⟩, ⟨1+i, -2⟩, ⟨1+2i, 1⟩⟩"),
+    (r"\factor((1+i)/2)", "= ⟨⟨i, 1⟩, ⟨1+i, -1⟩⟩"),
+    (r"\factor(1/(2+i))", "= ⟨⟨2+i, -1⟩⟩"),
     (r"\choose(5, 2)", "= 10"), (r"\choose(2, 5)", "= 0"), (r"\perm(5, 2)", "= 20"),
     (r"\fib(0)", "= 0"), (r"\fib(10)", "= 55"), (r"\fib(100)", "= 354224848179261915075"),
 ])
@@ -118,6 +125,19 @@ def test_gaussian_factor_round_trips():
             for prime, k in gauss.factor((a, b)):
                 product = gauss.mul(product, gauss.pow_int(prime, k))
             assert product == gauss.make(a, b), (a, b)
+
+
+def test_gaussian_rational_factor_round_trips():
+    for a in range(-6, 7):
+        for b in range(-6, 7):
+            for d in (1, 2, 3, 5, 6, 10):
+                if (a, b) == (0, 0):
+                    continue
+                q = (Fraction(a, d), Fraction(b, d))
+                product = 1
+                for prime, k in gauss.factor_q(*q):
+                    product = gauss.mul(product, gauss.pow_int(prime, k))
+                assert product == gauss.make(*q), q
 
 
 def _is_gaussian_integer(z):
@@ -139,8 +159,9 @@ def test_gaussian_gcd_and_lcm_relate_to_the_product():
 
 @pytest.mark.parametrize("src, message", [
     (r"\gcd(1., 3)", "exact rational"), (r"\gcd()", "at least one"),
-    (r"\gcd(\true, 2)", "exact rational"), (r"\gcd(1/2, i)", "Gaussian integers"),
-    (r"\lcm(1+i, 1/2+i)", "Gaussian integers"), (r"\factor(1/2+i)", "Gaussian integers"),
+    (r"\gcd(\true, 2)", "exact rational"), (r"\gcd(1., i)", "Gaussian rationals"),
+    (r"\lcm(1+i, 1.)", "Gaussian rationals"), (r"\factor(1/10^19+i)", "limited"),
+    (r"\factor(10^10+10^10i)", "limited"),
     (r"\factor(0)", "positive rational"), (r"\factor(-1/2)", "positive rational"),
     (r"\factor(1.)", "exact rational"), (r"\factor(10^19)", "limited"),
     (r"\factor(1/10^19)", "limited"), (r"\choose(-1, 2)", "non-negative"),
