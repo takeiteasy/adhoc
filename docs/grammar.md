@@ -526,9 +526,9 @@ Operators pass as values: `\fold(+, xs)` (`## Operator values`).
 
 ### Infinite ranges and lazy sequences
 
-`\map`, `\filter`, and `\scan` over an infinite range (`1..`) or another lazy sequence
-return a **lazy sequence**, which runs nothing until something consumes it: `\take`, or a fold
-binder.
+`\map`, `\filter`, `\scan`, `\enumerate` and `\zip` (when every argument is infinite) over an
+infinite range (`1..`) or another lazy sequence return a **lazy sequence**, which runs nothing
+until something consumes it: `\take`, or a fold binder.
 
 ```
 s(x) = x^2
@@ -536,6 +536,7 @@ q = \map(s, 1..)                                 ->  q = <seq \map(s, 1..)>
 \take(3, q)                                      ->  = ⟨1, 4, 9⟩
 \take(2, \filter(\fn(x) x > 5, q))              ->  = ⟨9, 16⟩
 \take(4, \scan(+, 1..))                          ->  = ⟨1, 3, 6, 10⟩
+\take(2, \enumerate(q))                          ->  = ⟨⟨1, 1⟩, ⟨2, 4⟩⟩
 \fold(+, \map(\fn(x) 1/x^2, 1..))               ->  = 1.6449…  -- like the \sum binder
 \sum(k=\map(\fn(x) 1/x^2, 1..)) k                ->  = 1.6449…  -- converges like Σ over 1..
 ```

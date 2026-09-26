@@ -173,6 +173,13 @@ def test_factorial_of_a_non_integer_is_gamma():
     (r"\reverse(⟨1, 2, 3⟩)", "= ⟨3, 2, 1⟩"), (r"\reverse([1, 2, 3])", "= [3, 2, 1]"),
     (r"\zip(⟨1, 2, 3⟩, ⟨4, 5⟩)", "= ⟨⟨1, 4⟩, ⟨2, 5⟩⟩"),
     (r"\enumerate(⟨7, 8⟩)", "= ⟨⟨1, 7⟩, ⟨2, 8⟩⟩"),
+    (r"\take(3, \enumerate(1..))", "= ⟨⟨1, 1⟩, ⟨2, 2⟩, ⟨3, 3⟩⟩"),
+    (r"\take(2, \zip(1.., 2..))", "= ⟨⟨1, 2⟩, ⟨2, 3⟩⟩"),
+    (r"\zip(⟨7, 8⟩, 1..)", "= ⟨⟨7, 1⟩, ⟨8, 2⟩⟩"),
+    (r"\zip(1.., ⟨7, 8⟩, 5..)", "= ⟨⟨1, 7, 5⟩, ⟨2, 8, 6⟩⟩"),
+    (r"\take(2, \zip(\enumerate(1..), \map(\fn(x) x*x, 1..)))", "= ⟨⟨⟨1, 1⟩, 1⟩, ⟨⟨2, 2⟩, 4⟩⟩"),
+    (r"\zip(1.., 2..)", "= <seq \\zip(1.., 2..)>"),
+    (r"\enumerate(\map(\fn(x) x, 1..))", "= <seq \\enumerate(\\map(λ(x), 1..))>"),
     (r"\count(\fn(x) x % 2 ≠ 0, 1..10)", "= 5"), (r"\count(\fn(x) x > 0, ⟨⟩)", "= 0"),
     (r"\any(\fn(x) x > 2, ⟨1, 2, 3⟩)", "= true"), (r"\all(\fn(x) x > 2, ⟨1, 2, 3⟩)", "= false"),
     (r"\any(\fn(x) x > 2, ⟨⟩)", "= false"), (r"\all(\fn(x) x > 2, ⟨⟩)", "= true"),
@@ -195,7 +202,8 @@ def test_any_and_all_short_circuit():
     (r"\sstdev(⟨1⟩)", "at least two"), (r"\min(1, \true)", "booleans"),
     (r"\sort(⟨1, 1+i⟩)", "not ordered"), (r"\reverse({1, 2})", "no order"),
     (r"\any(\fn(x) x, ⟨1⟩)", "boolean"), (r"\zip(⟨1⟩)", "two or more"),
-    (r"\sort(1..)", "infinite"), (r"\enumerate(5)", "range or collection"),
+    (r"\sort(1..)", "infinite"), (r"\sort(\enumerate(1..))", "infinite"),
+    (r"\len(\zip(1.., 2..))", "needs a collection"), (r"\enumerate(5)", "range or collection"),
     (r"\count(\fn(x) x > 0, 1..)", "infinite"),
 ])
 def test_aggregate_errors(src, message):

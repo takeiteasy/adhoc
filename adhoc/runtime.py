@@ -1778,9 +1778,10 @@ class _InfiniteFold:
 
 
 class LazySeq:
-    """`\\map`/`\\filter`/`\\scan` over an infinite range or sequence: nothing runs until a
-    consumer (`\\take`, a fold) iterates. Always unbounded — a filter that stops
-    matching is cut off at MAX_TERMS elements rather than looping forever."""
+    """`\\map`/`\\filter`/`\\scan`/`\\zip`/`\\enumerate` over an infinite range or sequence:
+    nothing runs until a consumer (`\\take`, a fold) iterates. Always unbounded — a filter
+    that stops matching is cut off at MAX_TERMS elements rather than looping forever.
+    A `zip` source is the tuple of its infinite arguments."""
 
     def __init__(self, kind: str, fn: Any, source: Any, seed: tuple = ()):
         self.kind, self.fn, self.source, self.seed = kind, fn, source, seed
@@ -1789,6 +1790,14 @@ class LazySeq:
         if self.kind == "map":
             for x in self.source:
                 yield _invoke(self.fn, (x,))
+            return
+        if self.kind == "zip":
+            for row in zip(*self.source):
+                yield ArrayValue(row)
+            return
+        if self.kind == "enumerate":
+            for i, x in enumerate(self.source, 1):
+                yield ArrayValue((i, x))
             return
         if self.kind == "scan":
             acc, started = (self.seed[0], True) if self.seed else (None, False)
@@ -1807,9 +1816,17 @@ class LazySeq:
                 if gap >= MAX_TERMS:
                     raise NumError(f"\\filter found no match within {MAX_TERMS} elements")
 
+    @staticmethod
+    def _source_text(source: Any) -> str:
+        return (source.text() if isinstance(source, LazySeq)
+                else nshow(source)[len("<range "):-len(" (lazy, infinite)>")])
+
     def text(self) -> str:
-        source = (self.source.text() if isinstance(self.source, LazySeq)
-                  else nshow(self.source)[len("<range "):-len(" (lazy, infinite)>")])
+        if self.kind == "zip":
+            return f"\\zip({', '.join(map(self._source_text, self.source))})"
+        if self.kind == "enumerate":
+            return f"\\enumerate({self._source_text(self.source)})"
+        source = self._source_text(self.source)
         seed = "".join(f", {nshow(v)}" for v in self.seed)
         return f"\\{self.kind}({_callable_label(self.fn)}, {source}{seed})"
 
@@ -2312,14 +2329,20 @@ def _count_matches_call(*args: Any) -> int:
     return sum(_tested(p, x, "\\count") for x in _finite_elements(xs, "\\count"))
 
 
-def _zip_call(*args: Any) -> ArrayValue:
+def _zip_call(*args: Any) -> Any:
     if len(args) < 2:
         raise NumError("\\zip takes two or more collections")
-    columns = [_finite_elements(xs, "\\zip") for xs in args]
+    if all(_is_infinite(xs) for xs in args):
+        return LazySeq("zip", None, args)
+    columns = [None if _is_infinite(xs) else _finite_elements(xs, "\\zip") for xs in args]
+    length = min(len(c) for c in columns if c is not None)
+    columns = [islice(xs, length) if c is None else c for xs, c in zip(args, columns)]
     return ArrayValue(tuple(ArrayValue(row) for row in zip(*columns)))
 
 
-def _enumerate_call(xs: Any) -> ArrayValue:
+def _enumerate_call(xs: Any) -> Any:
+    if _is_infinite(xs):
+        return LazySeq("enumerate", None, xs)
     items = _finite_elements(xs, "\\enumerate")
     return ArrayValue(tuple(ArrayValue((i, x)) for i, x in enumerate(items, 1)))
 

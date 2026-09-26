@@ -31,8 +31,8 @@ Each takes several arguments or one collection (array, set, tensor, range) unles
 | `\reverse(xs)` | reversed; a set is an error | `\reverse(⟨1, 2, 3⟩)` -> `⟨3, 2, 1⟩` |
 | `\any(p, xs)` `\all(p, xs)` | short-circuit tests with a predicate | `\all(\fn(x) x > 0, 1..5)` -> `true` |
 | `\count(p, xs)` | elements satisfying `p` | `\count(\fn(x) x % 2 ≠ 0, 1..10)` -> `5` |
-| `\zip(a, b, …)` | array of tuples, cut to the shortest | `\zip(⟨1, 2⟩, ⟨3, 4⟩)` -> `⟨⟨1, 3⟩, ⟨2, 4⟩⟩` |
-| `\enumerate(xs)` | `⟨⟨1, x₁⟩, ⟨2, x₂⟩, …⟩`, 1-based like indexing | `\enumerate(⟨7, 8⟩)` -> `⟨⟨1, 7⟩, ⟨2, 8⟩⟩` |
+| `\zip(a, b, …)` | array of tuples, cut to the shortest; lazy when every argument is infinite | `\zip(⟨1, 2⟩, ⟨3, 4⟩)` -> `⟨⟨1, 3⟩, ⟨2, 4⟩⟩` |
+| `\enumerate(xs)` | `⟨⟨1, x₁⟩, ⟨2, x₂⟩, …⟩`, 1-based like indexing; lazy over an infinite input | `\enumerate(⟨7, 8⟩)` -> `⟨⟨1, 7⟩, ⟨2, 8⟩⟩` |
 
 Ordering rejects complex values and booleans. Empty input is a typed error, except that
 `\any` of nothing is `false`, `\all` is `true` and `\count` is `0`. `\any` and `\all` also
@@ -90,5 +90,4 @@ Complex arguments are a typed error, except for `\abs`.
 ## Limitations
 
 - `\gcd`, `\lcm` and `\factor` reject Gaussian integers — [#92](https://todo.sr.ht/~takeiteasy/adhoc/92).
-- `\zip` and `\enumerate` need finite input — [#90](https://todo.sr.ht/~takeiteasy/adhoc/90).
 - `r∠θ` and `\abs` of a non-special angle are held approximately (`\abs(2∠1)` shows `2...`) — [#91](https://todo.sr.ht/~takeiteasy/adhoc/91).
