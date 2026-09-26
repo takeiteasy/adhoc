@@ -1886,6 +1886,85 @@ PRELUDE.update({
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 
+def _integral(v: AdValue, kind: str) -> AdValue:
+    """`\\floor`/`\\ceil`/`\\trunc`/`\\round` of a real value: exact tiers give an exact
+    integer, a float gives a float (non-finite floats pass through)."""
+    _reject_non_numeric(v)
+    if _is_complex(v):
+        raise NumError(f"\\{kind} needs a real number, got {nshow(v)}")
+    if isinstance(v, float):
+        return float(_round_real(kind, Fraction(v))) if math.isfinite(v) else v
+    if isinstance(v, int):
+        return v
+    if isinstance(v, Fraction):
+        return _round_real(kind, v)
+    sign = -1 if bool(v.expr < 0) else 1
+    match kind:
+        case "floor":
+            return int(sympy.floor(v.expr))
+        case "ceil":
+            return int(sympy.ceiling(v.expr))
+        case "trunc":
+            return int(sympy.floor(v.expr) if sign > 0 else sympy.ceiling(v.expr))
+        case _:
+            return sign * int(sympy.floor(sign * v.expr + sympy.Rational(1, 2)))
+
+
+def _round_real(kind: str, v: Fraction) -> int:
+    n, d = v.numerator, v.denominator
+    match kind:
+        case "floor":
+            return n // d
+        case "ceil":
+            return -(-n // d)
+        case "trunc":
+            return int(v)
+        case _:
+            return (1 if n >= 0 else -1) * ((2 * abs(n) + d) // (2 * d))
+
+
+def _round_call(*args: AdValue) -> AdValue:
+    _takes("round", args, 1, 2, "a value and optional digits: \\round(x, n)")
+    x, *digits = args
+    if not digits:
+        return _integral(x, "round")
+    n = _integer_exponent(digits[0]) if not isinstance(digits[0], bool) else None
+    if n is None:
+        raise NumError(f"\\round needs an exact integer digit count, got {nshow(digits[0])}")
+    if isinstance(x, float) and math.isfinite(x):
+        return float(Decimal(repr(x)).quantize(Decimal(1).scaleb(-n), rounding="ROUND_HALF_UP"))
+    scale = Fraction(10) ** n
+    return ndiv(_integral(nmul(x, scale), "round"), scale)
+
+
+def _abs_call(v: AdValue) -> AdValue:
+    _reject_non_numeric(v)
+    if _is_complex(v):
+        return npow(nadd(nmul(_re_call(v), _re_call(v)), nmul(_im_call(v), _im_call(v))),
+                    Fraction(1, 2))
+    return nneg(v) if ncompare("lt", v, 0) else v
+
+
+def _sign_call(v: AdValue) -> AdValue:
+    _reject_non_numeric(v)
+    if _is_complex(v):
+        raise NumError(f"\\sign needs a real number, got {nshow(v)}")
+    if isinstance(v, float):
+        return v if math.isnan(v) else float((v > 0) - (v < 0))
+    return (ncompare("gt", v, 0)) - (ncompare("lt", v, 0))
+
+
+PRELUDE.update({
+    "floor": PreludeFn("floor", lambda v: _integral(v, "floor")),
+    "ceil": PreludeFn("ceil", lambda v: _integral(v, "ceil")),
+    "trunc": PreludeFn("trunc", lambda v: _integral(v, "trunc")),
+    "round": PreludeFn("round", _round_call),
+    "abs": PreludeFn("abs", _abs_call),
+    "sign": PreludeFn("sign", _sign_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+
 class Engine:
     """Everything lowered code calls into. Holds the user environment (a plain dict) and
     the compiled unit's span table; every method takes the span id of the node that
