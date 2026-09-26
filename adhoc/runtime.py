@@ -456,6 +456,9 @@ PRELUDE: dict[str, Any] = {
     "sin": _prelude_fn("sin", math.sin),
     "cos": _prelude_fn("cos", math.cos),
     "tan": _prelude_fn("tan", math.tan),
+    "asin": _prelude_fn("asin", math.asin),
+    "acos": _prelude_fn("acos", math.acos),
+    "atan": _prelude_fn("atan", math.atan),
     "ln": _prelude_fn("ln", math.log),
     "sqrt": _prelude_fn("sqrt", math.sqrt),
     "root": PreludeFn("root", _root_call),
@@ -475,6 +478,10 @@ PRELUDE: dict[str, Any] = {
 }
 
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+_INVERSE_PAIRS = (("sin", "asin"), ("cos", "acos"), ("tan", "atan"))
+_INVERSES = {id(PRELUDE[f]): PRELUDE[g] for f, g in _INVERSE_PAIRS} | \
+            {id(PRELUDE[g]): PRELUDE[f] for f, g in _INVERSE_PAIRS}
 
 
 @dataclass(frozen=True)
@@ -2489,10 +2496,19 @@ class Engine:
         if callable(fn):
             if isinstance(exponent, (int, Fraction, float)) and not isinstance(exponent, bool) \
                     and exponent < 0:
-                # Inverses (`f⁻¹`, `\sin⁻¹`) are not built (#85).
-                self._fail("functions have no inverse notation", sid)
+                inverse = self._inverse(fn, exponent, sid)
+                return self.app(inverse, args, kwargs, sid, spelling)
             return self.pow(self.app(fn, args, kwargs, sid, spelling), exponent, sid)
         return self.app(self.pow(fn, exponent, sid), args, kwargs, sid, spelling)
+
+    def _inverse(self, fn: Any, exponent: AdValue, sid: int) -> Callable:
+        if exponent != -1:
+            self._fail("only `⁻¹` denotes an inverse function", sid)
+        inverse = _INVERSES.get(id(fn))
+        if inverse is None:
+            # User functions have no inverse notation (#87).
+            self._fail(f"`{nshow(fn)}` has no inverse", sid)
+        return inverse
 
     def _binop(self, f, a: AdValue, b: AdValue, sid: int) -> AdValue:
         try:
@@ -2513,6 +2529,9 @@ class Engine:
         return self._binop(ndiv, a, b, sid)
 
     def pow(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        if callable(a) and isinstance(b, (int, Fraction, float)) and not isinstance(b, bool) \
+                and b < 0:
+            return self._inverse(a, b, sid)
         return self._binop(npow, a, b, sid)
 
     def neg(self, a: AdValue, sid: int) -> AdValue:

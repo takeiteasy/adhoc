@@ -295,10 +295,14 @@ _DOMAIN_MESSAGES = {
     "sin": "sin is not real-valued here",
     "cos": "cos is not real-valued here",
     "tan": _TRIG_NOTE,
+    "asin": "asin is not defined here",
+    "acos": "acos is not defined here",
+    "atan": "atan is not defined here",
 }
 _APPLY_FUNCS = {
     "sqrt": sympy.sqrt, "ln": sympy.log,
     "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan,
+    "asin": sympy.asin, "acos": sympy.acos, "atan": sympy.atan,
 }
 
 

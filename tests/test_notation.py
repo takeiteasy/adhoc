@@ -434,3 +434,32 @@ def test_function_power_falls_back_to_caret_when_exponent_has_no_glyphs():
     node = PowCall(head=Var(ch="f", span=sp), exponent=Var(ch="q", span=sp),
                    args=(Var(ch="x", span=sp),), span=sp)
     assert show(node) == "(f(x) ^ q)"
+
+
+def test_inverse_trig_functions():
+    assert ev("\\asin(1/2)") == ev("π/6")
+    assert ev("\\acos(1)") == "= 0"
+    assert ev("\\atan(1)") == ev("π/4")
+    assert ev("\\sin(\\asin(1/3))") == "= 1/3"
+    assert ev("\\asin(2)") == ev("\\asin(2)")
+    fails("\\asin(2.)", "math domain error")
+
+
+def test_function_inverse_notation_maps_prelude_trig():
+    assert ev("\\sin⁻¹(1/2)") == ev("\\asin(1/2)")
+    assert ev("\\cos⁻¹(0)") == ev("\\acos(0)")
+    assert ev("\\asin⁻¹(1/2)") == ev("\\sin(1/2)")
+    assert ev("\\sin⁻¹") == ev("\\asin")
+    assert ev("\\sin^(-1)") == ev("\\asin")
+
+
+def test_only_minus_one_is_an_inverse():
+    fails("\\sin⁻²(1)", "only `⁻¹`")
+    fails("f(x) = x + 1\nf⁻²(2)", "only `⁻¹`")
+
+
+
+
+def test_inverse_follows_the_function_value():
+    assert ev("g(f) = f⁻¹(1/2)\ng(\\sin)") == ev("\\asin(1/2)")
+    fails("g(f) = f⁻¹(2)\nh(x) = x + 1\ng(h)", "no inverse")
