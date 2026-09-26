@@ -90,11 +90,12 @@ expr       ::= ternary ;
 ternary    ::= range ("?" ternary ":" ternary)? ;   (* right-associative *)
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
                                            (* the "," form is not read inside lists *)
-comparison ::= additive (cmp-op additive)? | additive ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
+comparison ::= angle (cmp-op angle)? | angle ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
 range-tail ::= additive (".." additive? | "," additive ".." additive?) ;   (* membership only *)
 cmp-op     ::= "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈" | "\\approx"
              | "∈" | "\\in" | "∉" | "\\notin" | "⊆" | "\\subseteq" | "⊂" | "\\subset"
              | "⊇" | "\\supseteq" | "⊃" | "\\supset" ;
+angle      ::= additive (("∠" | "\\angle") additive)? ;   (* polar form r∠θ *)
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
            ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "∩" | "\\cap" | "∘" | "\\circ" | "%" | "\\mod") juxtaposed)* ;
@@ -174,12 +175,13 @@ Loosest to tightest:
 | 2 | `=` (binding/check) | statement level only, non-associative |
 | 3 | `..` (range) | non-associative |
 | 4 | `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
-| 5 | `+` `-` (binary), `∪` `∖` | left |
-| 6 | `*` `/` `@` `%`, `∩`, `∘` | left |
-| 7 | juxtaposition (implicit `*`) | left |
-| 8 | unary `-`, `√` `∛` `∜` | prefix |
-| 9 | `^` | right |
-| 10 | postfix `(…)` application, `[…]` index, `'` transpose, `!` `‼` factorial, superscript `²` | left |
+| 5 | `∠` (polar form) | non-associative |
+| 6 | `+` `-` (binary), `∪` `∖` | left |
+| 7 | `*` `/` `@` `%`, `∩`, `∘` | left |
+| 8 | juxtaposition (implicit `*`) | left |
+| 9 | unary `-`, `√` `∛` `∜` | prefix |
+| 10 | `^` | right |
+| 11 | postfix `(…)` application, `[…]` index, `'` transpose, `!` `‼` factorial, superscript `²` | left |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -553,6 +555,7 @@ g(1, 2)                        ->  = 3
 |---|---|---|
 | `+ * / ^` | 2 | arithmetic |
 | `%` `\mod` | 2 | floored modulo: the result takes the divisor's sign |
+| `∠` `\angle` | 2 | `r∠θ`: the complex number of modulus `r` and angle `θ` |
 | `-` | 1 or 2 | negate, or subtract |
 | `@` `\contract` | 2 | contraction — the same as infix `@` |
 | `∘` `\circ` | 2 | composition |

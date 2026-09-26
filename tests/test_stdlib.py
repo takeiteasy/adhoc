@@ -1,6 +1,7 @@
 import pytest
 
 from adhoc.driver import run_source
+from adhoc.parser import ParseError
 from adhoc.runtime import EvalError
 
 
@@ -193,4 +194,34 @@ def test_any_and_all_short_circuit():
     (r"\count(\fn(x) x > 0, 1..)", "infinite"),
 ])
 def test_aggregate_errors(src, message):
+    fails(src, message)
+
+
+# --- complex ---
+
+
+@pytest.mark.parametrize("src, out", [
+    (r"\conj(3+4i)", "= 3-4i"), (r"\conj(5)", "= 5"), (r"\conj(1+i) * (1+i)", "= 2"),
+    (r"\arg(3)", "= 0"), (r"\arg(i) * 2 - \pi", "= 0"), (r"\arg(-1) - \pi", "= 0"),
+    (r"\arg(1+i) * 4 - \pi", "= 0"),
+    (r"\polar(2, \pi/2)", "= 2i"), (r"2∠(\pi/2)", "= 2i"), (r"2∠\pi/2", "= 2i"),
+    (r"1 \angle \pi", "= -1"), (r"3∠0", "= 3"), (r"(∠)(2, \pi)", "= -2"),
+    (r"(2 ∠)(\pi)", "= -2"), (r"(∠ \pi)(3)", "= -3"), (r"\map((∠ 0), ⟨1, 2⟩)", "= ⟨1, 2⟩"),
+    (r"2∠\pi/2 ≈ 2i", "= true")
+])
+def test_complex(src, out):
+    assert ev(src) == out
+
+
+def test_angle_is_non_associative_and_looser_than_addition():
+    with pytest.raises(ParseError, match="unexpected token"):
+        ev(r"1∠2∠3")
+    assert ev(r"\re(1∠(\pi/2) + \pi/2)") == "= -1"
+
+
+@pytest.mark.parametrize("src, message", [
+    (r"\arg(0)", "not defined at zero"), (r"\polar(1+i, 0)", "real numbers"),
+    (r"\polar(1)", "takes"), (r"\conj(\true)", "booleans"),
+])
+def test_complex_errors(src, message):
     fails(src, message)

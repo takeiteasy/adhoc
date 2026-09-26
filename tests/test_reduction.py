@@ -38,7 +38,7 @@ def test_reduce_preserves_outer_binders_and_source_spellings():
     assert run_source(r"\reduce(\expr(\fn(y) (\fn(x) \fn(y) x)(y)))") == [
         r"= \expr((\fn(y) (\fn(\reduce_a) y)))"
     ]
-    source = r"\alias \arg, ξ; \reduce(\expr((\fn(ξ) ξ)(2)))"
+    source = r"\alias \argh, ξ; \reduce(\expr((\fn(ξ) ξ)(2)))"
     assert run_source(source) == [r"= \expr(2)"]
     assert run_source(r"\reduce(\expr((\fn(x) \fn(y) x)(\reduce_a)))") == [
         r"= \expr((\fn(y) \reduce_a))"

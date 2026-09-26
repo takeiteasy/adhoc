@@ -91,6 +91,7 @@ _BIN_METHODS = {
     BinOperator.SETMINUS: "setminus",
     BinOperator.COMPOSE: "compose",
     BinOperator.MOD: "mod",
+    BinOperator.ANGLE: "angle",
 }
 
 # The fold operator each Fold node accumulates with; the runtime maps these back to

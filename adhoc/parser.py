@@ -187,23 +187,26 @@ _SYMBOL_OPERATORS = {Bang: "fact", DoubleBang: "dfact", Plus: "add", Minus: "sub
 _INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
                     "subseteq": "subseteq", "neq": "ne", "approx": "approx", "notin": "notmember",
-                    "subset": "subset", "supseteq": "supseteq", "supset": "supset", "mod": "mod"}
+                    "subset": "subset", "supseteq": "supseteq", "supset": "supset", "mod": "mod",
+                    "angle": "angle"}
 
 # Operator key -> the parser level that reads its right-hand side, which is the extent of
 # a section's operand: `(+ 1*2)` fixes `1*2`, `(* 1 + 2)` is a parse error.
 _ADDITIVE_KEYS = frozenset({"add", "sub", "union", "setminus"})
 _MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose", "mod"})
+_ANGLE_KEYS = frozenset({"angle"})
 _COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq", "ne", "approx",
                           "notmember", "subset", "supseteq", "supset"})
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE, "mod": BinOperator.MOD}
+_ANGLE_INFIX = {"angle": BinOperator.ANGLE}
 _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ,
                   "neq": CompareOperator.NE, "approx": CompareOperator.APPROX,
                   "notin": CompareOperator.NOTIN, "subset": CompareOperator.SUBSET,
                   "supseteq": CompareOperator.SUPSETEQ, "supset": CompareOperator.SUPSET}
-_INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_COMPARE_INFIX)
+_INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_ANGLE_INFIX) | frozenset(_COMPARE_INFIX)
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
 # a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
@@ -838,9 +841,9 @@ class _Parser:
         return Call(head=operator, args=(operand, Hole(span=operator.span)),
                     span=open_paren.span.to(close.span))
 
-    # comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "⊆") additive)? ;
+    # comparison ::= angle (("<" | ">" | "<=" | ">=" | "∈" | "⊆") additive)? ;
     def comparison(self) -> Node:
-        lhs = self.additive()
+        lhs = self.angle()
         if self._section(lhs, _COMPARE_KEYS):
             return lhs
         ops = {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
@@ -852,10 +855,20 @@ class _Parser:
             self.advance()
         else:
             return lhs
-        rhs = self.additive()
+        rhs = self.angle()
         if op in (CompareOperator.IN, CompareOperator.NOTIN):
             rhs = self._range_from(rhs, self.additive)
         return Compare(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+
+    # angle ::= additive ("∠" additive)? ; the polar form `r∠θ`, non-associative.
+    def angle(self) -> Node:
+        lhs = self.additive()
+        if self._section(lhs, _ANGLE_KEYS) or self._infix_name() not in _ANGLE_INFIX:
+            return lhs
+        op = _ANGLE_INFIX[self._infix_name()]
+        self.advance()
+        rhs = self.additive()
+        return BinOp(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
 
     # additive ::= multiplicative (("+" | "-" | "∪" | "∖") multiplicative)* ;
     def additive(self) -> Node:

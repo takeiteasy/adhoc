@@ -666,7 +666,7 @@ def test_alias_definition_echo_uses_written_spelling():
 def test_dual_function_echo_keeps_definition_spellings():
     env: dict = {}
     aliases: dict[str, str] = {}
-    out = run_source(r"\alias \arg, ξ; \dual \fact, φ(ξ) = ξ", env, aliases=aliases)
+    out = run_source(r"\alias \argh, ξ; \dual \fact, φ(ξ) = ξ", env, aliases=aliases)
     assert out == ["φ = <fn φ(ξ)>"]
     assert set(env) == {"fact"}
     assert run_source("φ(3)", env, aliases=aliases) == ["= 3"]

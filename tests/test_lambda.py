@@ -87,7 +87,7 @@ def test_lambdas_display_as_lambda():
 
 
 def test_lambda_display_uses_written_parameter_spelling():
-    assert run_source(r"\alias \arg, ξ; \fn(ξ) ξ", {}) == ["= <λ(ξ)>"]
+    assert run_source(r"\alias \argh, ξ; \fn(ξ) ξ", {}) == ["= <λ(ξ)>"]
 
 
 def test_lambda_binding_checks_by_identity():

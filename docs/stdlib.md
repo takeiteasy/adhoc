@@ -3,6 +3,21 @@
 Prelude functions. Exact arguments stay exact where a tier can hold them; floats stay on
 the float tier. Every name is protected: it cannot be rebound or shadowed.
 
+## Complex
+
+| Function | Result | Example |
+|---|---|---|
+| `\conj(z)` | complex conjugate | `\conj(3+4i)` → `3-4i` |
+| `\arg(z)` | angle in `(-π, π]`, an error at zero | `\arg(-1)` → `π` |
+| `\abs(z)` | modulus (see Rounding) | `\abs(3+4i)` → `5` |
+| `\polar(r, θ)` `r∠θ` `r \angle θ` | `r·cos θ + r·sin θ·i` | `2∠(π/2)` → `2i` |
+| `\re(z)` `\im(z)` | components | `\im(3+4i)` → `4` |
+
+`∠` binds looser than `+` and tighter than comparison, so `2∠π/2` is `2∠(π/2)` and
+`2∠π/2 ≈ 2i` is `true`. It does not chain: `1∠2∠3` is a parse error. `(∠)` is its function
+value, and `(2 ∠)` and `(∠ π)` are sections. A float radius or angle cannot build a complex
+value (complex values do not mix with floats).
+
 ## Aggregates
 
 Each takes several arguments or one collection (array, set, tensor, range) unless noted.

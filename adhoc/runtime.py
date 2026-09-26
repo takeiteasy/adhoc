@@ -223,7 +223,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "arr", "cup", "cap", "setminus",
-                           "in", "subseteq", "circ", "mod", "neq", "approx", "notin", "subset",
+                           "in", "subseteq", "circ", "mod", "angle", "neq", "approx", "notin", "subset",
                            "supseteq", "supset"})
 
 
@@ -698,6 +698,15 @@ def nmod(a: AdValue, b: AdValue) -> AdValue:
         return _normalize(Fraction(a) % Fraction(b))
     quotient = ndiv(a, b)
     return nsub(a, nmul(b, _integral(quotient, "floor")))
+
+
+def npolar(r: AdValue, theta: AdValue) -> AdValue:
+    """`r∠θ` / `\\polar(r, θ)`: the complex number of modulus `r` and angle `θ`."""
+    _reject_non_numeric(r, theta)
+    if _is_complex(r) or _is_complex(theta):
+        raise NumError("`∠` needs real numbers")
+    side = nmul(r, PRELUDE["sin"](theta))
+    return nadd(nmul(r, PRELUDE["cos"](theta)), nmul(side, PRELUDE["i"]))
 
 
 def _fdiv(fa: float, fb: float) -> float:
@@ -1660,7 +1669,7 @@ _OPERATOR_IMPLS = {
     "fact": (nfact, (1,)), "dfact": (ndfact, (1,)),
     "add": (nadd, (2,)), "sub": (_minus, (1, 2)), "mul": (nmul, (2,)),
     "div": (ndiv, (2,)), "pow": (npow, (2,)), "dot": (ndot, (2,)),
-    "compose": (ncompose, (2,)), "mod": (nmod, (2,)), "union": (nunion, (2,)),
+    "compose": (ncompose, (2,)), "mod": (nmod, (2,)), "angle": (npolar, (2,)), "union": (nunion, (2,)),
     "intersect": (nintersect, (2,)), "setminus": (nsetminus, (2,)),
     "lt": (_cmp("lt"), (2,)), "le": (_cmp("le"), (2,)),
     "gt": (_cmp("gt"), (2,)), "ge": (_cmp("ge"), (2,)),
@@ -2276,6 +2285,26 @@ PRELUDE.update({
     "count": PreludeFn("count", _count_matches_call),
     "zip": PreludeFn("zip", _zip_call),
     "enumerate": PreludeFn("enumerate", _enumerate_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+
+def _conj_call(v: AdValue) -> AdValue:
+    _reject_non_numeric(v)
+    return nsub(_re_call(v), nmul(_im_call(v), PRELUDE["i"])) if _is_complex(v) else v
+
+
+def _arg_call(v: AdValue) -> AdValue:
+    _reject_non_numeric(v)
+    if isinstance(v, (int, Fraction)) and v == 0:
+        raise NumError("\\arg is not defined at zero")
+    return PRELUDE["atan2"](_im_call(v), _re_call(v))
+
+
+PRELUDE.update({
+    "conj": PreludeFn("conj", _conj_call),
+    "arg": PreludeFn("arg", _arg_call),
+    "polar": PreludeFn("polar", lambda *a: (_takes("polar", a, 2, 2, "a radius and an angle"), npolar(*a))[1]),
 })
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
@@ -2924,6 +2953,9 @@ class Engine:
 
     def mod(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         return self._binop(nmod, a, b, sid)
+
+    def angle(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(npolar, a, b, sid)
 
     def pow(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         if callable(a) and isinstance(b, (int, Fraction, float)) and not isinstance(b, bool) \
