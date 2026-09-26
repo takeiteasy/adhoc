@@ -212,9 +212,9 @@ phases add bindings without touching the lexer.
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
 - Set notation is `∪ ∩ ∖ ∈ ⊆` only; no `∉`, `⊂`, `⊇`, or `∅` —
-  [#65](https://todo.sr.ht/~takeiteasy/adhoc/65).
+  [#74](https://todo.sr.ht/~takeiteasy/adhoc/74).
 - `/` is elementwise on tensors, and there is no determinant, inverse, or linear solve —
-  [#66](https://todo.sr.ht/~takeiteasy/adhoc/66).
+  [#76](https://todo.sr.ht/~takeiteasy/adhoc/76).
 
 - Symbolic and algebraic values display 15 significant digits plus a trailing
   ellipsis (`π` is `3.14159265358979...`, `2^(1/3)` is
