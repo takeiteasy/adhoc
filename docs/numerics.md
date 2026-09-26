@@ -225,7 +225,8 @@ rather than return a possibly-misleading partial. No second mechanism exists.
 
 The two riders:
 
-- **Infinite-range folds** (`\sum(i=1..) 1/i^2`) accumulate partial sums/products in the
+- **Infinite-range folds** (`\sum(i=1..) 1/i^2`, and `\fold` over an infinite range or lazy
+  sequence) accumulate partial sums/products in the
   **float tier**. Exact tiers are wrong for this job twice over: rationals with
   exponentially growing denominators stall plateau detection long before the tolerance is
   meaningful, and the tail remaining when a plateau triggers (~tolerance-sized) only makes

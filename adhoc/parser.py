@@ -15,7 +15,8 @@ precedence table in docs/grammar.md:
     postfix     ::= atom ("(" args ")")* ;  -- trailers attach only to name-ish heads
     args        ::= (expr | string | kwarg) ("," ...)* ;   kwarg ::= name "=" value ;
     atom        ::= number | string | identifier | "\\"-name | "(" expr ")"
-                  | "(" operator ")" ;   -- an operator value; also a whole call argument
+                  | "(" operator ")"   -- an operator value; also a whole call argument
+                  | "(" operator operand ")" | "(" operand operator ")" ;   -- a section
 
 `power`'s exponent recurses into `unary`, not `power` — that's what makes `2^-1` parse
 (unary minus binds inside the exponent) and `2^3^2` right-associate. The base of `^` is a
@@ -133,6 +134,7 @@ from .syntax import (
     Node,
     NoOp,
     NumLit,
+    OP_SYMBOLS,
     OpRef,
     PyImport,
     Quote,
@@ -180,6 +182,12 @@ _INFIX_OPERATORS = {"cdot": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
                     "subseteq": "subseteq"}
 
+# Operator key -> the parser level that reads its right-hand side, which is the extent of
+# a section's operand: `(+ 1*2)` fixes `1*2`, `(* 1 + 2)` is a parse error.
+_ADDITIVE_KEYS = frozenset({"add", "sub", "union", "setminus"})
+_MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose"})
+_COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq"})
+
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"cdot": BinOperator.DOT, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE}
@@ -223,6 +231,7 @@ class _Parser:
         # A group at the start of a top-level statement is flattened, so it admits
         # top-level `\let` function definitions; expression-position groups do not.
         self._statement_start = 0
+        self._section_operand: Node | None = None
         self._top_level_statement = False
         # Set by `_skip_newlines`, reset by statement lists around each
         # statement: "a line break was consumed since the last statement ended".
@@ -657,7 +666,7 @@ class _Parser:
                 sep = True
                 self.advance()
                 self._skip_newlines()
-            if isinstance(self.peek(), RParen):
+            if isinstance(self.peek(), RParen) or self._closes_section():
                 break
             if not sep:
                 raise self.error_at_current(
@@ -759,9 +768,57 @@ class _Parser:
             key = _INFIX_OPERATORS.get(name)
         return None if key is None else OpRef(name=key, span=tok.span)
 
+    def _closes_section(self, keys: frozenset[str] | None = None) -> bool:
+        """The cursor is an operator (of `keys`, or any) directly before a `)`: the end of
+        a left section, `(e op)`."""
+        operator = self._operator_value()
+        return (isinstance(operator, OpRef) and (keys is None or operator.name in keys)
+                and isinstance(self.look(1), RParen))
+
+    def _section(self, lhs: Node, keys: frozenset[str]) -> bool:
+        """Stop an operand at a section's closing operator, remembering the operand so the
+        enclosing group can check it was the whole expression."""
+        if not self._closes_section(keys):
+            return False
+        self._section_operand = lhs
+        return True
+
+    # section ::= "(" operator operand ")" | "(" operand operator ")" ; the operand reads at
+    # the level of the operator's own right-hand side, so a section is the hole form
+    # `(op)(_, e)` / `(op)(e, _)` — `(- e)` stays negation.
+    def _right_section(self, open_paren: Token) -> Node:
+        self.advance()
+        operator = self._operator_value()
+        operand_level = (self.multiplicative if operator.name in _ADDITIVE_KEYS
+                         else self.juxtaposed if operator.name in _MULTIPLICATIVE_KEYS
+                         else self.unary if operator.name == "pow" else self.additive)
+        self.advance()
+        operand = operand_level()
+        if not isinstance(self.peek(), (RParen, Eof)):
+            raise ParseError(
+                f"a section's operand ends at `)`, found {self.peek().describe}; "
+                f"parenthesize it: ({OP_SYMBOLS[operator.name]} (…))", self.peek().span)
+        close = self.expect(RParen, "`)`")
+        return Call(head=operator, args=(Hole(span=operator.span), operand),
+                    span=open_paren.span.to(close.span))
+
+    def _left_section(self, open_paren: Token, operand: Node, single: bool) -> Node:
+        operator = self._operator_value()
+        if not single or operand is not self._section_operand:
+            raise ParseError(
+                f"parenthesize the section's operand: ((…) {OP_SYMBOLS[operator.name]})",
+                operator.span)
+        self._section_operand = None
+        self.advance()
+        close = self.advance()
+        return Call(head=operator, args=(operand, Hole(span=operator.span)),
+                    span=open_paren.span.to(close.span))
+
     # comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "⊆") additive)? ;
     def comparison(self) -> Node:
         lhs = self.additive()
+        if self._section(lhs, _COMPARE_KEYS):
+            return lhs
         ops = {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
                Greater: CompareOperator.GT, GreaterEq: CompareOperator.GE}
         if type(self.peek()) in ops:
@@ -778,6 +835,8 @@ class _Parser:
     def additive(self) -> Node:
         lhs = self.multiplicative()
         while True:
+            if self._section(lhs, _ADDITIVE_KEYS):
+                break
             if isinstance(self.peek(), Plus):
                 op = BinOperator.ADD
             elif isinstance(self.peek(), Minus):
@@ -796,6 +855,8 @@ class _Parser:
         lhs = self.juxtaposed()
         while True:
             tok = self.peek()
+            if self._section(lhs, _MULTIPLICATIVE_KEYS):
+                break
             if isinstance(tok, Star):
                 op = BinOperator.MUL
             elif isinstance(tok, Slash):
@@ -831,6 +892,8 @@ class _Parser:
     # power ::= postfix ("^" unary)? ; right-associative; exponent recurses into `unary`.
     def power(self) -> Node:
         base = self.postfix()
+        if self._section(base, frozenset({"pow"})):
+            return base
         if isinstance(self.peek(), Caret):
             self.advance()
             exp = self.unary()
@@ -1244,6 +1307,9 @@ class _Parser:
                 self.advance()
                 close = self.advance()
                 return replace(operator, span=tok.span.to(close.span))
+            case LParen() if (self._operator_value(1) is not None
+                              and not isinstance(self.look(1), (Minus, Radical))):
+                return self._right_section(tok)
             case LParen():
                 group_top_level = (
                     self._top_level_statement and self.pos == self._statement_start
@@ -1268,6 +1334,8 @@ class _Parser:
                 inner = items[0] if len(items) == 1 else Seq(
                     statements=tuple(items), span=items[0].span.to(items[-1].span)
                 )
+                if self._closes_section():
+                    return self._left_section(tok, inner, len(items) == 1)
                 self.expect(RParen, "`)`")
                 # The group statement ends at its `)`: line breaks consumed inside
                 # were its structure, not separators of the enclosing statement list.

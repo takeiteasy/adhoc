@@ -250,22 +250,21 @@ def test_fold_over_every_collection():
 
 def test_fold_errors():
     fails(r"\fold(\fn(a, b) a, ⟨⟩)", "empty collection needs a seed")
-    fails(r"\fold(\fn(a, b) a, (1..))", "infinite range")
-    fails(r"\fold(\fn(a, b) a, \map(\fn(x) x, 1..))", "infinite range or sequence")
     fails(r"\fold(\fn(a, b) a)", r"\\fold takes a function")
     fails(r"\fold(1, 2, 3, 4)", r"\\fold takes a function")
 
 
 def test_prelude_names_are_protected():
-    for name in ("map", "filter", "fold"):
+    for name in ("map", "filter", "fold", "scan"):
         fails(rf"\{name} = 3", "protected")
 
 
 def test_demo_script_runs():
     with open("demos/functions.ad", encoding="utf-8") as f:
         out = run_source(f.read(), {})
-    assert out[-9:] == ["= 7", "= [1, 4, 9]", "= {2, 3}", "= 6", "= ⟨1, 2, 3⟩",
-                        "= 55", "= [2, 3]", "= ⟨1, 2⟩", "= ⟨1, 4, 9⟩"]
+    assert out[-11:] == ["= 7", "= [1, 4, 9]", "= {2, 3}", "= 6", "= ⟨1, 2, 3⟩",
+                         "= 55", "= [2, 3]", "= ⟨1, 2⟩", "= ⟨1, 4, 9⟩",
+                         "= ⟨1, 3, 6, 10, 15, 21, 28, 36, 45, 55⟩", "= 3"]
 
 
 # --- infinite ranges: lazy sequences and \take ---
@@ -320,3 +319,60 @@ def test_filter_that_never_matches_stops_at_the_cap(monkeypatch):
 
 def test_function_can_return_a_prelude_function():
     assert ev("h(x) = \\sqrt\nh(1)(9)") == "= 3"
+
+
+# --- \fold over infinite input, \scan ---
+
+
+def test_fold_over_infinite_input_converges_like_the_binder():
+    assert ev(r"\fold(+, \map(\fn(x) 1/x^2, 1..))").startswith("= 1.64493406")
+
+
+@pytest.mark.slow
+def test_fold_product_over_infinite_input_plateaus():
+    assert ev(r"\fold(*, \map(\fn(x) 1 + 1/x^2, 1..))").startswith("= 3.67607")
+    assert ev(r"\fold(\fn(a, b) a, 1..)") == "= 1.0"
+
+
+def test_fold_over_infinite_input_takes_a_seed():
+    assert ev(r"\fold(+, \map(\fn(x) 1/2^x, 1..), 10)").startswith("= 10.99999999")
+
+
+def test_fold_over_infinite_input_errors(monkeypatch):
+    fails(r"\fold(*, 2..)", "diverged")
+    fails(r"\fold(\fn(a, b) a < b, 1..)", "not numbers")
+    fails(r"\fold(\fn(a, b) [a], 1..)", "operands must be numbers")
+    monkeypatch.setattr("adhoc.runtime.MAX_TERMS", 50)
+    fails(r"\fold(+, 1..)", "did not converge within 50 terms")
+
+
+def test_scan_finite_keeps_the_kind():
+    assert ev(r"\scan(+, ⟨1, 2, 3⟩)") == "= ⟨1, 3, 6⟩"
+    assert ev(r"\scan(*, [1, 2, 3, 4])") == "= [1, 2, 6, 24]"
+    assert ev(r"\scan(+, ⟨1, 2, 3⟩, 10)") == "= ⟨11, 13, 16⟩"
+    assert ev(r"\scan(+, 1..4)") == "= ⟨1, 3, 6, 10⟩"
+
+
+def test_scan_empty():
+    assert ev(r"\scan(+, ⟨⟩, 5)") == "= ⟨⟩"
+    fails(r"\scan(+, ⟨⟩)", "empty collection needs a seed")
+
+
+def test_scan_over_infinite_input_is_lazy():
+    env = {}
+    assert ev(r"q = \scan(+, 1..)", env) == r"q = <seq \scan(+, 1..)>"
+    assert ev(r"\take(4, q)", env) == "= ⟨1, 3, 6, 10⟩"
+    assert ev(r"\take(3, \scan(+, 1.., 100))", env) == "= ⟨101, 103, 106⟩"
+    assert ev(r"\scan(+, 1.., 100)", env) == r"= <seq \scan(+, 1.., 100)>"
+    assert ev(r"\take(3, \scan(+, \map(\fn(x) x^2, 1..)))") == "= ⟨1, 5, 14⟩"
+
+
+def test_scan_errors():
+    fails(r"\scan(1, ⟨1, 2⟩)", "1 is not a function")
+    fails(r"\scan(+)", r"\\scan takes a function")
+    fails(r"\scan(+, 3)", "needs a range or collection")
+
+
+def test_anonymous_lambda_label_shows_its_parameters():
+    assert ev(r"\filter(\fn(x) x > 5, 1..)") == r"= <seq \filter(λ(x), 1..)>"
+    assert ev(r"\map(\fn(a, b) a, 1..)") == r"= <seq \map(λ(a, b), 1..)>"

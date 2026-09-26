@@ -1543,6 +1543,8 @@ _INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial, OperatorFn)
 
 def _callable_label(fn: Any) -> str:
     if isinstance(fn, AdFunction):
+        if not fn.name:
+            return f"λ({', '.join(fn.param_spellings)})"
         return fn.display_name
     if isinstance(fn, PreludeFn):
         return f"\\{fn.name}"
@@ -1562,18 +1564,53 @@ def _partial_text(p: Partial) -> str:
     return f"{_callable_label(p.fn)}({', '.join(parts)})"
 
 
+class _InfiniteFold:
+    """The convergence rule shared by the `\\sum`/`\\prod` binders and `\\fold` over an
+    infinite input: feed each new partial, get the limit back once the partials plateau
+    (or, for sums, the tail estimate is confirmed); a diverging or non-converging fold
+    raises a `NumError` for the caller to place."""
+
+    def __init__(self, label: str, estimate: bool):
+        self.label = label
+        self.estimator = _FoldTailEstimator() if estimate else None
+        self.previous: AdValue | None = None
+        self.count = 0
+
+    def observe(self, term: AdValue, acc: AdValue) -> AdValue | None:
+        self.count += 1
+        if not math.isfinite(acc):
+            raise NumError(f"{self.label} diverged: partial value is not finite")
+        if self.previous is not None and _settled(self.previous, acc):
+            return acc
+        if self.estimator is not None:
+            early = self.estimator.observe(term, acc)
+            if early is not None:
+                return early
+        self.previous = acc
+        if self.count >= MAX_TERMS:
+            raise NumError(f"{self.label} did not converge within {MAX_TERMS} terms")
+        return None
+
+
 class LazySeq:
-    """`\\map`/`\\filter` over an infinite range or sequence: nothing runs until a
+    """`\\map`/`\\filter`/`\\scan` over an infinite range or sequence: nothing runs until a
     consumer (`\\take`, a fold) iterates. Always unbounded — a filter that stops
     matching is cut off at MAX_TERMS elements rather than looping forever."""
 
-    def __init__(self, kind: str, fn: Any, source: Any):
-        self.kind, self.fn, self.source = kind, fn, source
+    def __init__(self, kind: str, fn: Any, source: Any, seed: tuple = ()):
+        self.kind, self.fn, self.source, self.seed = kind, fn, source, seed
 
     def __iter__(self):
         if self.kind == "map":
             for x in self.source:
                 yield _invoke(self.fn, (x,))
+            return
+        if self.kind == "scan":
+            acc, started = (self.seed[0], True) if self.seed else (None, False)
+            for x in self.source:
+                acc = _invoke(self.fn, (acc, x)) if started else x
+                started = True
+                yield acc
             return
         gap = 0
         for x in self.source:
@@ -1588,7 +1625,8 @@ class LazySeq:
     def text(self) -> str:
         source = (self.source.text() if isinstance(self.source, LazySeq)
                   else nshow(self.source)[len("<range "):-len(" (lazy, infinite)>")])
-        return f"\\{self.kind}({_callable_label(self.fn)}, {source})"
+        seed = "".join(f", {nshow(v)}" for v in self.seed)
+        return f"\\{self.kind}({_callable_label(self.fn)}, {source}{seed})"
 
 
 def _is_infinite(value: Any) -> bool:
@@ -1680,9 +1718,26 @@ def _filter_call(*args: Any) -> Any:
     return _rebuild(xs, kept, "\\filter")
 
 
+def _fold_infinite(f: Any, xs: Any, seed: list) -> Any:
+    """`\\fold` over an infinite input: float-tier partials under the binders' convergence
+    rule (`_InfiniteFold`); only `+` gets the sum tail estimate."""
+    progress = _InfiniteFold("\\fold", estimate=f is OPERATORS["add"])
+    items = iter(xs)
+    acc = _as_float(seed[0]) if seed else _as_float(next(items))
+    for x in items:
+        x = _as_float(x)
+        acc = _as_float(_invoke(f, (acc, x)))
+        limit = progress.observe(x, acc)
+        if limit is not None:
+            return limit
+    raise NumError("\\fold ran out of elements")
+
+
 def _fold_call(*args: Any) -> Any:
     _takes("fold", args, 2, 3, "a function, a collection, and an optional seed")
     f, xs, *seed = args
+    if _is_infinite(xs):
+        return _fold_infinite(f, xs, seed)
     items = _finite_elements(xs, "\\fold")
     if seed:
         acc = seed[0]
@@ -1695,11 +1750,25 @@ def _fold_call(*args: Any) -> Any:
     return acc
 
 
+def _scan_call(*args: Any) -> Any:
+    _takes("scan", args, 2, 3, "a function, a collection, and an optional seed")
+    f, xs, *seed = args
+    if not callable(f):
+        raise NumError(f"{nshow(f)} is not a function")
+    if _is_infinite(xs):
+        return LazySeq("scan", f, xs, tuple(seed))
+    items = _finite_elements(xs, "\\scan")
+    if not seed and not items:
+        raise NumError("\\scan of an empty collection needs a seed")
+    return _rebuild(xs, list(LazySeq("scan", f, items, tuple(seed))), "\\scan")
+
+
 PRELUDE.update({
     "map": PreludeFn("map", _map_call),
     "filter": PreludeFn("filter", _filter_call),
     "fold": PreludeFn("fold", _fold_call),
     "take": PreludeFn("take", _take_call),
+    "scan": PreludeFn("scan", _scan_call),
 })
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
@@ -1961,11 +2030,9 @@ class Engine:
         body = self.definitions[sid]
         acc: AdValue = unit
         infinite = _is_infinite(value)
-        previous: AdValue | None = None
         # Sums-only tail estimation (products keep the plateau — see
         # _FoldTailEstimator); finite folds never estimate.
-        estimator = _FoldTailEstimator() if infinite and op_name == "add" else None
-        count = 0
+        progress = _InfiniteFold(label, estimate=op_name == "add") if infinite else None
         iterator = iter(items)
         while True:
             try:
@@ -1979,19 +2046,13 @@ class Engine:
             if infinite and isinstance(term, TensorValue):
                 self._fail(f"{label} over an infinite range needs numeric terms", sid)
             acc = self._binop(fn, acc, term, sid)
-            count += 1
-            if infinite:
-                if not math.isfinite(acc):
-                    self._fail(f"{label} diverged: partial value is not finite", sid)
-                if previous is not None and _settled(previous, acc):
-                    return acc
-                if estimator is not None:
-                    early = estimator.observe(term, acc)
-                    if early is not None:
-                        return early
-                previous = acc
-                if count >= MAX_TERMS:
-                    self._fail(f"{label} did not converge within {MAX_TERMS} terms", sid)
+            if progress is not None:
+                try:
+                    limit = progress.observe(term, acc)
+                except NumError as e:
+                    self._fail(e.args[0], sid)
+                if limit is not None:
+                    return limit
         return acc
 
     def limit(self, name: str, point_value: AdValue, sid: int,

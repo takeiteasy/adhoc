@@ -168,7 +168,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   give booleans. Folds iterate the elements (docs/grammar.md, `## Sets`).
 
 - Composition and partial application: `(s ∘ t)(2)` composes functions and
-  `f(10, _)` fixes arguments (`_` is the placeholder). `\map`, `\filter`, and `\fold`
+  `f(10, _)` fixes arguments (`_` is the placeholder), and `(+ 1)` / `(2 ^)` fix one operand of
+  an operator. `\map`, `\filter`, `\fold`, and `\scan`
   apply functions over ranges and collections, keeping the collection's kind
   (docs/grammar.md, `## Composition and partial application`).
 
@@ -207,12 +208,6 @@ phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
 
-- A user function cannot return a prelude function (`h(x) = \sqrt`) —
-  [#70](https://todo.sr.ht/~takeiteasy/adhoc/70).
-- Operator sections with one operand fixed (`(+ 1)`) are not supported; write `(+)(_, 1)` —
-  [#71](https://todo.sr.ht/~takeiteasy/adhoc/71).
-- `\fold` rejects infinite ranges and lazy sequences; use `\take` first, or a `\sum` binder —
-  [#72](https://todo.sr.ht/~takeiteasy/adhoc/72).
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).

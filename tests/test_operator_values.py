@@ -3,9 +3,9 @@ import re
 import pytest
 
 from adhoc.driver import run_source
-from adhoc.parser import ParseError, parse_program
+from adhoc.parser import IncompleteInput, ParseError, parse_program
 from adhoc.runtime import EvalError
-from adhoc.syntax import BackslashRef, Call, OpRef
+from adhoc.syntax import BackslashRef, Call, Hole, OpRef
 
 DEFS = "s(x) = x^2\n"
 
@@ -105,7 +105,7 @@ def test_parse_shapes():
     assert isinstance(radical.args[0], BackslashRef) and radical.args[0].name == "sqrt"
 
 
-@pytest.mark.parametrize("src", ["g = +", "f(+ 1)", "+", r"\cup", "(+ 1)", "(1 +)"])
+@pytest.mark.parametrize("src", ["g = +", "f(+ 1)", "+", r"\cup"])
 def test_bare_operators_stay_errors(src):
     with pytest.raises(ParseError):
         parse_program(src)
@@ -126,3 +126,72 @@ def test_quote_round_trips():
 
 def test_reduce_leaves_operator_values_alone():
     assert ev(r"\reduce(\expr(\fold(+, ⟨1, 2⟩)))") == r"= \expr(\fold((+), ⟨1, 2⟩))"
+
+
+# --- sections ---
+
+
+@pytest.mark.parametrize("src, expected", [
+    ("(+ 1)(2)", "= 3"),
+    ("(2 ^)(3)", "= 8"),
+    ("(^ 2)(3)", "= 9"),
+    ("(1 -)(3)", "= -2"),
+    ("(/ 2)(8)", "= 4"),
+    ("(2 /)(8)", "= 1/4"),
+    ("(1 <)(2)", "= true"),
+    ("(< 3)(5)", "= false"),
+    ("(∈ {1, 2})(1)", "= true"),
+    ("({1} ∪)({2})", "= {1, 2}"),
+    (r"(\cup {2})({1})", "= {1, 2}"),
+    (r"\map((* 2), [1, 2, 3])", "= [2, 4, 6]"),
+    (r"\filter((< 3), ⟨1, 5, 2⟩)", "= ⟨1, 2⟩"),
+    (r"\fold((+ 1), ⟨0, 0⟩)", None),
+])
+def test_sections_apply(src, expected):
+    if expected is None:
+        fails(src, "takes")
+    else:
+        assert ev(src) == expected
+
+
+def test_section_operand_is_bound_by_operator_precedence():
+    assert ev("(+ 1*2)(5)") == "= 7"
+    assert ev("(1 * 2 +)(5)") == "= 7"
+    assert ev("((1 + 2) *)(4)") == "= 12"
+    assert ev("(* (1 + 2))(4)") == "= 12"
+    assert ev("(2 ^ 3)") == "= 8"
+
+
+def test_section_on_a_user_function_and_composition():
+    assert ev(DEFS + "(s ∘)(s)(2)") == "= 16"
+    assert ev(DEFS + "((+ 1) ∘ s)(3)") == "= 10"
+
+
+def test_negation_is_not_a_section():
+    assert ev("(- 1)") == "= -1"
+    assert ev("(-2)") == "= -2"
+
+
+@pytest.mark.parametrize("src", ["(* 1 + 2)", "(1 + 2 *)", "(-2 ^)", "(1 < 2 <)", "(+ + 1)"])
+def test_section_operand_errors(src):
+    with pytest.raises(ParseError):
+        parse_program(src)
+
+
+@pytest.mark.parametrize("src", ["(+ 1", "(1 +"])
+def test_unclosed_section_is_incomplete(src):
+    with pytest.raises(IncompleteInput):
+        parse_program(src)
+
+
+def test_section_parses_to_the_hole_form():
+    right, hole = parse_program("(+ 1)"), parse_program("(+)(_, 1)")
+    assert isinstance(right, Call) and isinstance(right.args[0], Hole)
+    assert right.head.name == hole.head.name and right.args[1].text == hole.args[1].text
+    left = parse_program("(2 ^)")
+    assert isinstance(left.args[1], Hole) and left.head.name == "pow"
+
+
+def test_quote_prints_a_section_as_the_hole_form():
+    assert ev(r"\expr((+ 1))") == r"= \expr((+)(_, 1))"
+    assert ev(r"\expr((2 ^))") == r"= \expr((^)(2, _))"

@@ -97,7 +97,8 @@ kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | "(" operator ")" | lambda | radical | quote | tensor | array | set ;
+              | "(" operator ")" | "(" operator operand ")" | "(" operand operator ")"
+              | lambda | radical | quote | tensor | array | set ;
 tensor     ::= "[" expr ("," expr)* "]"
              | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
 set        ::= "{" (expr ("," expr)*)? "}" ;
@@ -472,14 +473,16 @@ iterate by outer slice, like folds.
 | `\filter(p, xs)` | the elements where `p` returns a boolean `true`, in the kind of `xs`; a non-boolean is a typed error, and a tensor with nothing kept is an error (no empty tensor) |
 | `\fold(f, xs)` | left fold `f(f(x1, x2), x3)…`; an empty collection is an error |
 | `\fold(f, xs, init)` | left fold starting from `init`; an empty collection returns `init` |
+| `\scan(f, xs)` | running left fold `x1, f(x1, x2), …`, in the kind of `xs`; an empty collection is an error |
+| `\scan(f, xs, init)` | running fold `f(init, x1), f(f(init, x1), x2), …`; an empty collection gives an empty result |
 | `\take(n, xs)` | the first `n` elements (fewer if there are fewer), in the kind of `xs` like `\map`; `n` is an exact integer, 0 or more |
 
 Operators pass as values: `\fold(+, xs)` (`## Operator values`).
 
 ### Infinite ranges and lazy sequences
 
-`\map` and `\filter` over an infinite range (`1..`) or another lazy sequence return a
-**lazy sequence**, which runs nothing until something consumes it: `\take`, or a fold
+`\map`, `\filter`, and `\scan` over an infinite range (`1..`) or another lazy sequence
+return a **lazy sequence**, which runs nothing until something consumes it: `\take`, or a fold
 binder.
 
 ```
@@ -487,6 +490,8 @@ s(x) = x^2
 q = \map(s, 1..)                                 ->  q = <seq \map(s, 1..)>
 \take(3, q)                                      ->  = ⟨1, 4, 9⟩
 \take(2, \filter(\fn(x) x > 5, q))              ->  = ⟨9, 16⟩
+\take(4, \scan(+, 1..))                          ->  = ⟨1, 3, 6, 10⟩
+\fold(+, \map(\fn(x) 1/x^2, 1..))               ->  = 1.6449…  -- like the \sum binder
 \sum(k=\map(\fn(x) 1/x^2, 1..)) k                ->  = 1.6449…  -- converges like Σ over 1..
 ```
 
@@ -494,7 +499,7 @@ q = \map(s, 1..)                                 ->  q = <seq \map(s, 1..)>
 |---|---|
 | Re-iteration | A sequence re-runs from the start each time it is consumed; it caches nothing |
 | Errors | A failing element (or a `\filter` predicate returning a non-boolean) errors when it is reached, not when the sequence is built |
-| Folds | `\sum`/`\prod` binders iterate a sequence with the infinite-range convergence rule (`## Special forms`); `\fold` and `\len` reject it ([limitations](language.md#known-limitations-not-bugs)) |
+| Folds | `\sum`/`\prod` binders and `\fold` consume a sequence with the infinite-range convergence rule (`## Special forms`): float tier, plateau exit, error at 2,000,000 elements; only `\fold(+, …)` gets the sum tail estimate. `\len` rejects it |
 | `\filter` cap | A predicate that stops matching gives up after 2,000,000 elements in a row with a typed error |
 | Values | They bind, pass, and compare by identity; `\take` on a finite range gives an array |
 
@@ -530,7 +535,29 @@ g(1, 2)                        ->  = 3
 | Identity | Each operator is one value, so `(∪) = (\cup)` after `g = (∪)` checks `true` |
 | Arguments | Positional only; the wrong count is a typed error at the call |
 | Display | `<fn +>`; quotes print `(+)` |
-| Elsewhere | A bare operator is a parse error: `g = +`, `f(+ 1)`, `(+ 1)` |
+| Elsewhere | A bare operator is a parse error: `g = +`, `f(+ 1)` |
+
+### Sections
+
+`(+ 1)` and `(2 ^)` fix one operand of a parenthesized operator: shorthand for the hole
+forms `(+)(_, 1)` and `(^)(2, _)`.
+
+```
+(+ 1)(2)                 ->  = 3
+(2 ^)(3)                 ->  = 8
+\map((* 2), [1, 2, 3])   ->  = [2, 4, 6]
+\filter((< 3), ⟨1, 5, 2⟩) ->  = ⟨1, 2⟩
+(+ 1*2)(5)               ->  = 7          -- operand `1*2`
+((1 + 2) *)(4)           ->  = 12
+```
+
+| Rule | Detail |
+|---|---|
+| Operand | Reads as the operator's own right-hand side would, so `(+ 1*2)` fixes `1*2` and `(1 * 2 +)` fixes `1*2`; a looser operand is a parse error asking for parentheses: `(* 1 + 2)`, `(1 + 2 *)`, `(-2 ^)` |
+| Minus | `(- 1)` is negation, so a right section for `-` is `(+ -1)` or `(-)(_, 1)`; `(1 -)` is a section |
+| Radical | `(√ x)` is a call, not a section |
+| Quotes | A section is the hole form: `\expr((+ 1))` prints `\expr((+)(_, 1))` |
+
 
 ## Conditionals: the ternary
 
@@ -867,7 +894,7 @@ in a prelude scope protected by the same mechanism:
 | `\isnan` / `\isinf` / `\isfinite` | test the float tier's non-finite states; exact-tier values are finite, so `\isnan` and `\isinf` are false and `\isfinite` is true. Non-numeric arguments are typed errors. Display as `<fn \isnan(x)>`, `<fn \isinf(x)>`, and `<fn \isfinite(x)>` |
 | `\complex` | builds a complex value from two real components: `\complex(2, 3)` is `2+3i`, a vanishing imaginary part collapses to the real; float components read as their exact decimals |
 | `\re` / `\im` | project the real or imaginary side (`\re(2+3i)` is `2`, `\im(π·i)` is `π`); a float's imaginary side is `0.0` |
-| `\map` / `\filter` / `\fold` / `\take` | higher-order functions over collections (`## Higher-order functions`). Display as `<fn \map(x)>` etc. |
+| `\map` / `\filter` / `\fold` / `\scan` / `\take` | higher-order functions over collections (`## Higher-order functions`). Display as `<fn \map(x)>` etc. |
 | `\len` / `\shape` / `\transpose` | collection length, tensor shape (a vector), and tensor transpose. Display as `<fn \len(x)>` etc. |
 | `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
 
