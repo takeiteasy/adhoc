@@ -1313,9 +1313,67 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
         return value
     if isinstance(value, complex):
         return _complex_of(value)
+    if isinstance(value, list | tuple):
+        return ArrayValue(tuple(_to_ad(item, preserve_bool) for item in value))
+    if isinstance(value, set | frozenset):
+        return SetValue(_dedup(_to_ad(item, preserve_bool) for item in value))
+    if _is_ndarray(value):
+        return _ndarray_to_ad(value)
     if isinstance(value, numbers.Real):
         return float(value)
     raise NumError(f"cannot convert a returned {type(value).__name__} to an ad value")
+
+
+def _is_ndarray(value: Any) -> bool:
+    """Duck-typed so the runtime never imports numpy."""
+    return (type(value).__module__.split(".")[0] == "numpy"
+            and hasattr(value, "tolist") and hasattr(value, "ndim"))
+
+
+def _ndarray_to_ad(value: Any) -> Any:
+    """A numpy ndarray as a tensor: 0-d gives its scalar, nested entries stack, and
+    empty or ragged shapes are typed rejections."""
+    if value.ndim == 0:
+        return _to_ad(value.tolist())
+    if value.size == 0:
+        raise NumError("cannot convert an empty ndarray to an ad tensor")
+
+    def build(nested: Any) -> Any:
+        if not isinstance(nested, list):
+            item = _to_ad(nested)
+            _reject_non_numeric(item)
+            return item
+        try:
+            return tn.stack([build(item) for item in nested])
+        except TensorError as e:
+            raise NumError(e.args[0]) from None
+
+    return build(value.tolist())
+
+
+def _to_py(value: Any) -> Any:
+    """The ad→Python half of the boundary, applied to arguments of Python callables:
+    tensors and arrays become nested lists, sets become a `frozenset` (a list when
+    an element is unhashable). Everything else is already native."""
+    if isinstance(value, TensorValue):
+        return _tensor_to_list(value.shape, value.items)
+    if isinstance(value, ArrayValue):
+        return [_to_py(item) for item in value.items]
+    if isinstance(value, SetValue):
+        items = [_to_py(item) for item in value.items]
+        try:
+            return frozenset(items)
+        except TypeError:
+            return items
+    return value
+
+
+def _tensor_to_list(shape: tuple[int, ...], items: tuple) -> Any:
+    if len(shape) == 1:
+        return [_to_py(item) for item in items]
+    stride = len(items) // shape[0]
+    return [_tensor_to_list(shape[1:], items[k * stride:(k + 1) * stride])
+            for k in range(shape[0])]
 
 
 class Engine:
@@ -1938,6 +1996,9 @@ class Engine:
                 label = spelling or fn.display_name
                 self._fail(f"{label} takes {len(fn.params)} arguments, "
                            f"got {len(args)}", sid)
+            if not isinstance(fn, AdFunction | PreludeFn):
+                args = tuple(_to_py(a) for a in args)
+                kwargs = {k: _to_py(v) for k, v in kwargs.items()}
             try:
                 result = fn(*args, **kwargs)
             except NumError as e:

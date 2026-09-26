@@ -103,6 +103,60 @@ def test_unsupported_type_return_rejects():
     assert "cannot convert a returned dict" in e.value.msg
 
 
+# --- collections across the boundary ---
+
+
+def test_list_and_tuple_returns_become_arrays():
+    assert last('\\py("list")("ab")') == '= ⟨"a", "b"⟩'
+    assert last('\\py("tuple")("ab")') == '= ⟨"a", "b"⟩'
+    assert last('\\py("sorted")(⟨3, 1, 2⟩)') == "= ⟨1, 2, 3⟩"
+
+
+def test_set_returns_become_sets():
+    assert last('\\py("set")("aab")') in ('= {"a", "b"}', '= {"b", "a"}')
+    assert last('\\py("frozenset")(⟨1, 1⟩)') == "= {1}"
+
+
+def test_nested_collection_elements_convert_recursively():
+    with pytest.raises(EvalError) as e:
+        last('\\py("json.loads")("[1, {\\"a\\": 2}]")')
+    assert "cannot convert a returned dict" in e.value.msg
+
+
+def test_tensor_arguments_arrive_as_nested_lists():
+    assert last('\\py("len")([1, 2; 3, 4])') == "= 2"
+    assert last('\\py("sum")(⟨1, 2, 3⟩)') == "= 6"
+    assert last('\\py("list")([1, 2; 3, 4])') == "= ⟨⟨1, 2⟩, ⟨3, 4⟩⟩"
+
+
+def test_set_arguments_arrive_hashable():
+    assert last('\\py("len")({1, 2, 3})') == "= 3"
+    assert last('\\py("sorted")({3, 1, 2})') == "= ⟨1, 2, 3⟩"
+
+
+def test_ndarray_returns_become_tensors():
+    pytest.importorskip("numpy")
+    env: dict = {}
+    run_source('\\pyimport("numpy": \\array, \\dot, \\zeros)', env)
+    assert last("\\array(⟨1, 2, 3⟩)", env) == "= [1, 2, 3]"
+    assert last("\\array(⟨⟨1, 2⟩, ⟨3, 4⟩⟩)", env) == "= [1, 2; 3, 4]"
+    assert last("\\array(⟨⟨1, 2⟩, ⟨3, 4⟩⟩)'", env) == "= [1, 3; 2, 4]"
+    assert last("\\dot([1, 2], [3, 4])", env) == "= 11"
+    assert last("\\zeros(⟨2, 2⟩)", env) == "= [0.0, 0.0; 0.0, 0.0]"
+
+
+def test_ndarray_rejections():
+    pytest.importorskip("numpy")
+    env: dict = {}
+    run_source('\\pyimport("numpy": \\array, \\empty)', env)
+    with pytest.raises(EvalError) as e:
+        last("\\empty(⟨0⟩)", env)
+    assert "empty ndarray" in e.value.msg
+    with pytest.raises(EvalError) as e:
+        last('\\array(⟨"a", "b"⟩)', env)
+    assert "strings are not numbers" in e.value.msg
+
+
 def test_callee_exception_maps_to_call_span():
     with pytest.raises(EvalError) as e:
         run_source('\\py("math.sqrt")(-1)')

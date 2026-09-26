@@ -332,9 +332,9 @@ trailing `.0`. Non-finite values print `NaN`, `Inf`, `-Inf`.
 ## The Python boundary: conversion matrix
 
 The seam is also where the `\py` escape hatch converts (docs/grammar.md). Values crossing
-*into* Python need no conversion — ad numbers already are native `int`/`Fraction`/`float`,
-and a string argument arrives as the native `str` it already is. Values coming *back* go
-through `_to_ad`:
+*into* Python convert only for collections (below) — ad numbers already are native
+`int`/`Fraction`/`float`, and a string argument arrives as the native `str` it already is.
+Values coming *back* go through `_to_ad`:
 
 | Python value | ad result |
 |---|---|
@@ -349,7 +349,24 @@ through `_to_ad`:
 | `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
 | `complex` | exact `Gaussian` — both components read through their shortest round-trip decimal (`complex(0.5, 0.25)` is `1/2+1/4i`) and collapse through `make` (a vanishing imaginary part returns the real); non-finite components are rejected |
 | an ad tensor, array, or set (passed through Python) | passes through |
-| anything else (list, dict, ndarray, ...) | rejected — names the type, never truncates silently |
+| `list`, `tuple` | an array; each element converts by this table, recursively |
+| `set`, `frozenset` | a set; each element converts by this table |
+| a numpy `ndarray` | a tensor of its nested entries; 0-d gives the scalar; empty, ragged, and non-numeric arrays are rejected[^ndarray] |
+| anything else (dict, ...) | rejected — names the type, never truncates silently |
+
+Arguments to a Python callable convert the other way:
+
+| ad value | Python argument |
+|---|---|
+| tensor | nested `list`s, row-major |
+| array | `list`, elements converted |
+| set | `frozenset`; a `list` when an element is unhashable |
+| anything else | unchanged |
+
+```
+\py("sorted")({3, 1, 2})      ->  = ⟨1, 2, 3⟩
+\py("len")([1, 2; 3, 4])      ->  = 2
+```
 
 Internal prelude callables and user-defined functions already return ad values, so their
 boolean results stay booleans; the `bool` → `int` row applies to Python callables crossing
@@ -359,6 +376,9 @@ A callee raising maps to a spanned error at the call (`sqrt: ValueError: math do
 error`), keeping the REPL alive like every other typed failure. Callables themselves are
 bindable values (`s = \py("math.sqrt")` displays `<py math.sqrt>`); arithmetic on one is a
 typed "operands must be numbers" failure at the operator's span.
+
+[^ndarray]: Detected by module name and `tolist`, so numpy is never imported by the
+    runtime. Tests need numpy (`dev` extra) and skip without it.
 
 ## What later phases add here
 

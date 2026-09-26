@@ -199,8 +199,6 @@ phases add bindings without touching the lexer.
 ## Known limitations (not bugs)
 
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
-- Python callables cannot return lists, sets, or ndarrays across `\py` —
-  [#63](https://todo.sr.ht/~takeiteasy/adhoc/63).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
 - Set notation is `∪ ∩ ∖ ∈ ⊆` only; no `∉`, `⊂`, `⊇`, or `∅` —

@@ -14,7 +14,7 @@ dependencies = ["sympy>=1.12"]
 adhoc = "adhoc.__main__:main"
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "numpy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
