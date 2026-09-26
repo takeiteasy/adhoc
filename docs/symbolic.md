@@ -101,4 +101,4 @@ their numeric path.[^worker]
 
 [^worker]: Each call runs in a forked child that is killed at the limit, so it also holds off the
     main thread. The fork costs about 65 ms a call, and the child's sympy caches are not kept.
-    Without  (Windows) the rewrite runs unlimited.
+    Without `fork` (Windows) the rewrite runs unlimited.
