@@ -2482,6 +2482,18 @@ class Engine:
             return self.mul(fn, args[0], sid)
         self._fail(f"{nshow(fn)} is not a function", sid)
 
+    def pow_app(self, fn: Any, exponent: AdValue, args: tuple[Any, ...],
+                kwargs: dict[str, Any], sid: int, spelling: str | None = None) -> AdValue | str:
+        """Function-power `f²(x)`: a callable head gives `f(x)^n`; any other head gives
+        `(f^n)(x)`, keeping `x²(2)` a product."""
+        if callable(fn):
+            if isinstance(exponent, (int, Fraction, float)) and not isinstance(exponent, bool) \
+                    and exponent < 0:
+                # Inverses (`f⁻¹`, `\sin⁻¹`) are not built (#85).
+                self._fail("functions have no inverse notation", sid)
+            return self.pow(self.app(fn, args, kwargs, sid, spelling), exponent, sid)
+        return self.app(self.pow(fn, exponent, sid), args, kwargs, sid, spelling)
+
     def _binop(self, f, a: AdValue, b: AdValue, sid: int) -> AdValue:
         try:
             return f(a, b)

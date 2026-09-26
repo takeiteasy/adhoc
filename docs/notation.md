@@ -6,7 +6,10 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 | Glyph | ASCII | Meaning | Level |
 |---|---|---|---|
 | `x²` `x⁻¹` `2¹⁰` | `x^2` | power[^superscript] | postfix |
-| `x₁` `a₂₃` | — | a distinct name[^subscript] | name |
+| `xⁿ` `xⁿ⁻¹` `x⁽ⁿ⁺¹⁾` | `x^n` `x^(n-1)` | power with a letter or expression exponent | postfix |
+| `Aᵀ` | `A'` | transpose | postfix |
+| `\sin²(x)` `f²(x)` | `\sin(x)^2` | function power[^funcpow] | postfix |
+| `x₁` `a₂₃` `xᵢⱼ` | `x_1` `a_23` `x_ij` | a distinct name[^subscript] | name |
 | `n!` | — | factorial[^factorial] | postfix |
 | `n‼` | `n!!` | double factorial | postfix |
 | `∛x` `∜x` | `\root(x, 3)` | cube and fourth root[^root] | prefix, like `√` |
@@ -25,6 +28,9 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 1 ≤ 2 ≠ 3     -- comparisons do not chain: parenthesize
 {1} ⊂ {1, 2}   ->  = true
 3 ∉ ∅          ->  = true
+n = 3; 2ⁿ⁻¹    ->  = 4
+f(x) = x + 1; f²(2)  ->  = 9
+x_1 = 2; x₁    ->  = 2
 ```
 
 ## Precedence
@@ -41,6 +47,8 @@ and unary minus, and chain with `(…)`, `[…]` and `'`.
 | `√x²` | `√(x²)` |
 | `(1+2)!` | `3!` |
 | `f(x)²` | `(f(x))²` |
+| `\sin²(x)` | `(\sin(x))²` |
+| `2ⁿᵏ` | `2^(n·k)` |
 
 ## Membership
 
@@ -64,21 +72,26 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 
 ## Limitations
 
-- Superscript and subscript letters (`xⁿ`, `xᵢ`, `Aᵀ`) are not notation —
-  [#81](https://todo.sr.ht/~takeiteasy/adhoc/81).
-- Subscripted names have no ASCII spelling —
-  [#82](https://todo.sr.ht/~takeiteasy/adhoc/82).
-- `\sin²(x)` is not function-power notation —
-  [#83](https://todo.sr.ht/~takeiteasy/adhoc/83).
+- Function inverses (`f⁻¹`, `\sin⁻¹`) are a typed error; `\asin` and friends do not exist —
+  [#85](https://todo.sr.ht/~takeiteasy/adhoc/85).
+- Unicode has no superscript `q` and no subscript `b c d f g q w y z` or capitals —
+  [#86](https://todo.sr.ht/~takeiteasy/adhoc/86).
 - `!` takes non-negative integers only; non-integers wait for `\gamma` —
   [#77](https://todo.sr.ht/~takeiteasy/adhoc/77).
 - Logical operators `∧ ∨ ¬ → ↔ ∀ ∃` are not built —
   [#80](https://todo.sr.ht/~takeiteasy/adhoc/80).
 
-[^superscript]: A run is an optional `⁻` then digits `⁰¹²³⁴⁵⁶⁷⁸⁹`, one exponent: `x⁻¹⁰` is
-    `x^-10`. A lone `⁻` is a lex error.
-[^subscript]: A letter followed by subscript digits `₀…₉` lexes as one identifier. `x₁` is
-    unrelated to `x`, aliases and parameters accept it, and `\`-names take no subscript.
+[^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
+    spelling: `x⁻¹⁰` is `x^-10`, `2ⁿᵏ` is `2^(n k)`. Glyphs exist for every letter but `q`
+    (plus capitals `ABDEGHIJKLMNOPRUVW`, Greek `αβγδεθφχ`). A run of only `⁺⁻⁽⁾` is a lex
+    error, and `1¹ᵉ³` reads `e3` as a float exponent (`1^1000.0`).
+[^subscript]: A letter followed by subscript digits `₀…₉` or letters `ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ`
+    lexes as one identifier. `x₁` is unrelated to `x`, aliases and parameters accept it, and
+    `\`-names take no subscript. It is a name, not indexing: write `x[i]`. `x_1` after a
+    letter is the same name and echoes as typed; a bare subscript glyph is a lex error.
+[^funcpow]: Only after a name. A callable head gives `f(x)^n`; any other head gives
+    `(f^n)(x)`, so `x²(2)` on a number is `18` when `x = 3`. A negative exponent on a
+    callable (`f⁻¹`) is a typed error.
 [^factorial]: Exact non-negative integers only, up to 100,000; anything else is a typed
     error. `3!!` is the double factorial `3‼ = 3`, not `(3!)!`. `!=` is a lex error that
     points at `≠`.

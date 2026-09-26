@@ -13,13 +13,15 @@ from enum import Enum, auto
 
 from .span import Span
 
-SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
+SUBSCRIPTS = dict(zip("₀₁₂₃₄₅₆₇₈₉ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵦᵧᵨᵩᵪ", "0123456789aehijklmnoprstuvxβγρφχ"))
+ASCII_SUBSCRIPTS = {ascii_: glyph for glyph, ascii_ in SUBSCRIPTS.items() if ascii_.isascii()}
 
 
 def is_short_name(name: str) -> bool:
-    """A canonical name written without a sigil: one letter plus an optional subscript-digit
-    run (`x`, `x₁`, `α₂₃`). Every other name is `\\`-prefixed."""
-    return bool(name) and name[0].isalpha() and all(c in SUBSCRIPT_DIGITS for c in name[1:])
+    """A canonical name written without a sigil: one letter plus an optional subscript
+    run (`x`, `x₁`, `xᵢⱼ`, `α₂₃`). Every other name is `\\`-prefixed."""
+    return (bool(name) and name[0].isalpha() and name[0] not in SUBSCRIPTS
+            and all(c in SUBSCRIPTS for c in name[1:]))
 
 
 class BinOperator(Enum):
@@ -184,6 +186,18 @@ class Call(Node):
     meaning — Python's own binding rules decide what `f(2, \\a=1)` means."""
 
     head: Node
+    args: tuple[Node, ...]
+    kwargs: tuple[KwArg, ...] = ()
+
+
+@dataclass(frozen=True)
+class PowCall(Node):
+    """Function-power notation `f²(x)`: a superscript between a name and its argument
+    list. A callable head means `f(x)^n`; anything else falls back to `(f^n)(x)`, so
+    `x²(2)` on a number is still a product."""
+
+    head: Node
+    exponent: Node
     args: tuple[Node, ...]
     kwargs: tuple[KwArg, ...] = ()
 

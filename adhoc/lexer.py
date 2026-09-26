@@ -21,10 +21,10 @@ parser maps to `IncompleteInput` so the REPL offers a continuation prompt exactl
 unclosed parenthesis.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from .span import Span
-from .syntax import SUBSCRIPT_DIGITS
+from .syntax import ASCII_SUBSCRIPTS, SUBSCRIPTS
 
 
 class LexError(Exception):
@@ -68,7 +68,11 @@ class Str(Token):
 
 @dataclass(frozen=True)
 class Ident(Token):
+    """A one-letter name with an optional subscript run. `spelling` is the source text
+    when it differs from the canonical `ch` (`x_1` for `x₁`)."""
+
     ch: str
+    spelling: str | None = field(default=None, compare=False)
 
     @property
     def describe(self) -> str:
@@ -98,10 +102,11 @@ class Radical(Token):
 
 @dataclass(frozen=True)
 class Superscript(Token):
-    """A superscript exponent run (`²`, `⁻¹`, `¹⁰`): sugar for `^`. `text` is the
-    exponent in ASCII (`"2"`, `"-1"`, `"10"`)."""
+    """A superscript exponent run (`²`, `⁻¹`, `ⁿ⁺¹`): sugar for `^`. `tokens` is the run
+    transliterated to ASCII and tokenized, spans mapped back onto the glyphs, ending in
+    `Eof`; the parser reads them as the exponent expression."""
 
-    text: str
+    tokens: tuple[Token, ...]
 
     @property
     def describe(self) -> str:
@@ -417,7 +422,10 @@ _GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
 
 _ROOT_INDEX = {"∛": 3, "∜": 4}
 
-_SUPERSCRIPT_DIGITS = {c: str(d) for d, c in enumerate("⁰¹²³⁴⁵⁶⁷⁸⁹")}
+SUPERSCRIPTS = dict(zip(
+    "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁽⁾ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵁⱽᵂᵅᵝᵞᵟᵋᶿᵠᵡ",
+    "0123456789+-()abcdefghijklmnoprstuvwxyzABDEGHIJKLMNOPRUVWαβγδεθφχ"))
+_TRANSPOSE_GLYPH = "ᵀ"
 
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
 
@@ -437,6 +445,24 @@ def _take_exponent(entries: list[tuple[int, str]], n: int, j: int) -> int:
                 k += 1
             return k
     return j
+
+
+def _superscript_tokens(entries: list[tuple[int, str]], first: int, last: int,
+                       text: str) -> tuple[Token, ...]:
+    """Tokenize the ASCII form of the superscript run `entries[first:last]`, mapping
+    each token's span back onto the glyphs it came from."""
+    def glyph_end(k: int) -> int:
+        return entries[k][0] + len(entries[k][1].encode("utf-8"))
+
+    mapped = []
+    for tok in tokenize(text):
+        if isinstance(tok, Eof):
+            end = glyph_end(last - 1)
+            mapped.append(Eof(span=Span.point(end)))
+        else:
+            mapped.append(replace(tok, span=Span(entries[first + tok.span.start][0],
+                                                 glyph_end(first + tok.span.end - 1))))
+    return tuple(mapped)
 
 
 def tokenize(src: str) -> list[Token]:
@@ -555,18 +581,26 @@ def tokenize(src: str) -> list[Token]:
             i = j
             continue
 
-        if c in _SUPERSCRIPT_DIGITS or c == "⁻":
-            j = i + 1 if c == "⁻" else i
-            digits_from = j
-            while j < n and entries[j][1] in _SUPERSCRIPT_DIGITS:
+        if c in SUPERSCRIPTS:
+            j = i
+            while j < n and entries[j][1] in SUPERSCRIPTS:
                 j += 1
             end = entries[j][0] if j < n else eof_off
-            if j == digits_from:
-                raise LexError("`⁻` needs superscript digits after it", Span(pos, end))
-            digits = "".join(_SUPERSCRIPT_DIGITS[entries[k][1]] for k in range(digits_from, j))
-            tokens.append(Superscript(text=("-" if c == "⁻" else "") + digits,
+            text = "".join(SUPERSCRIPTS[entries[k][1]] for k in range(i, j))
+            if not any(ch.isalnum() for ch in text):
+                raise LexError("a superscript needs digits or letters", Span(pos, end))
+            tokens.append(Superscript(tokens=_superscript_tokens(entries, i, j, text),
                                       span=Span(pos, end)))
             i = j
+            continue
+
+        if c in SUBSCRIPTS:
+            raise LexError(f"subscript `{c}` needs a letter before it",
+                           Span(pos, pos + len(c.encode("utf-8"))))
+
+        if c == _TRANSPOSE_GLYPH:
+            tokens.append(Prime(span=Span(pos, pos + len(c.encode("utf-8")))))
+            i += 1
             continue
 
         if c == "∅":
@@ -576,10 +610,22 @@ def tokenize(src: str) -> list[Token]:
 
         if c.isalpha():
             j = i + 1
-            while j < n and entries[j][1] in SUBSCRIPT_DIGITS:
+            while j < n and entries[j][1] in SUBSCRIPTS:
                 j += 1
+            name = src[i:j]
+            spelling = None
+            # ASCII subscript: `x_1`, `x_ij`. A `_` with no subscriptable character
+            # after it stays the placeholder.
+            if j == i + 1 and j + 1 < n and entries[j][1] == "_" \
+                    and entries[j + 1][1] in ASCII_SUBSCRIPTS:
+                k = j + 1
+                while k < n and entries[k][1] in ASCII_SUBSCRIPTS:
+                    k += 1
+                spelling = src[i:k]
+                name = c + "".join(ASCII_SUBSCRIPTS[entries[m][1]] for m in range(j + 1, k))
+                j = k
             end = entries[j][0] if j < n else eof_off
-            tokens.append(Ident(ch=src[i:j], span=Span(pos, end)))
+            tokens.append(Ident(ch=name, spelling=spelling, span=Span(pos, end)))
             i = j
             continue
 

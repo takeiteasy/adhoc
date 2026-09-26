@@ -49,7 +49,7 @@ def test_subscripted_name_juxtaposes_and_takes_alias():
 
 
 def test_subscript_digit_alone_is_a_lex_error():
-    with pytest.raises(Exception, match="unexpected character"):
+    with pytest.raises(Exception, match="needs a letter before it"):
         tokenize("₁")
 
 
@@ -66,7 +66,8 @@ def test_superscript_run_is_one_exponent():
     assert ev("2⁻¹") == "= 1/2"
     assert ev("2⁻²") == "= 1/4"
     tok = tokenize("x⁻¹⁰")[1]
-    assert (tok.text, tok.span.start, tok.span.end) == ("-10", 1, 1 + 3 + 2 + 3)
+    assert (tok.span.start, tok.span.end) == (1, 1 + 3 + 2 + 3)
+    assert [t.span.start for t in tok.tokens[:2]] == [1, 4]
 
 
 def test_superscript_precedence():
@@ -86,7 +87,7 @@ def test_superscript_roundtrips_as_caret():
 
 
 def test_lone_superscript_minus_is_a_lex_error():
-    with pytest.raises(Exception, match="superscript digits"):
+    with pytest.raises(Exception, match="needs digits or letters"):
         tokenize("x⁻")
 
 
@@ -335,3 +336,90 @@ def test_set_extras_roundtrip_and_operator_values():
     assert ev("(∉)(1, {2})") == "= true"
     assert ev("(⊂)({1}, {1, 2})") == "= true"
     fails(r"\let \notin = 1", "protected")
+
+
+# --- script letters, ASCII subscripts, function power ---
+
+
+def test_subscript_letters_are_names():
+    assert ev("xᵢ = 2; xⱼ = 3; xᵢ + xⱼ") == "= 5"
+    assert ev("f(xᵢ) = xᵢ + 1\nf(2)") == "= 3"
+    assert tokenize("aᵢⱼ")[0].ch == "aᵢⱼ"
+    assert tokenize("x₁ₐ")[0].ch == "x₁ₐ"
+
+
+def test_bare_subscript_letter_is_a_lex_error():
+    with pytest.raises(Exception, match="needs a letter before it"):
+        tokenize("ᵢ")
+
+
+def test_bare_superscript_letter_is_a_parse_error():
+    with pytest.raises(ParseError):
+        parse_program("ⁿ")
+
+
+def test_ascii_subscript_spelling():
+    tok = tokenize("x_1")[0]
+    assert (tok.ch, tok.spelling, tok.span.end) == ("x₁", "x_1", 3)
+    assert tokenize("x_ij")[0].ch == "xᵢⱼ"
+    assert ev("x_1 = 2; x₁") == "= 2"
+    assert ev("x₁ = 2; x_1 + 1") == "= 3"
+    assert roundtrip("x_1 + 1") == "(x_1 + 1)"
+
+
+def test_placeholder_underscore_is_unchanged():
+    assert ev("f(x, y) = x - y\ng = f(5, _)\ng(2)") == "= 3"
+    with pytest.raises(ParseError):
+        parse_program("x_q")
+
+
+def test_superscript_expression_exponents():
+    assert ev("n = 3; 2ⁿ") == "= 8"
+    assert ev("n = 3; 2ⁿ⁻¹") == "= 4"
+    assert ev("n = 3; 2⁽ⁿ⁺¹⁾") == "= 16"
+    assert ev("n = 2; k = 3; 2ⁿᵏ") == "= 64"
+    assert ev("n = 2; 2⁻ⁿ") == "= 1/4"
+
+
+def test_superscript_run_reads_a_float_exponent():
+    assert ev("1¹ᵉ³") == "= 1.0"
+
+
+def test_superscript_error_span_covers_glyphs():
+    with pytest.raises(ParseError) as e:
+        parse_program("xⁿ⁺")
+    assert e.value.span.start >= 1
+
+
+def test_transpose_glyph():
+    assert ev("A = [1, 2; 3, 4]; Aᵀ") == ev("A = [1, 2; 3, 4]; A'")
+    assert ev("A = [1, 2; 3, 4]; Aᵀ²") == ev("A = [1, 2; 3, 4]; (A')²")
+    assert roundtrip("Aᵀ") == "A'"
+
+
+def test_function_power():
+    assert ev("\\sin²(1)") == ev("\\sin(1)^2")
+    assert ev("f(x) = x + 1\nf²(2)") == "= 9"
+
+
+def test_function_power_on_a_number_is_still_a_product():
+    assert ev("x = 3; x²(2)") == "= 18"
+
+
+def test_function_inverse_notation_is_a_typed_error():
+    fails("f(x) = x + 1\nf⁻¹(2)", "no inverse")
+
+
+def test_function_power_roundtrips():
+    assert roundtrip("\\sin²(x)") == "\\sin²(x)"
+    assert roundtrip("f⁽ⁿ⁺¹⁾(x)") == "fⁿ⁺¹(x)"
+    assert roundtrip("f²(x, y)") == "f²(x, y)"
+
+
+def test_function_power_falls_back_to_caret_when_exponent_has_no_glyphs():
+    from adhoc.span import Span
+    from adhoc.syntax import PowCall, Var
+    sp = Span(0, 0)
+    node = PowCall(head=Var(ch="f", span=sp), exponent=Var(ch="q", span=sp),
+                   args=(Var(ch="x", span=sp),), span=sp)
+    assert show(node) == "(f(x) ^ q)"

@@ -71,6 +71,7 @@ from .syntax import (
     StrLit,
     TensorLit,
     Transpose,
+    PowCall,
     UnOp,
     UnaryOperator,
     Var,
@@ -381,6 +382,20 @@ class _Lowerer:
                     "app",
                     [head_expr, pyast.Tuple(elts=arg_exprs, ctx=pyast.Load()), kw_dict,
                      pyast.Constant(sid), pyast.Constant(_call_spelling(head))],
+                )
+            case PowCall(head=head, exponent=exponent, args=args, kwargs=kwargs, span=span):
+                head_expr = self.expr(head)
+                exponent_expr = self.expr(exponent)
+                arg_exprs = [self.expr(a) for a in args]
+                kw_dict = pyast.Dict(
+                    keys=[pyast.Constant(kw.name) for kw in kwargs],
+                    values=[self.expr(kw.value) for kw in kwargs],
+                )
+                sid = self._push(span)
+                return _call(
+                    "pow_app",
+                    [head_expr, exponent_expr, pyast.Tuple(elts=arg_exprs, ctx=pyast.Load()),
+                     kw_dict, pyast.Constant(sid), pyast.Constant(_call_spelling(head))],
                 )
             case _:
                 raise TypeError(f"no lowering for {node!r}")

@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass, fields
 
+from .lexer import SUPERSCRIPTS
 from .syntax import (
     is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
-    Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef,
+    Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, PowCall,
     PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var,
 )
 
@@ -101,6 +102,15 @@ def show(node: Node) -> str:
             values = [show(arg) for arg in args]
             values += [f"{show(kw_name(kw))}={show(kw.value)}" for kw in kwargs]
             return f"{show(head)}({', '.join(values)})"
+        case PowCall(head=head, exponent=exponent, args=args, kwargs=kwargs):
+            values = [show(arg) for arg in args]
+            values += [f"{show(kw_name(kw))}={show(kw.value)}" for kw in kwargs]
+            script = _superscript(exponent)
+            if script is None:
+                # An exponent rewritten by `\expr` may leave the superscript alphabet; a
+                # callable head still reads the same as `f(x) ^ n`.
+                return f"({show(head)}({', '.join(values)}) ^ {show(exponent)})"
+            return f"{show(head)}{script}({', '.join(values)})"
         case Fold(op=op, var=var, bound=bound, body=body, spelling=spelling,
                   var_spelling=var_spelling):
             head = spelling or ("\\sum" if op is BinOperator.ADD else "\\prod")
@@ -133,6 +143,40 @@ def show(node: Node) -> str:
             return f"\\eval({', '.join(values)})"
         case _:
             raise TypeError(f"cannot display expression node {type(node).__name__}")
+
+
+_SUPERSCRIPT_GLYPHS = {ascii_: glyph for glyph, ascii_ in SUPERSCRIPTS.items()}
+
+
+def _superscript(node: Node) -> str | None:
+    """`node` as superscript glyphs the lexer reads back to the same expression, or None."""
+    def wrap(inner: str | None) -> str | None:
+        return None if inner is None else f"⁽{inner}⁾"
+
+    def atom(n: Node) -> str | None:
+        inner = _superscript(n)
+        needs_parens = isinstance(n, BinOp) or (isinstance(n, UnOp) and n.op is UnaryOperator.NEG)
+        return wrap(inner) if needs_parens else inner
+
+    match node:
+        case NumLit(text=text) if text.isascii() and text.isdigit():
+            return "".join(_SUPERSCRIPT_GLYPHS[c] for c in text)
+        case Var(ch=ch) if len(ch) == 1 and ch in _SUPERSCRIPT_GLYPHS:
+            return _SUPERSCRIPT_GLYPHS[ch]
+        case UnOp(op=UnaryOperator.NEG, operand=operand):
+            inner = atom(operand)
+            return None if inner is None else f"⁻{inner}"
+        case BinOp(op=BinOperator.ADD | BinOperator.SUB as op, lhs=lhs, rhs=rhs):
+            left = _superscript(lhs)
+            right = atom(rhs) if isinstance(rhs, BinOp) and rhs.op in (
+                BinOperator.ADD, BinOperator.SUB) else _superscript(rhs)
+            if left is None or right is None:
+                return None
+            return f"{left}{'⁺' if op is BinOperator.ADD else '⁻'}{right}"
+        case BinOp(op=BinOperator.MUL, lhs=lhs, rhs=Var() as rhs) if isinstance(lhs, (NumLit, Var)):
+            left, right = _superscript(lhs), _superscript(rhs)
+            return None if left is None or right is None else left + right
+    return None
 
 
 def kw_name(kw: KwArg) -> Node:

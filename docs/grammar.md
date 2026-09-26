@@ -26,11 +26,15 @@ written against — it should stay in lockstep with the code.
   Inside a literal exactly four escapes decode — `\"` (quote), `\\` (backslash), `\n`
   (newline), `\t` (tab) — and any other backslash pair is a lex error. Strings are full
   values: see `## String literals` for their operators.
-- An **identifier** is one ASCII or unicode letter, optionally followed by subscript digits
-  `₀…₉` (`x`, `π`, `α`, `x₁`, `a₂₃`); `x₁` is a name unrelated to `x`. `ab` is still
+- An **identifier** is one ASCII or unicode letter, optionally followed by a subscript run of
+  digits `₀…₉` and letters `ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ` (`x`, `π`, `α`, `x₁`, `a₂₃`, `xᵢⱼ`); `x₁` is a
+  name unrelated to `x`. The ASCII spelling is a letter, `_`, then ASCII digits or those
+  letters (`x_1`, `x_ij`); it is the same name as the glyph form. A `_` with none of those
+  after it is the placeholder. A subscript glyph with no letter before it is a lex error. `ab` is still
   `a * b`, and `∅` lexes as an identifier that aliases `\emptyset`. See `docs/notation.md`.
-- A **superscript run** (`²`, `⁻¹`, `¹⁰`: optional `⁻`, then digits `⁰…⁹`) is one token,
-  sugar for `^` with that literal exponent. A lone `⁻` is a lex error.
+- A **superscript run** (`²`, `⁻¹`, `ⁿ⁺¹`, `⁽ⁿ⁺¹⁾`: digits, letters, `⁺ ⁻ ⁽ ⁾`) is one token,
+  sugar for `^` with the run read as an expression. A run without digits or letters is a lex
+  error. `ᵀ` is not part of a run: it is the transpose `'`.
 - The radicals `∛` and `∜` are prefix operators like `√`; they rewrite to `\root(x, 3)` and
   `\root(x, 4)`. `!` (factorial) and `‼` / `!!` (double factorial) are postfix. `!=` is a
   lex error pointing at `≠`.
@@ -98,8 +102,9 @@ radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
 nth-root   ::= ("∛" | "∜") unary ;         (* prefix spelling of \root(x, 3) / \root(x, 4) *)
 power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
-trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" | "!" | "‼" | "!!" | superscript ;
-superscript ::= "⁻"? ("⁰" | "¹" | ... | "⁹")+ ;   (* sugar for "^" with a literal exponent *)
+trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" | "ᵀ" | "!" | "‼" | "!!" | superscript
+             | superscript "(" args? ")" ;   (* function power, on a name head only *)
+superscript ::= (superscript-glyph)+ ;         (* sugar for "^" with the run read as an expression *)
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg | hole | operator ;   (* holes and operators only as a whole argument *)
 hole       ::= "·" | "⋅" | "_" ;
@@ -791,7 +796,7 @@ Shared rules:
 
 ## The `\` sigil
 
-A name is one letter, optionally subscripted. Any language-defined name longer than one character
+A name is one letter, optionally subscripted (`x₁`, `xᵢ`, `x_1`). Any language-defined name longer than one character
 is `\`-prefixed, regardless of script — `\pi`, `\sum`, `\sin`, `\solve`, `\map`, `\graph`. Where
 a `\`-name has a single-character unicode form, they are the same name (`\pi` ≡ `π` — the
 name-alias mechanism, `## Name aliases`); where

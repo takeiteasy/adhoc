@@ -150,6 +150,7 @@ from .syntax import (
     StrLit,
     TensorLit,
     Transpose,
+    PowCall,
     UnOp,
     UnaryOperator,
     Var,
@@ -216,7 +217,9 @@ ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi", "∅": "emp
 
 
 def _spelling(tok: Ident | Backslash) -> str:
-    return tok.ch if isinstance(tok, Ident) else f"\\{tok.name}"
+    if isinstance(tok, Ident):
+        return tok.spelling or tok.ch
+    return f"\\{tok.name}"
 
 
 class _Parser:
@@ -969,7 +972,16 @@ class _Parser:
                 node = self._index(node)
                 continue
             if isinstance(self.peek(), Superscript):
-                node = self._superscript(node)
+                if isinstance(node, (Var, BackslashRef)) and isinstance(self.look(1), LParen):
+                    tok = self.advance()
+                    exponent = self._exponent(tok)
+                    args, kwargs, rparen = self._call_arguments()
+                    node = PowCall(head=node, exponent=exponent, args=args, kwargs=kwargs,
+                                   span=node.span.to(rparen.span))
+                    continue
+                tok = self.advance()
+                node = BinOp(op=BinOperator.POW, lhs=node, rhs=self._exponent(tok),
+                             span=node.span.to(tok.span))
                 continue
             if isinstance(self.peek(), (Bang, DoubleBang)):
                 bang = self.advance()
@@ -982,30 +994,7 @@ class _Parser:
                 continue
             if not (self._is_call_head(node) and isinstance(self.peek(), LParen)):
                 break
-            self.advance()
-            self._skip_newlines()  # arguments may start on the line after `(`
-            args: tuple[Node, ...] = ()
-            kwargs: tuple[KwArg, ...] = ()
-            if not isinstance(self.peek(), RParen):  # `f()` — zero-arg calls are legal
-                with self._list_context(True):
-                    items: list[Node] = [self.call_arg()]
-                    while isinstance(self.peek(), Comma):
-                        self.advance()
-                        self._skip_newlines()  # an argument may start on the line after `,`
-                        items.append(self.call_arg())
-                # Positionals and kwargs collect separately (their relative source
-                # order carries no meaning); duplicate kwarg names are a parse error
-                # rather than Python's silent last-one-wins.
-                seen: set[str] = set()
-                for item in items:
-                    if isinstance(item, KwArg):
-                        if item.name in seen:
-                            raise ParseError(
-                                f"duplicate keyword argument `{item.spelling or item.name}`", item.span)
-                        seen.add(item.name)
-                args = tuple(i for i in items if not isinstance(i, KwArg))
-                kwargs = tuple(i for i in items if isinstance(i, KwArg))
-            rparen = self.expect(RParen, "`)`")
+            args, kwargs, rparen = self._call_arguments()
             node = Call(head=node, args=args, kwargs=kwargs,
                         span=node.span.to(rparen.span))
             if (isinstance(node.head, BackslashRef) and node.head.name in _NO_HOLE_FORMS
@@ -1032,14 +1021,39 @@ class _Parser:
                     f"`{self._form_label(node.head)}` takes exactly one argument", node.span)
         return node
 
-    # superscript ::= "²" | "⁻¹" | ... — a postfix trailer, sugar for `^` with a literal exponent.
-    def _superscript(self, base: Node) -> Node:
-        tok = self.advance()
-        digits = tok.text.lstrip("-")
-        exp: Node = NumLit(text=digits, span=tok.span)
-        if tok.text.startswith("-"):
-            exp = UnOp(op=UnaryOperator.NEG, operand=exp, span=tok.span)
-        return BinOp(op=BinOperator.POW, lhs=base, rhs=exp, span=base.span.to(tok.span))
+    # call-args ::= "(" (arg ("," arg)*)? ")"
+    def _call_arguments(self) -> tuple[tuple[Node, ...], tuple[KwArg, ...], Token]:
+        self.advance()
+        self._skip_newlines()  # arguments may start on the line after `(`
+        args: tuple[Node, ...] = ()
+        kwargs: tuple[KwArg, ...] = ()
+        if not isinstance(self.peek(), RParen):  # `f()` — zero-arg calls are legal
+            with self._list_context(True):
+                items: list[Node] = [self.call_arg()]
+                while isinstance(self.peek(), Comma):
+                    self.advance()
+                    self._skip_newlines()  # an argument may start on the line after `,`
+                    items.append(self.call_arg())
+            # Positionals and kwargs collect separately (their relative source
+            # order carries no meaning); duplicate kwarg names are a parse error
+            # rather than Python's silent last-one-wins.
+            seen: set[str] = set()
+            for item in items:
+                if isinstance(item, KwArg):
+                    if item.name in seen:
+                        raise ParseError(
+                            f"duplicate keyword argument `{item.spelling or item.name}`", item.span)
+                    seen.add(item.name)
+            args = tuple(i for i in items if not isinstance(i, KwArg))
+            kwargs = tuple(i for i in items if isinstance(i, KwArg))
+        return args, kwargs, self.expect(RParen, "`)`")
+
+    # superscript ::= "²" | "⁻¹" | "ⁿ⁺¹" | ... — the run's ASCII form read as an expression.
+    def _exponent(self, tok: Superscript) -> Node:
+        sub = _Parser(list(tok.tokens), self.aliases, self.source)
+        exponent = sub.expr()
+        sub.expect(Eof, "end of superscript")
+        return exponent
 
     # index ::= "[" expr ("," expr)* "]" — a trailer on name-ish heads and transposes.
     def _index(self, head: Node) -> Index:
@@ -1302,7 +1316,10 @@ class _Parser:
                 return StrLit(text=tok.text, span=tok.span)
             case Ident():
                 self.advance()
-                return self._name_node(tok.ch, tok.span)
+                node = self._name_node(tok.ch, tok.span)
+                if tok.spelling and isinstance(node, Var):
+                    node = replace(node, spelling=tok.spelling)
+                return node
             case LBracket():
                 return self._tensor_literal()
             case LBrace():
