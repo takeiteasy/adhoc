@@ -446,7 +446,8 @@ f(_, _)(10, 3)          ->  = 7
 
 Both forms are values: they bind, pass, display (`<fn s ∘ t>`, `<fn f(10, _)>`), and
 compare by identity. A range argument after a comma needs parentheses — `\map(f, (1..3))` —
-because `f, 1..3` reads as a stepped range (`## Ranges`).
+because `f, 1..3` reads as a stepped range (`## Ranges`; see
+[Known limitations](language.md#known-limitations-not-bugs)).
 
 ## Higher-order functions
 
