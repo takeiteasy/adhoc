@@ -96,6 +96,28 @@ def test_quantifiers(src, out):
     assert ev(src) == out
 
 
+@pytest.mark.parametrize("src, out", [
+    (r"∀(x∈1..5) x > 0", "= true"), (r"∃(x∈{1, 2}) x > 4", "= false"),
+    (r"∃(x \in {1, 2}) x > 1", "= true"), (r"\forall(x∈1..3) x > 0", "= true"),
+    (r"∀(x∈1..3) ∃(y∈1..3) x + y > 3", "= true"),
+    (r"∀(x" + "\n" + r"∈ 1..3) x > 0", "= true"),
+    (r"\sum(i∈1..3) i", "= 6"), (r"Π(k∈⟨1, 2, 3⟩) k", "= 6"),
+    (r"2∈{1, 2}", "= true"),
+])
+def test_member_binder_spelling(src, out):
+    assert ev(src) == out
+
+
+def test_member_binder_roundtrips():
+    assert roundtrip(r"∀(x∈1..3) x > 0") == "(∀(x∈(1..3)) (x > 0))"
+    assert roundtrip(r"∀(x=1..3) x > 0") == "(∀(x=(1..3)) (x > 0))"
+
+
+def test_limit_binder_stays_equals_only():
+    with pytest.raises(ParseError, match="takes a binder as its first argument"):
+        parse_program(r"\lim(x∈0) x")
+
+
 def test_quantifier_body_must_be_boolean():
     fails(r"∀(x=1..3) 5", "needs a boolean body, got 5")
     fails(r"∃(x=1..3) x", "needs a boolean body")

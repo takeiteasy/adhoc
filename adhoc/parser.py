@@ -1028,7 +1028,7 @@ class _Parser:
             (fold_op is not None or self._limit_head(node))
             and isinstance(self.peek(), LParen)
         ):
-            if not self._binder_shape_ahead():
+            if not self._binder_shape_ahead(members=fold_op is not None):
                 # Fold/limit heads are reserved special forms — any parenthesized use
                 # that is not the binder shape is a usage error, not an application of
                 # an unbound name.
@@ -1300,10 +1300,10 @@ class _Parser:
     # The body extends greedily over the rest of the current expression, up to
     # the enclosing delimiter (`,` `)` `;` or end of input); parenthesize to end it
     # earlier: `\sum(i=1..2) (i + 1) * 2` folds `i + 1`, then doubles the total.
-    def _binder_shape_ahead(self) -> bool:
-        """The `(ident =` shape that commits the special form. Newlines inside the
-        paren are operand whitespace (`\\sum(\\ni = 1..2)`), so the lookahead skips
-        them too."""
+    def _binder_shape_ahead(self, members: bool = False) -> bool:
+        """The `(ident =` shape that commits the special form; folds and quantifiers
+        also take `(ident ∈`. Newlines inside the paren are operand whitespace
+        (`\\sum(\\ni = 1..2)`), so the lookahead skips them too."""
         k = 1
         while isinstance(self.look(k), Newline):
             k += 1
@@ -1312,7 +1312,13 @@ class _Parser:
         k += 1
         while isinstance(self.look(k), Newline):
             k += 1
-        return isinstance(self.look(k), Eq)
+        tok = self.look(k)
+        return isinstance(tok, Eq) or (members and self._is_member(tok))
+
+    @staticmethod
+    def _is_member(tok: Token) -> bool:
+        return (isinstance(tok, InfixOp) and tok.name == "in") or (
+            isinstance(tok, Backslash) and tok.name == "in")
 
     def _special_form(self, head: Node, fold_op: BinOperator | None) -> Node:
         label = self._form_label(head)
@@ -1320,7 +1326,12 @@ class _Parser:
         self._skip_newlines()
         var_tok = self.advance()
         var = self._canonical(var_tok.ch)
-        self.expect(Eq, "`=`")
+        self._skip_newlines()
+        binder = self.peek()
+        if fold_op is not None and self._is_member(binder):
+            self.advance()
+        else:
+            self.expect(Eq, "`=`")
         with self._list_context(False):
             bound = self.expr()
         self.expect(RParen, "`)`")
@@ -1328,7 +1339,8 @@ class _Parser:
         span = head.span.to(body.span)
         if fold_op is not None:
             return Fold(op=fold_op, var=var, bound=bound, body=body, span=span,
-                        spelling=label, var_spelling=_spelling(var_tok))
+                        spelling=label, var_spelling=_spelling(var_tok),
+                        member_binder=self._is_member(binder))
         return Limit(var=var, point=bound, body=body, span=span,
                      spelling=label, var_spelling=_spelling(var_tok))
 

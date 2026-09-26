@@ -72,6 +72,7 @@ x = 0; x ≠ 0 ∧ 1/x > 2  ->  = false      -- the right side never runs
 \false → \false → \false  ->  = true       -- → nests to the right
 ∀(x=1..5) x > 0        ->  = true
 ∃(x={1, 2}) x > 4      ->  = false
+∃(x∈{1, 2}) x > 1      ->  = true         -- `∈` binds like `=`
 ∀(x=1..3) ∃(y=1..3) x + y > 3  ->  = true
 ```
 
@@ -100,7 +101,6 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 
 ## Limitations
 
-- `∀` and `∃` bind with `(x=domain)` only — [#88](https://todo.sr.ht/~takeiteasy/adhoc/88).
 - `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
@@ -122,7 +122,7 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 [^logic]: `∧` `∨` and `→` skip their right operand once the left decides (`false ∧ …`,
     `true ∨ …`, `false → …`); a non-boolean operand is a typed error at that operand. `∀` and
     `∃` are special forms like `\sum` (docs/grammar.md, `## Special forms`) and use the same
-    `(x=domain) body` binder.
+    `(x=domain) body` or `(x∈domain) body` binder.
 [^factorial]: An exact non-negative integer up to 100,000 gives the exact product. Any other
     real is `\gamma(x + 1)` (`(1/2)!` is `√π/2`); negative integers and complex values are
     typed errors. `‼` takes exact non-negative integers only. `3!!` is the double factorial `3‼ = 3`, not `(3!)!`. `!=` is a lex error that

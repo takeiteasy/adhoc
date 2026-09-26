@@ -118,9 +118,9 @@ def show(node: Node) -> str:
                 return f"({show(head)}({', '.join(values)}) ^ {show(exponent)})"
             return f"{show(head)}{script}({', '.join(values)})"
         case Fold(op=op, var=var, bound=bound, body=body, spelling=spelling,
-                  var_spelling=var_spelling):
+                  var_spelling=var_spelling, member_binder=member):
             head = spelling or _FOLD_HEADS[op]
-            return f"({head}({var_spelling or var}={show(bound)}) {show(body)})"
+            return f"({head}({var_spelling or var}{'∈' if member else '='}{show(bound)}) {show(body)})"
         case Limit(var=var, point=point, body=body, spelling=spelling,
                    var_spelling=var_spelling):
             head = spelling or "\\lim"

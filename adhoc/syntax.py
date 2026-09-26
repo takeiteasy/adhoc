@@ -164,6 +164,7 @@ class Fold(Node):
     body: Node
     spelling: str | None = field(default=None, compare=False)
     var_spelling: str | None = field(default=None, compare=False)
+    member_binder: bool = field(default=False, compare=False)
 
 
 @dataclass(frozen=True)

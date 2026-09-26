@@ -166,8 +166,8 @@ Special forms sit in postfix position but are not applications — their first p
 argument is a binding, not a general expression (see `## Special forms`):
 
 ```
-fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident "=" expr ")" expr ;
-quantifier ::= ("\forall" | "∀" | "\exists" | "∃") "(" ident "=" expr ")" expr ;
+fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident ("=" | "∈") expr ")" expr ;
+quantifier ::= ("\forall" | "∀" | "\exists" | "∃") "(" ident ("=" | "∈") expr ")" expr ;
 limit      ::= "\lim" "(" ident "=" expr ")" expr ;
 ```
 
@@ -696,7 +696,8 @@ not `=` — name it with `f(x) = body`).
 `\sum`, `\prod`, `\lim`, `\forall` and `\exists` are
 **special forms**, not functions: their first parenthesized argument is a binding — an
 identifier, `=`, then the bound expression — which general expressions cannot contain.
-The parser recognizes the `(ident =` shape after one of these heads; any other
+Folds and quantifiers also take `∈` (or `\in`) in place of `=`; `\lim` binds a point, so it
+takes `=` only. The parser recognizes the `(ident =` shape after one of these heads; any other
 parenthesized use is a parse-time usage error naming the expected binder form, and
 without a paren the head is simply an unbound name at evaluation. The unicode
 spellings `Σ` and `Π` are name aliases of `\sum` and `\prod` (see `## Name aliases`)
@@ -709,6 +710,8 @@ and a user `\alias` onto those names gets the same treatment for free.
 Σ(k=1,3..7) k                ->  = 16           -- stepped ranges bind too
 \lim(x=0) x/x                ->  = 1.0          -- numeric limit; anchor never evaluated
 ∀(x=1..5) x > 0              ->  = true         -- quantifiers bind like \sum
+∀(x∈1..5) x > 0              ->  = true         -- `∈` reads the same as `=`
+Σ(k∈⟨1, 2, 3⟩) k             ->  = 6            -- folds take it too
 ∃(n=1..) n^2 > 1000          ->  = true         -- searches an infinite range
 ```
 

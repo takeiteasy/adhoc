@@ -92,7 +92,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   may use single-character or `\`-sigiled names.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
 - Logic: `∧ ∨ ¬ → ↔` (`\and \or \not \implies \iff`) combine booleans and short-circuit;
-  `∀(x=s) body` and `∃(x=s) body` quantify over a range or collection
+  `∀(x∈s) body` and `∃(x∈s) body` (or `x=s`) quantify over a range or collection
   (docs/notation.md, `## Logic`).
 - Booleans are real values: comparisons produce them, arithmetic rejects them, the
   ternary consumes them, and `\true`/`\false` are bound constants. There
