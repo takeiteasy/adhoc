@@ -62,7 +62,7 @@ def test_literal_heads_do_not_index():
 def test_no_implied_algebra():
     env = {}
     run_source("a = ⟨1, 2⟩", env)
-    for src in ["a + a", "a + 1", "1 - a", "2a", "a * a", "a / 2", "a ^ 2", "-a", "a · a"]:
+    for src in ["a + a", "a + 1", "1 - a", "2a", "a * a", "a / 2", "a ^ 2", "-a", "a @ a"]:
         fails(src, "arrays do not support arithmetic", env)
     fails("a < a", "arrays do not support arithmetic", env)
     fails("[1, ⟨2⟩]", "arrays do not support arithmetic")

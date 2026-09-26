@@ -1,7 +1,7 @@
 import pytest
 
 from adhoc.driver import run_source
-from adhoc.lexer import SetOp, Underscore, tokenize
+from adhoc.lexer import Placeholder, SetOp, tokenize
 from adhoc.parser import ParseError, parse_program
 from adhoc.runtime import EvalError
 from adhoc.span import Span
@@ -87,8 +87,9 @@ def test_circ_is_reserved_like_other_infix_names():
 # --- partial application ---
 
 
-def test_underscore_lexes():
-    assert isinstance(tokenize("_")[0], Underscore)
+def test_placeholder_lexes():
+    for ch in "_·⋅":
+        assert isinstance(tokenize(ch)[0], Placeholder)
 
 
 def test_hole_parses_as_call_argument():
@@ -98,6 +99,8 @@ def test_hole_parses_as_call_argument():
 
 def test_partial_fixes_first_or_second_argument():
     assert ev(DEFS + "f(10, _)(3)") == "= 7"
+    assert ev(DEFS + "f(10, ·)(3)") == "= 7"
+    assert ev(DEFS + "f(10, ⋅)(3)") == "= 7"
     assert ev(DEFS + "f(_, 3)(10)") == "= 7"
 
 
@@ -108,7 +111,7 @@ def test_partial_with_several_holes_fills_in_order():
 def test_partial_is_a_value_and_displays():
     env = {}
     run_source(DEFS + "g = f(10, _)", env)
-    assert ev("g", env) == "= <fn f(10, _)>"
+    assert ev("g", env) == "= <fn f(10, ·)>"
     assert ev("g(4)", env) == "= 6"
     assert ev(r"\map(g, [1, 2])", env) == "= [9, 8]"
 
@@ -126,11 +129,12 @@ def test_partial_errors():
     fails(DEFS + "f(_)", "f takes 2 arguments, got 1")
     fails(DEFS + "f(1, _)(1, 2)", "takes 1 arguments, got 2")
     fails("x = 3\nx(_)", "3 is not a function")
-    parse_fails("f(_ + 1)", "whole call argument")
+    parse_fails("f(· + 1)", "`·` is a placeholder for a whole call argument")
+    parse_fails("f(_ + 1)", "`_` is a placeholder for a whole call argument")
     parse_fails("f(x=_)", "unexpected token")
     parse_fails("_", "unexpected token")
-    parse_fails(r"\py(_)", "cannot take a `_` placeholder")
-    parse_fails(r"\arr(_)", "cannot take a `_` placeholder")
+    parse_fails(r"\py(_)", "cannot take a `·` placeholder")
+    parse_fails(r"\arr(_)", "cannot take a `·` placeholder")
 
 
 def test_hole_after_comma_is_not_a_stepped_range():
@@ -169,7 +173,7 @@ def test_fold_binder_inside_a_list_keeps_its_stepped_range():
 def test_quote_round_trips_compose_and_hole():
     env = {}
     assert ev(r"q = \expr(f ∘ g)", env) == r"q = \expr((f ∘ g))"
-    assert ev(r"r = \expr(f(1, _))", env) == r"r = \expr(f(1, _))"
+    assert ev(r"r = \expr(f(1, ·))", env) == r"r = \expr(f(1, ·))"
 
 
 # --- \map ---

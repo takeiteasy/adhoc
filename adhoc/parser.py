@@ -10,7 +10,7 @@ precedence table in docs/grammar.md:
     juxtaposed  ::= unary unary* ;          -- implicit multiplication
     unary       ::= "-" unary | power ;
     radical     ::= "√" unary ;   -- prefix spelling of \\sqrt(...): `√2^2` is √(2²),
-                                  -- `2^√2` works, `√2 3` is `(√2)·3`
+                                  -- `2^√2` works, `√2 3` is `(√2)*3`
     power       ::= postfix ("^" unary)? ;  -- right-associative
     postfix     ::= atom ("(" args ")")* ;  -- trailers attach only to name-ish heads
     args        ::= (expr | string | kwarg) ("," ...)* ;   kwarg ::= name "=" value ;
@@ -22,9 +22,9 @@ precedence table in docs/grammar.md:
 (unary minus binds inside the exponent) and `2^3^2` right-associate. The base of `^` is a
 postfix node, so `-2^2` is `-(2^2)` and `f(x)^2` squares the result. The radical `√` is
 the one prefix operator: it sits at the unary level and rewrites to a `\\sqrt(...)`
-application node, so evaluation is identical to the ASCII call form — `√2 3` is `(√2)·3`,
+application node, so evaluation is identical to the ASCII call form — `√2 3` is `(√2)*3`,
 `√2^2` reads √(2²) like the overbar visually extends, and `√2√3` juxtaposes into
-`√2·√3`.
+`√2*√3`.
 
 Postfix application is *syntactically* name-headed: a `(…)` trailer attaches only when the
 head so far is a name-ish node (`Var`, `BackslashRef`, or another `Call`). Number-headed
@@ -70,6 +70,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 
 from .lexer import (
+    At,
     Backtick,
     Backslash,
     Colon,
@@ -85,10 +86,10 @@ from .lexer import (
     LParen,
     Less,
     LessEq,
-    Middot,
     Minus,
     Newline,
     Number,
+    Placeholder,
     Plus,
     Prime,
     Question,
@@ -103,7 +104,6 @@ from .lexer import (
     Star,
     Str,
     Token,
-    Underscore,
     Greater,
     GreaterEq,
     HashBracket,
@@ -178,7 +178,7 @@ _CLOSERS = (RBracket, RBrace, RAngle)
 # argument like `\\fold(+, xs)`); infix-only spellings go through `_infix_name`.
 _SYMBOL_OPERATORS = {Plus: "add", Minus: "sub", Star: "mul", Slash: "div", Caret: "pow",
                      Less: "lt", LessEq: "le", Greater: "gt", GreaterEq: "ge"}
-_INFIX_OPERATORS = {"cdot": "dot", "cup": "union", "cap": "intersect",
+_INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
                     "subseteq": "subseteq"}
 
@@ -189,7 +189,7 @@ _MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose"})
 _COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq"})
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
-_MULTIPLICATIVE_INFIX = {"cdot": BinOperator.DOT, "cap": BinOperator.INTERSECT,
+_MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE}
 _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ}
 _INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_COMPARE_INFIX)
@@ -749,8 +749,8 @@ class _Parser:
         tok = self.peek()
         if isinstance(tok, SetOp):
             return tok.name
-        if isinstance(tok, Middot):
-            return "cdot"
+        if isinstance(tok, At):
+            return "contract"
         if isinstance(tok, Backslash) and tok.name in _INFIX_NAMES:
             return tok.name
         return None
@@ -763,7 +763,7 @@ class _Parser:
             return BackslashRef(name="sqrt", span=tok.span, spelling="√")
         key = _SYMBOL_OPERATORS.get(type(tok))
         if key is None:
-            name = (tok.name if isinstance(tok, SetOp) else "cdot" if isinstance(tok, Middot)
+            name = (tok.name if isinstance(tok, SetOp) else "contract" if isinstance(tok, At)
                     else tok.name if isinstance(tok, Backslash) else None)
             key = _INFIX_OPERATORS.get(name)
         return None if key is None else OpRef(name=key, span=tok.span)
@@ -850,7 +850,7 @@ class _Parser:
             lhs = BinOp(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
         return lhs
 
-    # multiplicative ::= juxtaposed (("*" | "/" | "·" | "∩") juxtaposed)* ;
+    # multiplicative ::= juxtaposed (("*" | "/" | "@" | "∩") juxtaposed)* ;
     def multiplicative(self) -> Node:
         lhs = self.juxtaposed()
         while True:
@@ -985,7 +985,7 @@ class _Parser:
             if (isinstance(node.head, BackslashRef) and node.head.name in _NO_HOLE_FORMS
                     and any(isinstance(a, Hole) for a in node.args)):
                 raise ParseError(
-                    f"`{self._form_label(node.head)}` cannot take a `_` placeholder", node.span)
+                    f"`{self._form_label(node.head)}` cannot take a `·` placeholder", node.span)
             if isinstance(node.head, BackslashRef) and node.head.name == "eval":
                 if len(node.args) != 1:
                     raise ParseError("`\\eval` takes one expression value followed by bindings",
@@ -1224,9 +1224,10 @@ class _Parser:
     # (`\dpi=300`).
     def call_arg(self) -> Node:
         tok = self.peek()
-        if isinstance(tok, Underscore):
+        if isinstance(tok, Placeholder):
             if not isinstance(self.look(1), (Comma, RParen)):
-                raise ParseError("`_` is a placeholder for a whole call argument", tok.span)
+                raise ParseError(f"`{tok.ch}` is a placeholder for a whole call argument",
+                                 tok.span)
             self.advance()
             return Hole(span=tok.span)
         if isinstance(tok, (Ident, Backslash)) and isinstance(self.look(1), Eq):
@@ -1291,8 +1292,8 @@ class _Parser:
                 return self._quote(tok)
             case Radical():
                 # `√` is the prefix spelling of `\sqrt(...)`: the operand parses at
-                # the unary level (so `√2^2` reads √(2²), `2^√2` works, `√2·3` is
-                # `(√2)·3`) and the node rewrites to the ordinary application —
+                # the unary level (so `√2^2` reads √(2²), `2^√2` works, `√2*3` is
+                # `(√2)*3`) and the node rewrites to the ordinary application —
                 # evaluation is identical to the ASCII call form. A dangling `√`
                 # at EOF is IncompleteInput via the operand's atom parse, exactly
                 # like an unclosed parenthesis.

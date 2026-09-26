@@ -221,7 +221,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"let", "expr", "eval", "cdot", "arr", "cup", "cap", "setminus",
+RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "arr", "cup", "cap", "setminus",
                            "in", "subseteq", "circ"})
 
 
@@ -792,7 +792,7 @@ def nneg(a: AdValue) -> AdValue:
 
 
 def ndot(a: AdValue, b: AdValue) -> AdValue:
-    """`a · b`: contract the last axis of `a` with the first of `b`; a scalar operand scales."""
+    """`a @ b`: contract the last axis of `a` with the first of `b`; a scalar operand scales."""
     if isinstance(a, TensorValue) and isinstance(b, TensorValue):
         try:
             return tn.contract(nmul, nadd, a, b)
@@ -1559,7 +1559,7 @@ def _callable_label(fn: Any) -> str:
 
 def _partial_text(p: Partial) -> str:
     holes = set(p.holes)
-    parts = ["_" if i in holes else nshow(v) for i, v in enumerate(p.slots)]
+    parts = ["·" if i in holes else nshow(v) for i, v in enumerate(p.slots)]
     parts += [f"{k}={nshow(v)}" for k, v in p.kwargs.items()]
     return f"{_callable_label(p.fn)}({', '.join(parts)})"
 

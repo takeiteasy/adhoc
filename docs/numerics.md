@@ -7,7 +7,7 @@ operators directly on a value derived from user input — it only calls through 
 
 Tensors (`adhoc/tensor.py`) sit beside the tiers rather than in them: a tensor holds
 scalars of any tier, and every `nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg` call with a tensor
-operand applies the scalar operation elementwise, broadcasting a scalar operand. `·`
+operand applies the scalar operation elementwise, broadcasting a scalar operand. `@`
 contracts through `nmul` and `nadd`, so entries keep their exact tiers.
 
 ## Why a seam

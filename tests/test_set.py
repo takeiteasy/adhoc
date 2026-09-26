@@ -92,7 +92,7 @@ def test_operator_type_errors():
 def test_no_arithmetic_indexing_or_ordering():
     env = {}
     run_source("s = {1, 2}", env)
-    for src in ["s + s", "s + 1", "2s", "-s", "s * s", "s ^ 2", "s · s"]:
+    for src in ["s + s", "s + 1", "2s", "-s", "s * s", "s ^ 2", "s @ s"]:
         fails(src, "sets do not support arithmetic", env)
     fails("s < s", "sets do not support arithmetic", env)
     fails("s[1]", "sets are unordered and cannot be indexed", env)

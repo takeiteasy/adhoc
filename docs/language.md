@@ -155,7 +155,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 
 - Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors rank 1, matrices rank 2,
   higher ranks nest). Indexing is 1-based (`m[2, 1]`), `'` transposes, `+ - * / ^` are
-  elementwise with scalar broadcast, and `·` / `\cdot` contracts (dot and matrix
+  elementwise with scalar broadcast, and `@` / `\contract` contracts (dot and matrix
   products). Folds bind over a tensor's outer slices; `\len`, `\shape`, and
   `\transpose` are prelude functions (docs/grammar.md, `## Tensors`).
 
@@ -168,7 +168,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   give booleans. Folds iterate the elements (docs/grammar.md, `## Sets`).
 
 - Composition and partial application: `(s ∘ t)(2)` composes functions and
-  `f(10, _)` fixes arguments (`_` is the placeholder), and `(+ 1)` / `(2 ^)` fix one operand of
+  `f(10, ·)` fixes arguments (`·` is the placeholder; `⋅` and `_` also work), and `(+ 1)` / `(2 ^)` fix one operand of
   an operator. `\map`, `\filter`, `\fold`, and `\scan`
   apply functions over ranges and collections, keeping the collection's kind
   (docs/grammar.md, `## Composition and partial application`).

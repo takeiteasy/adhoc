@@ -1,7 +1,7 @@
 import pytest
 
 from adhoc.lexer import (
-    Underscore,
+    Placeholder,
     Backslash,
     Caret,
     Colon,
@@ -13,7 +13,7 @@ from adhoc.lexer import (
     LexError,
     LBracket,
     LParen,
-    Middot,
+    At,
     Minus,
     Newline,
     Number,
@@ -94,8 +94,12 @@ def test_underscores_continue_backslash_names():
     assert toks[0].span == Span(0, 8)
 
 
-def test_bare_underscore_is_the_placeholder_token():
-    assert isinstance(tokenize("_")[0], Underscore)
+def test_placeholder_spellings():
+    for ch in "_·⋅":
+        tok = tokenize(ch)[0]
+        assert isinstance(tok, Placeholder) and tok.ch == ch
+    assert tokenize("·")[0].span == Span(0, 2)
+    assert tokenize("⋅")[0].span == Span(0, 3)
 
 
 def test_bare_backslash_errors():
@@ -289,6 +293,6 @@ def test_radical_token():
     assert kinds("√") == [Radical, Eof]
 
 
-def test_bracket_prime_and_middot_tokens():
-    kinds = [type(t) for t in tokenize("[1]'·")]
-    assert kinds == [LBracket, Number, RBracket, Prime, Middot, Eof]
+def test_bracket_prime_and_at_tokens():
+    kinds = [type(t) for t in tokenize("[1]'@")]
+    assert kinds == [LBracket, Number, RBracket, Prime, At, Eof]

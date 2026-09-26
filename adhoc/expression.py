@@ -33,7 +33,7 @@ def _shape(value):
 
 _BIN = {
     BinOperator.ADD: "+", BinOperator.SUB: "-", BinOperator.MUL: "*",
-    BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "·",
+    BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "@",
     BinOperator.UNION: "∪", BinOperator.INTERSECT: "∩", BinOperator.SETMINUS: "∖",
     BinOperator.COMPOSE: "∘",
 }
@@ -72,7 +72,7 @@ def show(node: Node) -> str:
         case NumLit(text=text):
             return text
         case Hole():
-            return "_"
+            return "·"
         case OpRef(name=name):
             return f"({OP_SYMBOLS[name]})"
         case StrLit(text=text):

@@ -126,7 +126,7 @@ parseable names. It preserves free names and original byte spans in the returned
   relative to the importing file. Internal prelude and user-function results preserve
   boolean values; Python `\py` results still use the external conversion matrix.
 - Tensor literals, indexing, and transpose lower to `_e.tensor(items, row_length, sid)`,
-  `_e.index(head, items, sid, spelling)`, and `_e.transpose(value, sid)`; `·` lowers to
+  `_e.index(head, items, sid, spelling)`, and `_e.transpose(value, sid)`; `@` lowers to
   `_e.dot`; array literals lower to `_e.array(items, sid)` (`\arr(...)` rewrites to the same
   node at parse time); set literals and operators lower to `_e.set_`, `_e.union`,
   `_e.intersect`, `_e.setminus`, `_e.member`, and `_e.subseteq`. Set construction

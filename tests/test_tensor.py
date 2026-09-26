@@ -81,20 +81,20 @@ def test_tensors_reject_non_numeric_operands_and_ordering():
 
 
 def test_contraction():
-    assert ev("[1, 2] · [3, 4]") == "= 11"
-    assert ev(r"[1, 2] \cdot [3, 4]") == "= 11"
-    assert ev("[1, 2; 3, 4] · [5, 6; 7, 8]") == "= [19, 22; 43, 50]"
-    assert ev("[1, 2; 3, 4] · [1, 1]") == "= [3, 7]"
-    assert ev("[1, 1] · [1, 2; 3, 4]") == "= [4, 6]"
-    assert ev("[1; 2] · [3, 4;]") == "= [3, 4; 6, 8]"
-    assert ev("2 · [1, 2]") == "= [2, 4]"
-    assert ev("2 · 3") == "= 6"
-    fails("[1, 2, 3] · [1, 2]", "cannot contract shape 3 with 2")
-    fails("[1; 2] · [3, 4]", "cannot contract shape 2x1 with 2")
+    assert ev("[1, 2] @ [3, 4]") == "= 11"
+    assert ev(r"[1, 2] \contract [3, 4]") == "= 11"
+    assert ev("[1, 2; 3, 4] @ [5, 6; 7, 8]") == "= [19, 22; 43, 50]"
+    assert ev("[1, 2; 3, 4] @ [1, 1]") == "= [3, 7]"
+    assert ev("[1, 1] @ [1, 2; 3, 4]") == "= [4, 6]"
+    assert ev("[1; 2] @ [3, 4;]") == "= [3, 4; 6, 8]"
+    assert ev("2 @ [1, 2]") == "= [2, 4]"
+    assert ev("2 @ 3") == "= 6"
+    fails("[1, 2, 3] @ [1, 2]", "cannot contract shape 3 with 2")
+    fails("[1; 2] @ [3, 4]", "cannot contract shape 2x1 with 2")
 
 
 def test_contraction_keeps_exactness():
-    assert ev("[√2, 1] · [√2, 1]") == "= 3"
+    assert ev("[√2, 1] @ [√2, 1]") == "= 3"
 
 
 def test_transpose():
@@ -189,7 +189,7 @@ def test_infinite_fold_rejects_tensor_terms():
 
 def test_functions_and_lambdas_carry_tensors():
     env = {}
-    run_source("f(v) = v · v", env)
+    run_source("f(v) = v @ v", env)
     assert ev("f([3, 4])", env) == "= 25"
     assert ev(r"(\fn(m) m')([1; 2])") == "= [1, 2;]"
 
@@ -211,7 +211,7 @@ def test_parse_shapes():
             pass
         case other:
             raise AssertionError(other)
-    match parse_program("a · b * c"):
+    match parse_program("a @ b * c"):
         case BinOp(op=BinOperator.MUL, lhs=BinOp(op=BinOperator.DOT)):
             pass
         case other:
@@ -238,19 +238,19 @@ def test_incomplete_brackets_offer_continuation():
         parse_program("v[1")
 
 
-def test_cdot_is_infix_only():
+def test_contract_is_infix_only():
     with pytest.raises(ParseError, match="infix operator"):
-        parse_program(r"\cdot")
+        parse_program(r"\contract")
     with pytest.raises(IncompleteInput):
-        parse_program(r"2 \cdot")
-    fails(r"\cdot = 3", "protected")
+        parse_program(r"2 \contract")
+    fails(r"\contract = 3", "protected")
 
 
 def test_quotes_holding_tensors_round_trip():
     env = {}
-    run_source(r"q = \expr([1, 2; 3, 4] · [x; 1])", env)
+    run_source(r"q = \expr([1, 2; 3, 4] @ [x; 1])", env)
     shown = ev("q", env)[2:]
-    assert shown == r"\expr(([1, 2; 3, 4] · [x; 1]))"
+    assert shown == r"\expr(([1, 2; 3, 4] @ [x; 1]))"
     run_source(f"r = {shown}", env)
     assert ev("q = r", env) == "true"
     assert ev(r"\eval(q, x=5)", env) == "= [7; 19]"
@@ -268,3 +268,21 @@ def test_rows_inside_bodies_lambdas_and_branches():
     assert ev(r"(\fn(x) [x; 1])(2)") == "= [2; 1]"
     assert ev(r"\true ? [1; 2] : [3; 4]") == "= [1; 2]"
     assert ev(r"\eval(\expr((a = [1; 2]; a[2])))") == "= [2]"
+
+
+def test_cdot_is_an_ordinary_name():
+    assert ev(r"\cdot = 3") == r"\cdot = 3"
+
+
+def test_middot_is_not_an_operator():
+    for src in ["2 · 3", "(·)", "[1, 2] ⋅ [3, 4]"]:
+        with pytest.raises(ParseError):
+            parse_program(src)
+
+
+def test_contraction_is_an_operator_value_and_section():
+    assert ev(r"\fold((@), ⟨[1, 2], [3, 4]⟩)") == "= 11"
+    assert ev(r"(\contract)([1, 2], [3, 4])") == "= 11"
+    assert ev("(@ [1, 1])([1, 2; 3, 4])") == "= [3, 7]"
+    assert ev("([1, 2] @)([3, 4])") == "= 11"
+    assert ev(r"\expr((@)(·, [1, 2]))") == r"= \expr((@)(·, [1, 2]))"

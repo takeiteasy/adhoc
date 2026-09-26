@@ -14,10 +14,10 @@ m + 1
 m * m
 m ^ 2
 
--- · (or \cdot) contracts: dot product, matrix product, matrix-vector
-[1, 2] · [3, 4]
-m · m
-m \cdot [1, 1]
+-- @ (or \contract) contracts: dot product, matrix product, matrix-vector
+[1, 2] @ [3, 4]
+m @ m
+m \contract [1, 1]
 
 -- ' transposes; a trailing `;` makes a one-row matrix
 m'

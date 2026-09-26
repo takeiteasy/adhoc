@@ -37,8 +37,8 @@ def parse_fails(src, message):
     (r"\fold(\cup, ⟨{1}, {2}⟩)", "= {1, 2}"),
     (r"\fold(∩, ⟨{1, 2}, {2, 3}⟩)", "= {2}"),
     (r"\fold(∖, ⟨{1, 2, 3}, {2}⟩)", "= {1, 3}"),
-    (r"\fold(·, ⟨[1, 2], [3, 4]⟩)", "= 11"),
-    (r"\fold(\cdot, ⟨[1, 2], [3, 4]⟩)", "= 11"),
+    (r"\fold(@, ⟨[1, 2], [3, 4]⟩)", "= 11"),
+    (r"\fold(\contract, ⟨[1, 2], [3, 4]⟩)", "= 11"),
     (r"\filter((<)(_, 3), ⟨1, 2, 3, 4⟩)", "= ⟨1, 2⟩"),
     (r"\filter((>=)(_, 3), ⟨1, 2, 3, 4⟩)", "= ⟨3, 4⟩"),
     (r"\map((∈)(_, {1, 2}), ⟨1, 3⟩)", "= ⟨true, false⟩"),
@@ -76,12 +76,14 @@ def test_operators_compose():
 def test_display():
     assert ev("(+)") == "= <fn +>"
     assert ev(DEFS + "(-) ∘ s") == "= <fn - ∘ s>"
-    assert ev("(+)(_, 1)") == "= <fn +(_, 1)>"
+    assert ev("(+)(_, 1)") == "= <fn +(·, 1)>"
+    assert ev("(+)(·, 1)") == "= <fn +(·, 1)>"
+    assert ev("(+)(⋅, 1)(4)") == "= 5"
 
 
 def test_partial_of_an_operator():
     assert ev("(+)(_, 1)(4)") == "= 5"
-    assert ev(r"\map((*)(2, _), [1, 2, 3])") == "= [2, 4, 6]"
+    assert ev(r"\map((*)(2, ·), [1, 2, 3])") == "= [2, 4, 6]"
 
 
 def test_operator_value_errors():
@@ -193,5 +195,5 @@ def test_section_parses_to_the_hole_form():
 
 
 def test_quote_prints_a_section_as_the_hole_form():
-    assert ev(r"\expr((+ 1))") == r"= \expr((+)(_, 1))"
-    assert ev(r"\expr((2 ^))") == r"= \expr((^)(2, _))"
+    assert ev(r"\expr((+ 1))") == r"= \expr((+)(·, 1))"
+    assert ev(r"\expr((2 ^))") == r"= \expr((^)(2, ·))"

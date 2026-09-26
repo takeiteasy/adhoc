@@ -37,10 +37,11 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / · ∘ ∪ ∩ ∖ ∈ ⊆ ^ < > <= >= = .. ( ) [ ] { } ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
+- Operators: `+ - * / @ ∘ ∪ ∩ ∖ ∈ ⊆ ^ < > <= >= = .. ( ) [ ] { } ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
-  A lone `_` is the partial-application placeholder (`## Composition and partial
-  application`); inside a `\`-name it is an ordinary name character.
+  A lone `·` (U+00B7), `⋅` (U+22C5) or `_` is the partial-application placeholder
+  (`## Composition and partial application`); inside a `\`-name `_` is an ordinary name
+  character.
   A backtick starts a quote: `` `(expression) `` or a statement-sequence quote.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
@@ -81,7 +82,7 @@ range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? 
 comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "\\in" | "⊆" | "\\subseteq") additive)? ;
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
-           ::= juxtaposed (("*" | "/" | "·" | "\\cdot" | "∩" | "\\cap" | "∘" | "\\circ") juxtaposed)* ;
+           ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "∩" | "\\cap" | "∘" | "\\circ") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
@@ -89,9 +90,10 @@ power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
 trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" ;
 args       ::= arg ("," arg)* ;
-arg        ::= expr | string | kwarg | "_" | operator ;   (* "_" and operators only as a whole argument *)
-operator   ::= "+" | "-" | "*" | "/" | "^" | "·" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
-             | ">=" | "∈" | "⊆" | "√" | "\\cdot" | "\\circ" | "\\cup" | "\\cap" | "\\setminus"
+arg        ::= expr | string | kwarg | hole | operator ;   (* holes and operators only as a whole argument *)
+hole       ::= "·" | "⋅" | "_" ;
+operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
+             | ">=" | "∈" | "⊆" | "√" | "\\contract" | "\\circ" | "\\cup" | "\\cap" | "\\setminus"
              | "\\in" | "\\subseteq" ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
@@ -154,7 +156,7 @@ Loosest to tightest:
 | 3 | `..` (range) | non-associative |
 | 4 | `<` `>` `<=` `>=` `∈` `⊆` | non-associative |
 | 5 | `+` `-` (binary), `∪` `∖` | left |
-| 6 | `*` `/` `·`, `∩`, `∘` | left |
+| 6 | `*` `/` `@`, `∩`, `∘` | left |
 | 7 | juxtaposition (implicit `*`) | left |
 | 8 | unary `-`, `√` | prefix |
 | 9 | `^` | right |
@@ -175,7 +177,7 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 -f(x)    ->  -(f(x))
 √2^2     ->  √(2²) = 2      -- the radical's operand parses at the unary level
 2^√2     ->  2^(√2)         -- a radical can sit inside the exponent
-2√3      ->  2·√3           -- the radical is an atom starter: it juxtaposes
+2√3      ->  2*√3           -- the radical is an atom starter: it juxtaposes
 ```
 
 A parenthesized composition is a call head: `(f ∘ g)(x)` applies. Unparenthesized,
@@ -204,7 +206,7 @@ x(2, 3), x()          ->  ERROR  -- non-callable with ≠1 arguments can't be a 
 
 The fallback rule: **callable → apply; non-callable with exactly one argument → multiply;
 anything else → `` `…` is not a function `` at the call's span.** This keeps the paper
-reading `x(y+1) = x·(y+1)` alive while letting bound functions apply — at the price that
+reading `x(y+1) = x*(y+1)` alive while letting bound functions apply — at the price that
 identical source text reads differently depending on what its head is bound to. Accepted
 deliberately: the alternative (static application) made every arithmetic `x(...)` an error,
 and multiplication-by-juxtaposition is the reading a calculator's users expect first.
@@ -343,13 +345,13 @@ m[2, 1]  ->  = 3                m[1]  ->  = [1, 2]
 | `[a, b;]` / `[a; b]` | one-row / one-column matrix — a trailing `;` keeps a single row a matrix |
 | `x[i, j]` | 1-based index; fewer indices than axes gives the sub-tensor |
 | `x'` | transpose: reverses the axes; a vector is unchanged |
-| `a · b`, `a \cdot b` | contraction of `a`'s last axis with `b`'s first: dot product, matrix product |
+| `a @ b`, `a \contract b` | contraction of `a`'s last axis with `b`'s first: dot product, matrix product |
 | `+ - * / ^` | elementwise; a scalar broadcasts, two tensors need one shape |
 
 ```
-m * m        ->  = [1, 4; 9, 16]        m · m   ->  = [7, 10; 15, 22]
+m * m        ->  = [1, 4; 9, 16]        m @ m   ->  = [7, 10; 15, 22]
 m + 1        ->  = [2, 3; 4, 5]         m'      ->  = [1, 3; 2, 4]
-[1, 2] · [3, 4]  ->  = 11
+[1, 2] @ [3, 4]  ->  = 11
 ```
 
 Entries stay on their exact tiers (`[√2, 1/3] * 3`). Booleans, strings, and other
@@ -361,8 +363,8 @@ binding rule's check: same shape and equal entries. `\len(t)` is the outer lengt
 Folds bind over a tensor's outer slices: `\sum(x=[1, 2, 3]) x^2` is `14`, and
 `\sum(r=m) r` adds the rows.
 
-`\cdot` is an infix operator, never a name: it cannot bind or be aliased, and stands as a
-value only as `(\cdot)` or a whole call argument (`## Operator values`).
+`\contract` is an infix operator, never a name: it cannot bind or be aliased, and stands as
+a value only as `(\contract)`, `(@)` or a whole call argument (`## Operator values`).
 
 [^tensor-index]: A `[` trailer attaches only to name-ish heads (a name, a call, another
     index, a transpose), so `[1, 2][1]` is not an index: it juxtaposes two tensors and fails
@@ -430,17 +432,17 @@ elements pairwise.[^set-cost]
 
 `f ∘ g` (ASCII `f \circ g`) is the function that applies `g`, then `f` to the result. It is
 an infix operator at the `*` level, so `\circ` cannot bind or be aliased.
-A `_` as a whole call argument leaves a hole: the call becomes a function of its holes,
+A `·` (or `⋅`, `_`) as a whole call argument leaves a hole: the call becomes a function of its holes,
 filled left to right.
 
 ```
 s(x) = x^2;  t(x) = x + 1;  f(a, b) = a - b
 (s ∘ t)(2)              ->  = 9              -- s(t(2))
-g = f(10, _)            ->  g = <fn f(10, _)>
+g = f(10, ·)            ->  g = <fn f(10, ·)>
 g(3)                    ->  = 7
-f(_, _)(10, 3)          ->  = 7
-\py("pow")(_, 2)(5)     ->  = 25
-(f(_, 1) ∘ f(_, 1))(5)  ->  = 3
+f(·, ·)(10, 3)          ->  = 7
+\py("pow")(·, 2)(5)     ->  = 25
+(f(·, 1) ∘ f(·, 1))(5)  ->  = 3
 ```
 
 | Rule | Detail |
@@ -448,10 +450,10 @@ f(_, _)(10, 3)          ->  = 7
 | Composition operands | Both sides are callable (user, lambda, prelude, Python, composed, partial); otherwise a typed error |
 | Composition arity | `g` takes the arguments; `f` receives its single result |
 | Partial head | Must be callable — no product fallback; a user function's arity is checked when the partial is built |
-| Holes | Only as a whole positional argument; `f(_ + 1)` and `f(x=_)` are parse errors, as is `_` in `\py`, `\arr`, `\eval` |
+| Holes | Only as a whole positional argument; `f(· + 1)` and `f(x=·)` are parse errors, as is `·` in `\py`, `\arr`, `\eval` |
 | Keyword arguments | Fixed at partial time for Python callables; user functions take none |
 
-Both forms are values: they bind, pass, display (`<fn s ∘ t>`, `<fn f(10, _)>`), and
+Both forms are values: they bind, pass, display (`<fn s ∘ t>`, `<fn f(10, ·)>`), and
 compare by identity. A range is an ordinary argument: `\map(f, 1..3)`.
 
 ## Higher-order functions
@@ -506,14 +508,14 @@ q = \map(s, 1..)                                 ->  q = <seq \map(s, 1..)>
 ## Operator values
 
 An operator is a function value in two positions: as a **whole call argument**
-(`\fold(+, xs)`, like `_`) and **parenthesized** anywhere (`(+)`).
+(`\fold(+, xs)`, like `·`) and **parenthesized** anywhere (`(+)`).
 
 ```
 \fold(+, 1..10)                ->  = 55
 \map(√, [4, 9])                ->  = [2, 3]
 g = (+)                        ->  g = <fn +>
 g(1, 2)                        ->  = 3
-\filter((<)(_, 3), ⟨1, 5, 2⟩)  ->  = ⟨1, 2⟩
+\filter((<)(·, 3), ⟨1, 5, 2⟩)  ->  = ⟨1, 2⟩
 ((-) ∘ s)(2)                   ->  = -4          -- with s(x) = x^2
 ```
 
@@ -521,7 +523,7 @@ g(1, 2)                        ->  = 3
 |---|---|---|
 | `+ * / ^` | 2 | arithmetic |
 | `-` | 1 or 2 | negate, or subtract |
-| `·` `\cdot` | 2 | contraction — the same as infix `·` |
+| `@` `\contract` | 2 | contraction — the same as infix `@` |
 | `∘` `\circ` | 2 | composition |
 | `∪ ∩ ∖` `\cup \cap \setminus` | 2 | set operations |
 | `< > <= >=` | 2 | ordering, returns a boolean |
@@ -531,7 +533,7 @@ g(1, 2)                        ->  = 3
 
 | Rule | Detail |
 |---|---|
-| Values | Callable like any function: they bind, pass, compose, and take holes (`(+)(_, 1)`) |
+| Values | Callable like any function: they bind, pass, compose, and take holes (`(+)(·, 1)`) |
 | Identity | Each operator is one value, so `(∪) = (\cup)` after `g = (∪)` checks `true` |
 | Arguments | Positional only; the wrong count is a typed error at the call |
 | Display | `<fn +>`; quotes print `(+)` |
@@ -540,7 +542,7 @@ g(1, 2)                        ->  = 3
 ### Sections
 
 `(+ 1)` and `(2 ^)` fix one operand of a parenthesized operator: shorthand for the hole
-forms `(+)(_, 1)` and `(^)(2, _)`.
+forms `(+)(·, 1)` and `(^)(2, ·)`.
 
 ```
 (+ 1)(2)                 ->  = 3
@@ -554,9 +556,9 @@ forms `(+)(_, 1)` and `(^)(2, _)`.
 | Rule | Detail |
 |---|---|
 | Operand | Reads as the operator's own right-hand side would, so `(+ 1*2)` fixes `1*2` and `(1 * 2 +)` fixes `1*2`; a looser operand is a parse error asking for parentheses: `(* 1 + 2)`, `(1 + 2 *)`, `(-2 ^)` |
-| Minus | `(- 1)` is negation, so a right section for `-` is `(+ -1)` or `(-)(_, 1)`; `(1 -)` is a section |
+| Minus | `(- 1)` is negation, so a right section for `-` is `(+ -1)` or `(-)(·, 1)`; `(1 -)` is a section |
 | Radical | `(√ x)` is a call, not a section |
-| Quotes | A section is the hole form: `\expr((+ 1))` prints `\expr((+)(_, 1))` |
+| Quotes | A section is the hole form: `\expr((+ 1))` prints `\expr((+)(·, 1))` |
 
 
 ## Conditionals: the ternary

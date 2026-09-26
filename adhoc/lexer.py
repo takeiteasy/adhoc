@@ -270,21 +270,24 @@ class Prime(Token):
 
 
 @dataclass(frozen=True)
-class Middot(Token):
-    """The contraction operator `·` (ASCII spelling `\\cdot`)."""
+class At(Token):
+    """The contraction operator `@` (`\\contract` is its `\\`-name)."""
 
     @property
     def describe(self) -> str:
-        return "`·`"
+        return "`@`"
 
 
 @dataclass(frozen=True)
-class Underscore(Token):
-    """The partial-application placeholder `_` (a `_` inside a `\\name` is part of it)."""
+class Placeholder(Token):
+    """The partial-application hole: `·`, `⋅` or `_` (a `_` inside a `\\name` is part of
+    it). `ch` is the spelling used, so diagnostics echo it."""
+
+    ch: str
 
     @property
     def describe(self) -> str:
-        return "`_`"
+        return f"`{self.ch}`"
 
 
 @dataclass(frozen=True)
@@ -356,8 +359,7 @@ _SINGLE_CHAR_TOKENS = {
     "[": LBracket,
     "]": RBracket,
     "'": Prime,
-    "·": Middot,
-    "_": Underscore,
+    "@": At,
     "⟨": LAngle,
     "⟩": RAngle,
     "{": LBrace,
@@ -550,6 +552,11 @@ def tokenize(src: str) -> list[Token]:
                 continue
             cls = Less if c == "<" else Greater
             tokens.append(cls(span=Span(pos, pos + 1)))
+            i += 1
+            continue
+
+        if c in "·⋅_":
+            tokens.append(Placeholder(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
             i += 1
             continue
 
