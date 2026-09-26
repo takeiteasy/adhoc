@@ -47,13 +47,18 @@ Values are Python natives plus four tier types:
   `float` (the fast path); no exact tier ever produces it. gmpy2 types can
   slot behind the same functions later without touching anything above the
   seam.
+- complex float — a Python `complex` from a float meeting a complex value (`2.∠1`,
+  `1. + i`), `\complex(1., 2.)`, or a complex `\py` return. The imaginary part is never
+  zero: a zero part collapses to `float`, so `(1.+i)(1.-i)` is `2.0`. Functions of a
+  real float with a non-real principal value (`\sqrt(-2.)`, `\asin(2.)`) and of a
+  complex float use `cmath` (`\gamma`, `\erf` use `mpmath`). Complex values are not
+  ordered, and infinite `\sum`/`\lim` do not take them.
 
 Arithmetic stays at the lowest tier that remains exact: any `float` operand demotes the
-result to `float` — except a complex one, which is a typed error (there is no
-complex-float tier, so float arithmetic can never silently truncate a complex
-operand); otherwise any `Symbolic`, `Algebraic` or `RRA` operand dispatches into the
+result to `float`, or to a complex float when the other operand is complex
+(`1. + i` is `1.0+1.0i`); otherwise any `Symbolic`, `Algebraic` or `RRA` operand dispatches into the
 exact tiers (symbolic tried first, then algebraic, then RRA; a real value of undecided
-reality demotes to `float` in turn — an undecided complex one is a typed error);
+reality demotes to `float` in turn, an undecided complex one to a complex float);
 otherwise any `Gaussian` operand routes into the exact complex arithmetic
 (`adhoc/gauss.py`); otherwise any `Fraction` promotes both operands to exact rationals;
 otherwise plain integer arithmetic.
@@ -66,8 +71,9 @@ terms with `q` odd is the real branch via sign extraction (`(-8)^(1/3)` is `-2`,
 `(-8)^(2/3)` is `4`), anything else the complex principal (`(-2)^(1/2)` is `√2·i`) —
 and then tries the symbolic tier (`2^(1/2)` is `√2`, `8^(1/3)` collapses to `2`),
 then the algebraic tier (`2^(1/3)` stays `2^(1/3)`, `(√2)^(1/2)` arrives as `2^(1/4)`,
-`(1+i)^(1/2)` is algebraic complex), then the RRA tier (`2^√2` stays exact). The float
-tier keeps its pinned NaN for negative bases with fractional exponents.
+`(1+i)^(1/2)` is algebraic complex), then the RRA tier (`2^√2` stays exact). A float
+base takes the same odd-root split for an exact exponent (`(-8.)^(1/3)` is `-2.0`) and the
+complex principal otherwise (`(-2.)^(1/2)` is `1.4142135623730951i`).
 
 Every failure mode in this module is a typed `NumError`, not a generic exception — that's
 what lets the REPL and script driver catch "arithmetic failed" specifically and attach the
@@ -112,8 +118,8 @@ results are values now, not failures):
 
 | Input | Exact tier | Float tier (unchanged) |
 |---|---|---|
-| `\sqrt(-1)`, `(-2)^(1/2)` | the exact value `i` / `√2·i` | `math.sqrt` ValueError / NaN from `_fpow` |
-| `\ln(-1)` | the exact value `π·i` | ValueError |
+| `\sqrt(-1)`, `(-2)^(1/2)` | the exact value `i` / `√2·i` | the complex float `1.0i` / `1.4142135623730951i` |
+| `\ln(-1)` | the exact value `π·i` | the complex float `3.141592653589793i` |
 | `\ln(0)`, `\tan(π/2)` | typed error — "defined only for positive numbers" / "odd multiples of pi/2" | ValueError / huge finite float |
 | `0^(-1/2)` | typed division-by-zero (same failure as `1/0`) | `Inf` |
 
@@ -276,7 +282,9 @@ than inheriting the Python default:
 |---|---|---|---|
 | `x / ±0.0` | signed infinity (`NaN` only for `0/0`) | raises `ZeroDivisionError` | signed infinity / `NaN` |
 | float power overflow | unbounded exponent range | raises `OverflowError` | saturates to signed infinity |
-| negative base, fractional exponent | `NaN` | returns a `complex` | `NaN` (the exact tiers instead take the odd-root real branch or the complex principal) |
+| negative base, fractional exponent | `NaN` | returns a `complex` | odd-root real branch for an exact odd-denominator exponent, else the complex principal (a complex float) |
+| complex float power overflow | unbounded exponent range | raises `OverflowError` | saturates per component to signed infinity |
+| complex float `÷ 0` | — | raises `ZeroDivisionError` | signed infinity / `NaN` per component |
 | `x % 0.0` | `NaN` | raises `ZeroDivisionError` | `NaN` (exact `x % 0` is a typed `division by zero`) |
 | `\round(x, n)` of a float | decimal rounding of the shortest repr | rounds the binary value (`round(2.675, 2)` is `2.67`) | half away from zero on the shortest repr (`2.68`) |
 
@@ -342,7 +350,8 @@ and the ellipsis says so.
 Floats print via Python's shortest-round-trip `repr` (`"1.0"`, `"1.4142135623730951"`),
 with two adjustments so output matches `f64` `Display`: scientific notation is expanded
 positionally (`10000000000000000.0`, `0.0000001`), and a bare integer-looking value gets a
-trailing `.0`. Non-finite values print `NaN`, `Inf`, `-Inf`.
+trailing `.0`. Non-finite values print `NaN`, `Inf`, `-Inf`. A complex float prints each
+part the same way (`1.0+2.0i`, `2.0i`, `1.0-1.0i`, `1.0+Infi`).
 
 ## The Python boundary: conversion matrix
 
@@ -362,7 +371,7 @@ Values coming *back* go through `_to_ad`:
 | a sympy expression (`\py("sympy.sqrt")(2)`) | recognized closed forms convert through the symbolic tier's gate (`sympy.sqrt(2)` arrives as `√2`), algebraic values through the algebraic tier's (`sympy.cbrt(2)` arrives exact), every other finite number through the RRA tier's (`sympy.pi + 1` arrives exact); sympy rationals convert exactly via the row above; anything else rejected |
 | any other `numbers.Real` (incl. numpy floats) | widened to `float` |
 | `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
-| `complex` | exact `Gaussian` — both components read through their shortest round-trip decimal (`complex(0.5, 0.25)` is `1/2+1/4i`) and collapse through `make` (a vanishing imaginary part returns the real); non-finite components are rejected |
+| `complex` | complex float (`complex(0.5, 0.25)` is `0.5+0.25i`); a zero imaginary part returns the float real; non-finite components are kept |
 | an ad tensor, array, or set (passed through Python) | passes through |
 | `list`, `tuple` | an array; each element converts by this table, recursively |
 | `set`, `frozenset` | a set; each element converts by this table |

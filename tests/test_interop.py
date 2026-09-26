@@ -86,15 +86,13 @@ def test_none_return_rejects():
     assert e.value.msg == "the call returned nothing"
 
 
-def test_complex_return_converts_exactly():
-    # A Python complex crosses the \py boundary exactly: both components read
-    # through their shortest round-trip decimal and collapse (ticket #42).
-    assert last('\\py("complex")(1, 1)') == "= 1+i"
-    assert last('\\py("complex")(0.5, 0.25)') == "= 1/2+1/4i"
-    assert last('\\py("complex")(2, 0)') == "= 2"
-    with pytest.raises(EvalError) as e:
-        last('\\py("complex")(1, \\py("float")("inf"))')
-    assert "non-finite complex" in e.value.msg
+def test_complex_return_is_a_complex_float():
+    # A Python complex crosses the \py boundary as a complex float; a zero
+    # imaginary part collapses to a float.
+    assert last('\\py("complex")(1, 1)') == "= 1.0+1.0i"
+    assert last('\\py("complex")(0.5, 0.25)') == "= 0.5+0.25i"
+    assert last('\\py("complex")(2, 0)') == "= 2.0"
+    assert last('\\py("complex")(1, \\py("float")("inf"))') == "= 1.0+Infi"
 
 
 def test_unsupported_type_return_rejects():

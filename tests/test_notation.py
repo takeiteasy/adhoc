@@ -441,7 +441,7 @@ def test_inverse_trig_functions():
     assert ev("\\atan(1)") == ev("π/4")
     assert ev("\\sin(\\asin(1/3))") == "= 1/3"
     assert ev("\\asin(2)") == ev("\\asin(2)")
-    fails("\\asin(2.)", "math domain error")
+    assert ev("\\asin(2.)").startswith("= 1.5707963267948966+1.31695789692481")
 
 
 def test_function_inverse_notation_maps_prelude_trig():

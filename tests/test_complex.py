@@ -108,8 +108,9 @@ def test_rra_complex_values():
 def test_complex_constructor():
     assert last("\\complex(2, 3)") == "= 2+3i"
     assert last("\\complex(2, 0)") == "= 2"  # vanishing imaginary collapses
-    assert last("\\complex(0.5, 0.25)") == "= 1/2+1/4i"
-    assert last("\\complex(1., 2.)") == "= 1+2i"  # floats read as their decimals
+    assert last("\\complex(0.5, 0.25)") == "= 1/2+1/4i"  # decimal literals are exact
+    assert last("\\complex(1., 2.)") == "= 1.0+2.0i"
+    assert last("\\complex(1., 0)") == "= 1.0"
     with pytest.raises(EvalError, match="two components"):
         last("\\complex(1)")
     with pytest.raises(EvalError, match="real components"):
@@ -135,22 +136,59 @@ def test_odd_root_real_branch():
     assert last("(-8)^(5/3)") == "= -32"
     assert last("(-1/8)^(1/3)") == "= -1/2"
     assert last("(-2)^(1/2)") == "= 1.4142135623731...i"
-    assert last("(-2.)^(1/2)") == "= NaN"  # the float tier keeps its pin
+    assert last("(-2.)^(1/2)") == "= 1.4142135623730951i"
+    assert last("(-8.)^(1/3)") == "= -2.0"  # exact odd-denominator exponent: real root
+    assert last("(-8.)^(1/3.)").startswith("= 1.0000000000000002+1.7320508075688772i")
 
 
-# --- no complex-float tier, no complex ordering ---
+# --- complex-float tier, no complex ordering ---
 
 
-def test_complex_float_mixing_is_typed():
-    with pytest.raises(EvalError, match="do not mix with floats"):
-        last("1. + i")
-    with pytest.raises(EvalError, match="do not mix with floats"):
-        last("i * 2.")
-    with pytest.raises(EvalError, match="do not mix with floats"):
-        last("\\sqrt(-2) + 1.")
+def test_complex_float_arithmetic():
+    assert last("1. + i") == "= 1.0+1.0i"
+    assert last("i * 2.") == "= 2.0i"
+    assert last("(1.+i)*(1.-i)") == "= 2.0"  # zero imaginary part collapses to a float
+    assert last("(1.+i)^2") == "= 2.0i"
+    assert last("(1.+i)^-1") == "= 0.5-0.5i"
+    assert last("-(1.+i)") == "= -1.0-1.0i"
+    assert last("(1.+i)/2") == "= 0.5+0.5i"
+    assert last("(1.+i)/0.") == "= Inf+Infi"
+    assert last("\\sqrt(-2) + 1.") == "= 1.0+1.4142135623730951i"
+
+
+def test_complex_float_equality():
     env: dict = {}
     run_source("w = i", env)
-    assert last("w = 1.", env) == "false"  # equality is defined, and false
+    assert last("w = 1.", env) == "false"
+    run_source("z = 1.+i", env)
+    assert last("z = 1.+i", env) == "true"
+    assert last("z = 1+i", env) == "true"
+    assert last("z = 1.+2.i", env) == "false"
+    assert last("1.+i ≈ 1+i") == "= true"
+
+
+def test_complex_float_projections():
+    assert last("\\re(3.+4.i)") == "= 3.0"
+    assert last("\\im(3.+4.i)") == "= 4.0"
+    assert last("\\abs(3.+4.i)") == "= 5.0"
+    assert last("\\conj(3.+4.i)") == "= 3.0-4.0i"
+    assert last("\\arg(1.+1.i)").startswith("= 0.785398")
+
+
+def test_polar_with_float_inputs():
+    assert last("2.∠1") == "= 1.0806046117362795+1.682941969615793i"
+    assert last("2∠1.") == last("2.∠1")
+    assert last("\\polar(2., \\pi/2)").endswith("+2.0i") or last("\\polar(2., \\pi/2)") == "= 2.0i"
+
+
+def test_float_functions_take_the_complex_principal_value():
+    assert last("\\sqrt(-2.)") == "= 1.4142135623730951i"
+    assert last("\\ln(-1.)") == "= 3.141592653589793i"
+    assert last("\\asin(2.)").startswith("= 1.5707963267948966+1.31695789692481")
+    assert last("\\sin(1.+i)").startswith("= 1.29845758141597")
+    assert last("\\exp(3.i)").startswith("= -0.9899924966004454+0.1411200080598672i")
+    with pytest.raises(EvalError, match="math domain error"):
+        last("\\ln(0.)")
 
 
 def test_complex_ordering_is_typed():
@@ -197,11 +235,11 @@ def test_other_prelude_names_stay_protected():
 # --- the \py boundary ---
 
 
-def test_python_complex_crosses_exactly():
-    assert last('\\py("complex")(0, 1)') == "= i"
-    assert last('\\py("complex")(1.5, -0.25)') == "= 3/2-1/4i"
-    with pytest.raises(EvalError, match="non-finite complex"):
-        last('\\py("complex")(0, \\py("float")("inf"))')
+def test_python_complex_crosses_as_complex_float():
+    assert last('\\py("complex")(0, 1)') == "= 1.0i"
+    assert last('\\py("complex")(1.5, -0.25)') == "= 1.5-0.25i"
+    assert last('\\py("complex")(2, 0)') == "= 2.0"
+    assert last('\\py("complex")(0, \\py("float")("inf"))') == "= Infi"
 
 
 # --- seam-level shape checks ---

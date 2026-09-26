@@ -146,11 +146,11 @@ def test_float_pow_overflow_saturates_to_inf():
     assert nshow(npow(-10.0, 401.0)) == "-Inf"
 
 
-def test_negative_base_fractional_pow_is_nan_not_complex():
+def test_negative_float_base_fractional_pow_is_complex():
     v = npow(-8.0, 0.5)
-    assert isinstance(v, float)
-    assert math.isnan(v)
-    assert nshow(v) == "NaN"
+    assert isinstance(v, complex)
+    assert nshow(v) == "2.8284271247461903i"
+    assert npow(-8.0, Fraction(1, 3)) == -2.0
 
 
 def test_zero_base_negative_float_power_is_inf():
@@ -480,8 +480,9 @@ def test_negative_base_rational_powers():
     # A symbolic negative base takes the same real branch.
     neg_pi_minus = nsub(-4, PI_SYM)
     assert nshow(npow(neg_pi_minus, Fraction(1, 3))).startswith("-1.925")
-    # The float tier keeps its pinned NaN for the same shapes.
-    assert math.isnan(npow(-8.0, 0.5))
+    # A float base takes the same real branch, else the complex principal value.
+    assert npow(-8.0, Fraction(1, 3)) == -2.0
+    assert isinstance(npow(-8.0, 0.5), complex)
 
 
 def test_symbolic_equality_is_exact():
@@ -539,9 +540,10 @@ def test_prelude_builtins_domain_errors():
     with pytest.raises(NumError, match="odd multiples of pi/2"):
         PRELUDE["tan"](ndiv(PI_SYM, 2))
     # The float tier keeps math.*'s own raising behavior (wrapped and spanned
-    # by `app` at the engine layer).
+    # by `app` at the engine layer) where no complex principal value exists.
     with pytest.raises(ValueError, match="math domain error"):
-        PRELUDE["sqrt"](-2.0)
+        PRELUDE["ln"](0.0)
+    assert nshow(PRELUDE["sqrt"](-2.0)) == "1.4142135623730951i"
 
 
 def test_prelude_builtins_complex_values():

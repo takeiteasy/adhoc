@@ -78,9 +78,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   exactly `13`, `\sqrt(-2)` is `√2·i`, `\ln(-1)` is `π·i`, `\sin(1+i)` stays
   exact, and `\complex(re, im)`/`\re`/`\im` build and project complex values.
   Negative bases take the odd-root real branch (`(-8)^(1/3)` is `-2`) or the
-  complex principal (`(-2)^(1/2)` is `√2·i`); there is no complex-float tier
-  (mixing a float with a complex value is a typed error) and complex values are
-  not ordered.
+  complex principal (`(-2)^(1/2)` is `√2·i`); a float meeting a complex value gives a
+  complex float (`1. + i` is `1.0+1.0i`), and complex values are not ordered.
 - Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
 - RRA display precision is tunable: `\prec(5)` shows `π + 1` as `4.1416...`;
   `\prec` takes an integer 1..1000, returns the new value, and is protected

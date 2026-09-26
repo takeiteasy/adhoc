@@ -35,8 +35,8 @@ is admitted: unlike the strict shapes below, this tier has no rejection of
 form, only of domain. The float tier remains beneath as the explicitly-inexact
 tier (trailing-dot/exponent float literals, float-argument calls, IEEE
 non-finite values) — an RRA value mixed with a float still demotes to float,
-the fast O(1) path (mixing a float with a complex value is a typed error —
-there is no complex-float tier). Non-finite values keep the exact tiers'
+the fast O(1) path (a complex value mixed with a float gives a complex
+float). Non-finite values keep the exact tiers'
 domain-error contract (there is no exact-tier infinity).
 
 ## The gate
@@ -48,8 +48,8 @@ Two failure kinds, both internal — the seam converts them:
 
 - `Unrepresentable` — sympy cannot establish the value as a finite number (a
   free symbol, an expression of undecided reality that will not evaluate). The
-  seam demotes real undecided values to the float tier; undecided complex
-  values are a typed error (there is no complex-float tier).
+  seam demotes real undecided values to the float tier and undecided complex
+  values to the complex-float tier.
 - `DomainError` — the exact tiers have no infinity: non-finite values only.
   The seam turns the message into its typed `NumError` with the caller's span.
   (The float tier keeps its own pinned behavior for the same inputs.)
@@ -326,8 +326,7 @@ def apply(name: str, *args) -> Fraction | Gaussian | RRA:
     argument that the lower tiers could not hold (`\\sin(1)`, `\\ln(π + 1)`).
     sympy evaluates the call and anything finite (real or complex) is admitted;
     anything else raises Unrepresentable and the seam falls back to float (real
-    undecided values) or a typed error (complex ones — there is no
-    complex-float tier). Domain failures carry the function's own message."""
+    undecided values) or a complex float (complex ones). Domain failures carry the function's own message."""
     try:
         return classify(_APPLY_FUNCS[name](*map(_to_expr, args)))
     except DomainError:

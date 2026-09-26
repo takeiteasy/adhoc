@@ -39,10 +39,8 @@ Two failure kinds, both internal — the seam converts them:
   tier — only a value of undecided reality reaches the float tier.
 - `DomainError` — the exact tiers have no infinity: `ln(0)`, `tan(π/2)`,
   `0⁻ⁿ`. The seam turns the message into its typed `NumError` with the
-  caller's span. (The float tier keeps its own pinned behavior for the same
-  inputs — `math.*`'s ValueError for domain errors — and NaN for fractional
-  powers of negatives, where the exact tiers now return the real branch or
-  the complex principal.)
+  caller's span. (The float tier keeps `math.*`'s ValueError for domain errors
+  that have no complex principal value, such as `ln(0.)`.)
 
 ## Display
 

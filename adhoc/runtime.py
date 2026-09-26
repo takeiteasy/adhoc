@@ -34,8 +34,10 @@ stays at the lowest tier that remains exact:
 7. `float` — the explicitly-inexact tier: a float literal (trailing-dot `1.`
    or exponent `5e-1` spelling), a float-argument call, or an IEEE non-finite
    value. Any float operand demotes the result to float (the fast path);
-   exact tiers never produce it. There is no complex-float tier: mixing a
-   float with a complex value is a typed error.
+   exact tiers never produce it.
+8. complex float — Python `complex`, from a float meeting a complex value: `1. + i`,
+   `2.∠1`, `\\sqrt(-2.)`. The imaginary part is never zero; a zero part collapses to
+   `float`, mirroring the Gaussian invariant.
 
 The `Engine` object is the seam's other half: every operation in generated code routes
 through it carrying a span id, which is what keeps runtime-error spans narrow (a
@@ -72,9 +74,8 @@ small:
   RRA tier's,
   other `numbers.Real` widens to float,
   Decimal converts exactly via Fraction.
-- `complex` converts exactly: both components by exact decimal expansion
-  (`complex(0.5, 0.25)` is `1/2+1/4i`), collapsing through `make` — a vanishing
-  imaginary part returns the real. Non-finite components are a typed rejection.
+- `complex` converts to a complex float (`complex(0.5, 0.25)` is `0.5+0.25i`); a
+  vanishing imaginary part returns the float real.
 - `str` passes through as the value it already is — printable by `out`, bindable,
   concatenable; rejected by every other arithmetic operator.
 - None, and everything else (lists, dicts, ...) are span-pointed rejections —
@@ -158,10 +159,11 @@ protected or already-visible name is an error. The one shadowable prelude name i
 - `x % 0.0` yields NaN on the float tier, where CPython raises `ZeroDivisionError`.
 - `\\round(x, n)` of a float rounds its shortest-repr decimal half away from zero
   (`2.675` gives `2.68`), where CPython's `round` works on the binary value (`2.67`).
-- Negative base with a fractional exponent yields NaN on the float tier — MPFR
-  semantics; CPython's `**` would silently return a `complex`. The exact tiers
-  instead take the real branch for odd-denominator rationals (`(-8)^(1/3)` is
-  `-2`) and the complex principal otherwise (`(-2)^(1/2)` is `√2·i`).
+- Negative base with a fractional exponent takes the real branch for an exact
+  odd-denominator exponent (`(-8.)^(1/3)` is `-2.0`) and the complex principal otherwise
+  (`(-2.)^(1/2)` is `1.4142135623730951i`), like the exact tiers.
+- A complex float `÷ 0` gives signed infinity or NaN per component, and complex
+  overflow saturates per component.
 - Display never uses scientific notation: the shortest-round-trip `repr` is expanded
   positionally, matching `f64`'s `Display` (`10000000000000000.0`, `0.0000001`);
   symbolic and algebraic values show 15 significant digits plus a trailing
@@ -179,6 +181,7 @@ from fractions import Fraction
 import functools
 import importlib
 from itertools import islice
+import cmath
 import math
 import numbers
 import os
@@ -199,13 +202,12 @@ from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
 from .tensor import ArrayValue, SetValue, TensorError, TensorValue
 
-AdValue = (int | Fraction | float | bool | str | Gaussian | Symbolic | Algebraic | RRA
+AdValue = (int | Fraction | float | complex | bool | str | Gaussian | Symbolic | Algebraic | RRA
            | ExpressionValue | TensorValue | ArrayValue | SetValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
 NOT_A_NUMBER = "operands must be numbers"
-COMPLEX_FLOAT_MIX = "complex values do not mix with floats"
 
 DEFAULT_FLOAT_PRECISION_BITS = 53
 
@@ -218,7 +220,7 @@ MAX_PROBES = 200
 
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod", "and": "\\forall", "or": "\\exists"}
 
-_NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
+_NUMERIC_TYPES = (int, float, complex, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 
 #: The one shadowable prelude name (ticket #42): `i` may be bound at any binding
 #: site, shadowing the imaginary unit in that scope — the collision between the
@@ -248,13 +250,51 @@ class PreludeFn:
         return self.fn(*args)
 
 
+_CMATH_FNS: dict[str, Callable[[complex], complex]] = {
+    "sin": cmath.sin, "cos": cmath.cos, "tan": cmath.tan, "asin": cmath.asin,
+    "acos": cmath.acos, "atan": cmath.atan, "ln": cmath.log, "sqrt": cmath.sqrt,
+    "exp": cmath.exp, "sinh": cmath.sinh, "cosh": cmath.cosh, "tanh": cmath.tanh,
+    "asinh": cmath.asinh, "acosh": cmath.acosh, "atanh": cmath.atanh,
+}
+
+
+def _mpmath_fn(name: str) -> Callable[[complex], complex]:
+    import mpmath
+    return lambda z: complex(getattr(mpmath, name)(z))
+
+
+def _complex_fn(name: str, z: complex) -> AdValue:
+    """A prelude function of a complex float, through `cmath` (`\\gamma` and `\\erf`
+    through `mpmath`)."""
+    fn = _CMATH_FNS.get(name) or (_mpmath_fn(name) if name in ("gamma", "erf") else None)
+    if fn is None:
+        raise NumError(f"\\{name} does not take complex values")
+    try:
+        return _inexact(fn(z))
+    except (ValueError, OverflowError, ZeroDivisionError) as e:
+        raise NumError(f"\\{name}: {e}") from e
+
+
+def _float_fn(name: str, float_fn: Callable, x: float) -> AdValue:
+    """A prelude function of a real float: `math.*`, except a domain error whose complex
+    principal value exists (`\\sqrt(-2.)`, `\\asin(2.)`) gives that value."""
+    try:
+        return float_fn(x)
+    except ValueError:
+        if name not in _CMATH_FNS:
+            raise
+        try:
+            return _inexact(_CMATH_FNS[name](x))
+        except ValueError:
+            pass
+        raise
+
+
 def _float_fall(name: str, float_fn: Callable, v: AdValue) -> AdValue:
-    """The float-tier fallback for a prelude argument the exact tiers cannot
-    hold — real values only: a complex value has no float tier and is a typed
-    rejection."""
+    """The inexact fallback for a prelude argument the exact tiers cannot hold."""
     if _is_complex(v):
-        raise NumError("the float tier cannot hold complex values")
-    return float_fn(_to_float(v))
+        return _complex_fn(name, _to_complex(v))
+    return _float_fn(name, float_fn, _to_float(v))
 
 
 def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
@@ -265,14 +305,17 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
     anything finite the lower tiers cannot hold through the RRA tier (`\\sin(1)`
     stays exact, complex results included), falling to the `math.*` float tier
     only when the value is not an established real. Float arguments stay
-    entirely on the float tier. Exact-tier domain failures (`\\ln(0)`,
-    `\\tan(π/2)`) are typed NumErrors at the call's span; the float tier keeps
-    `math.*`'s own raising behavior (`\\sqrt(-2.0)` → ValueError, wrapped and
-    spanned by `app`)."""
+    on the inexact tiers: `math.*` with the complex principal value where a
+    domain error has one (`\\sqrt(-2.)`), `cmath.*` for a complex float.
+    Exact-tier domain failures (`\\ln(0)`, `\\tan(π/2)`) are typed NumErrors at the
+    call's span; the float tier keeps `math.*`'s own raising behavior (`\\ln(0.)` →
+    ValueError, wrapped and spanned by `app`)."""
     def call(v: AdValue) -> AdValue:
         _reject_non_numeric(v)
         if isinstance(v, float):
-            return float_fn(v)
+            return _float_fn(name, float_fn, v)
+        if isinstance(v, complex):
+            return _complex_fn(name, v)
         if isinstance(v, RRA):
             # An RRA argument is already beyond the lower tiers; the call stays
             # finite — real or complex — so the RRA tier holds it.
@@ -331,6 +374,8 @@ def _predicate_fn(name: str, float_fn: Callable[[float], bool], exact: bool) -> 
         _reject_non_numeric(v)
         if isinstance(v, float):
             return float_fn(v)
+        if isinstance(v, complex):
+            return getattr(cmath, name)(v)
         return exact
     return PreludeFn(name, call)
 
@@ -351,12 +396,10 @@ def _prec_call(v: AdValue) -> AdValue:
 
 
 def _complex_call(*args: AdValue) -> AdValue:
-    """The `\\complex(re, im)` constructor: an exact complex value from two
-    real components, the in-language spelling of the imaginary unit's tier.
-    Float components read through their shortest round-trip decimal — the
-    same rule the `\\py` boundary applies to a returned Python `complex` — so
-    `\\complex(0.5, 0.25)` is `1/2+1/4i`; complex components do not nest (a
-    typed error); a vanishing imaginary part collapses to the real."""
+    """The `\\complex(re, im)` constructor: a complex value from two real
+    components, exact unless a component is a float (`\\complex(0.5, 0.25)` is the
+    complex float `0.5+0.25i`); complex components do not nest (a typed error) and
+    a vanishing imaginary part collapses to the real."""
     if len(args) != 2:
         raise NumError("\\complex takes two components: \\complex(re, im)")
     re_v, im_v = args
@@ -364,18 +407,14 @@ def _complex_call(*args: AdValue) -> AdValue:
     if _is_complex(re_v) or _is_complex(im_v):
         raise NumError("\\complex takes real components")
     if isinstance(re_v, float) or isinstance(im_v, float):
-        if ((isinstance(re_v, float) and not math.isfinite(re_v))
-                or (isinstance(im_v, float) and not math.isfinite(im_v))):
-            raise NumError("\\complex takes finite components")
-        return _make_gaussian(Fraction(Decimal(repr(re_v))),
-                              Fraction(Decimal(repr(im_v))))
+        return _inexact(complex(_to_float(re_v), _to_float(im_v)))
     return _make_gaussian(re_v, im_v)
 
 
 def _project(v: AdValue, imag: bool) -> AdValue:
     """The `\\re`/`\\im` projection: the real or imaginary side of a value.
     A float is real (the side is the float itself, or 0.0 — the tier stays);
-    a Gaussian's sides are its components; any tier value projects through
+    a complex float's sides are floats; a Gaussian's sides are its components; any tier value projects through
     sympy's `as_real_imag` with each side re-classified through the `\\py`
     gates (`\\im(π·i)` is the symbolic `π`, `\\re(sin(1)+cos(1)·i)` stays
     RRA)."""
@@ -384,6 +423,8 @@ def _project(v: AdValue, imag: bool) -> AdValue:
         return v.im if imag else v.re
     if isinstance(v, float):
         return 0.0 if imag else v
+    if isinstance(v, complex):
+        return v.imag if imag else v.real
     if isinstance(v, Symbolic | Algebraic | RRA):
         if not _is_complex(v):
             return 0 if imag else v
@@ -520,12 +561,14 @@ def _is_float(v: AdValue) -> bool:
     return isinstance(v, float)
 
 
+def _is_inexact(v: AdValue) -> bool:
+    return isinstance(v, float | complex)
+
+
 def _is_complex(v: AdValue) -> bool:
-    """A decided non-real value — nonzero imaginary part at every tier. The
-    no-complex-float-tier rule's test: float mixing, ordering, range bounds,
-    `\\lim` anchors and float widening all reject these with typed errors
-    (there is no complex-float tier and no complex ordering)."""
-    if isinstance(v, Gaussian):
+    """A decided non-real value — nonzero imaginary part at every tier. Ordering,
+    range bounds, `\\lim` anchors and float widening reject these with typed errors."""
+    if isinstance(v, complex | Gaussian):
         return True
     if isinstance(v, Symbolic | Algebraic):
         return v.expr.is_real is False
@@ -536,6 +579,53 @@ def _is_complex(v: AdValue) -> bool:
 
 def _to_float(v: AdValue) -> float:
     return float(v)
+
+
+def _to_complex(v: AdValue) -> complex:
+    if isinstance(v, complex):
+        return v
+    if isinstance(v, Gaussian):
+        return complex(float(v.re), float(v.im))
+    if isinstance(v, Symbolic | Algebraic | RRA):
+        return complex(sympy.N(v.expr))
+    return complex(float(v))
+
+
+def _inexact(z: complex) -> float | complex:
+    """The complex-float invariant: the imaginary part is never zero."""
+    return z.real if z.imag == 0 else z
+
+
+def _cdiv(a: complex, b: complex) -> complex:
+    if b == 0:
+        return complex(_fdiv(a.real, 0.0), _fdiv(a.imag, 0.0))
+    return a / b
+
+
+def _cpow(a: complex, b: complex) -> complex:
+    if b == 0.5:
+        return cmath.sqrt(a)
+    try:
+        return a ** b
+    except ZeroDivisionError:
+        raise NumError(DIVISION_BY_ZERO) from None
+    except OverflowError:
+        # Saturate per component like the real float tier.
+        log_r, theta = math.log(abs(a)), cmath.phase(a)
+        angle = b.imag * log_r + b.real * theta
+        return complex(math.copysign(math.inf, math.cos(angle)),
+                       math.copysign(math.inf, math.sin(angle)))
+
+
+_COMPLEX_OPS: dict[str, Callable[[complex, complex], complex]] = {
+    "add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b,
+    "div": _cdiv, "pow": _cpow,
+}
+
+
+def _complex_binary(op: str, a: AdValue, b: AdValue) -> AdValue:
+    """A binary operation on the complex-float tier, collapsing a zero imaginary part."""
+    return _inexact(_COMPLEX_OPS[op](_to_complex(a), _to_complex(b)))
 
 
 def _normalize(x: Fraction) -> int | Fraction:
@@ -573,8 +663,7 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
     approximated on demand as a `tolerance -> rational` function (the modulus
     when complex; adhoc/rra.py). A Gaussian rational result collapses back to
     `Gaussian`/exact at the gates. Only a real value of undecided reality
-    falls to the float tier — a complex one has no float fallback and is a
-    typed error. An exact-tier domain failure (`1/0` shapes) becomes the
+    falls to the float tier, a complex one to the complex-float tier. An exact-tier domain failure (`1/0` shapes) becomes the
     seam's typed NumError (the caller attaches the span)."""
     try:
         return symbolic.combine(op, a, b)
@@ -592,7 +681,7 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
         return rra.combine(op, a, b)
     except rra.Unrepresentable:
         if _is_complex(a) or _is_complex(b):
-            raise NumError("the float tier cannot hold complex values") from None
+            return _complex_binary(op, a, b)
         return float_fallback()
     except rra.DomainError as e:
         raise NumError(e.args[0])
@@ -611,9 +700,9 @@ def nadd(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, str) and isinstance(b, str):
         return a + b  # string + string concatenates; mixed never coerces
     _reject_non_numeric(a, b)
-    if _is_float(a) or _is_float(b):
+    if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
-            raise NumError(COMPLEX_FLOAT_MIX)
+            return _complex_binary("add", a, b)
         return _to_float(a) + _to_float(b)
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("add", a, b,
@@ -629,9 +718,9 @@ def nsub(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(nsub, a, b)
     _reject_non_numeric(a, b)
-    if _is_float(a) or _is_float(b):
+    if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
-            raise NumError(COMPLEX_FLOAT_MIX)
+            return _complex_binary("sub", a, b)
         return _to_float(a) - _to_float(b)
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("sub", a, b,
@@ -647,9 +736,9 @@ def nmul(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(nmul, a, b)
     _reject_non_numeric(a, b)
-    if _is_float(a) or _is_float(b):
+    if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
-            raise NumError(COMPLEX_FLOAT_MIX)
+            return _complex_binary("mul", a, b)
         return _to_float(a) * _to_float(b)
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("mul", a, b,
@@ -665,9 +754,9 @@ def ndiv(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(ndiv, a, b)
     _reject_non_numeric(a, b)
-    if _is_float(a) or _is_float(b):
+    if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
-            raise NumError(COMPLEX_FLOAT_MIX)
+            return _complex_binary("div", a, b)
         return _fdiv(_to_float(a), _to_float(b))
     if isinstance(a, (Symbolic, Algebraic, RRA)) or isinstance(b, (Symbolic, Algebraic, RRA)):
         return _exact_combine("div", a, b,
@@ -738,15 +827,17 @@ def npow(a: AdValue, b: AdValue) -> AdValue:
             # the RRA tier.
             return _exact_combine("pow", a, n,
                                      lambda: _fpow(_to_float(a), float(n)))
+        if isinstance(a, complex):
+            return _complex_binary("pow", a, n)
         if isinstance(a, Gaussian):
             # `i²` is the integer -1, `(1+i)⁻³` an exact Gaussian — sympy
             # stays for tier mixing only.
             return gauss.pow_int(a, n)
         return _pow_exact_base(a, n)
-    if _is_float(a) or _is_float(b):
+    if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
-            raise NumError(COMPLEX_FLOAT_MIX)
-        return _fpow(_to_float(a), _to_float(b))
+            return _complex_binary("pow", a, b)
+        return _float_pow(a, b)
     # Non-integer exponent on exact, symbolic, algebraic or RRA operands: the
     # symbolic tier recognizes closed forms (`2^(1/2)` is `√2`, `8^(1/3)`
     # collapses to `2`), the algebraic tier real algebraic roots (`2^(1/3)`
@@ -754,8 +845,7 @@ def npow(a: AdValue, b: AdValue) -> AdValue:
     # through the same gates (`(-2)^(1/2)` is `√2·i`, `(1+i)^(1/2)` is
     # algebraic complex). A negative real base takes the odd-root split first
     # (below). Only a real value of undecided reality falls to the float
-    # tier; the float tier itself keeps `_fpow`'s pinned NaN for the same
-    # inputs.
+    # tier.
     sign = _real_sign(a)
     if sign == -1 and isinstance(b, Fraction) and b.denominator % 2 == 1:
         # The odd-root real branch: `(-x)^(p/q)` in lowest terms with q odd
@@ -768,6 +858,19 @@ def npow(a: AdValue, b: AdValue) -> AdValue:
         return nneg(powered) if b.numerator % 2 else powered
     return _exact_combine("pow", a, b,
                              lambda: _fpow(_to_float(a), _to_float(b)))
+
+
+def _float_pow(a: AdValue, b: AdValue) -> AdValue:
+    """Real float power. A negative base with a non-integer exponent takes the real odd
+    root for an exact odd-denominator exponent (`(-8.)^(1/3)` is `-2.0`), else the
+    complex principal value."""
+    fa, fb = _to_float(a), _to_float(b)
+    if fa < 0 and math.isfinite(fb) and fb != math.floor(fb):
+        if isinstance(b, Fraction) and b.denominator % 2 == 1:
+            magnitude = _fpow(-fa, fb)
+            return -magnitude if b.numerator % 2 else magnitude
+        return _complex_binary("pow", fa, fb)
+    return _fpow(fa, fb)
 
 
 def _real_sign(v: AdValue) -> int | None:
@@ -919,6 +1022,8 @@ def neq(a: AdValue, b: AdValue) -> bool:
         return a == b if isinstance(a, str) and isinstance(b, str) else False
     if not isinstance(a, _NUMERIC_TYPES) or not isinstance(b, _NUMERIC_TYPES):
         return a is b  # callables and other exotics compare by identity
+    if isinstance(a, complex) or isinstance(b, complex):
+        return _to_complex(a) == _to_complex(b)
     if _is_float(a) or _is_float(b):
         if _is_complex(a) or _is_complex(b):
             # A float is real; a complex value's imaginary part never vanishes.
@@ -1010,6 +1115,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
         return _show_callable(v)
     if isinstance(v, float):
         return _show_float(v)
+    if isinstance(v, complex):
+        return _show_complex(v)
     return str(v)
 
 
@@ -1054,6 +1161,14 @@ def _display_builtin_error(message: str, name: str, spelling: str | None) -> str
     return re.sub(pattern, lambda _: spelling, message)
 
 
+def _show_complex(z: complex) -> str:
+    """`1.0+2.0i`, `2.0i`, `1.0-1.0i`: each part through the float formatter."""
+    im = _show_float(z.imag)
+    if z.real == 0:
+        return f"{im}i"
+    return f"{_show_float(z.real)}{'' if im.startswith('-') else '+'}{im}i"
+
+
 def _show_float(f: float) -> str:
     if math.isnan(f):
         return "NaN"
@@ -1087,7 +1202,7 @@ def _as_float(value: AdValue) -> float:
     folds and `\\lim` probes). Non-numerics and complex values are rejected with the
     seam's typed error so the caller can attach a span."""
     _reject_non_numeric(value)
-    if _is_complex(value):
+    if _is_complex(value):  # TODO: complex convergence (ticket #95)
         raise NumError("a complex value cannot widen to float")
     try:
         return float(value)
@@ -1330,17 +1445,6 @@ def _resolve_dotted(path: str) -> Any:
     return getattr(builtins, path, _MISSING)
 
 
-def _complex_of(value: complex) -> AdValue:
-    """A Python `complex` as an exact ad value: both components read through
-    their shortest round-trip decimal (`complex(0.5, 0.25)` is `1/2+1/4i`) and
-    collapse through `make` — a vanishing imaginary part returns the real.
-    Non-finite components have no ad value."""
-    if not (math.isfinite(value.real) and math.isfinite(value.imag)):
-        raise NumError("cannot convert a non-finite complex to an ad value")
-    return _make_gaussian(Fraction(Decimal(repr(value.real))),
-                          Fraction(Decimal(repr(value.imag))))
-
-
 def _sympy_to_ad(expr: Any, type_name: str) -> AdValue:
     """A sympy expression across the `\\py` boundary: the symbolic gate, then
     the algebraic gate, then the RRA gate — anything still unconvertible is a
@@ -1395,7 +1499,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
         # Already an ad value: bindable, concatenable, printable.
         return value
     if isinstance(value, complex):
-        return _complex_of(value)
+        return _inexact(value)
     if isinstance(value, list | tuple):
         return ArrayValue(tuple(_to_ad(item, preserve_bool) for item in value))
     if isinstance(value, set | frozenset):
@@ -2038,6 +2142,8 @@ def _simplified(v: AdValue) -> AdValue:
 
 def _abs_call(v: AdValue) -> AdValue:
     _reject_non_numeric(v)
+    if isinstance(v, complex):
+        return abs(v)
     if _is_complex(v):
         return _simplified(npow(nadd(nmul(_re_call(v), _re_call(v)),
                                      nmul(_im_call(v), _im_call(v))), Fraction(1, 2)))
@@ -2194,7 +2300,7 @@ def _binary_fn(name: str, float_fn: Callable, usage: str) -> Callable:
     def call(*args: AdValue) -> AdValue:
         _takes(name, args, 2, 2, usage)
         _reject_non_numeric(*args)
-        if any(_is_complex(v) for v in args):
+        if any(_is_complex(v) for v in args):  # TODO: complex arguments (ticket #95)
             raise NumError(f"\\{name} needs real arguments")
         if any(isinstance(v, float) for v in args):
             return float_fn(*(_to_float(v) for v in args))
@@ -2406,6 +2512,8 @@ _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 def _conj_call(v: AdValue) -> AdValue:
     _reject_non_numeric(v)
+    if isinstance(v, complex):
+        return v.conjugate()
     return nsub(_re_call(v), nmul(_im_call(v), PRELUDE["i"])) if _is_complex(v) else v
 
 
