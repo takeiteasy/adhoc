@@ -12,7 +12,7 @@ ad               \sum(i=1..10) i^2
 
 Two rules produce that:
 
-- An identifier is exactly one character (`ab` means `a * b`, as it would on paper).
+- An identifier is one letter, optionally subscripted (`x₁`); `ab` means `a * b`, as it would on paper.
 - Anything longer is a `\`-command, spelled like its LaTeX name where one exists
   (`\pi`, `\sum`, `\sqrt`, `\sin`, `\in`, ...) — so `2\pi r` means what it looks like it means.
 
@@ -93,7 +93,7 @@ The two heavyweight convergence tests are marked `slow`;
 
 ## Docs
 
-See [`docs/`](docs/) for the language reference, grammar, architecture, and numerics notes.
+See [`docs/`](docs/) for the language reference, grammar, notation glyphs, architecture, and numerics notes.
 
 ## License
 

@@ -26,8 +26,14 @@ written against — it should stay in lockstep with the code.
   Inside a literal exactly four escapes decode — `\"` (quote), `\\` (backslash), `\n`
   (newline), `\t` (tab) — and any other backslash pair is a lex error. Strings are full
   values: see `## String literals` for their operators.
-- An **identifier** is exactly one character, ASCII or unicode letter (`x`, `π`, `α`, ...).
-  This is what makes `ab` unambiguous as `a * b` — see below.
+- An **identifier** is one ASCII or unicode letter, optionally followed by subscript digits
+  `₀…₉` (`x`, `π`, `α`, `x₁`, `a₂₃`); `x₁` is a name unrelated to `x`. `ab` is still
+  `a * b`, and `∅` lexes as an identifier that aliases `\emptyset`. See `docs/notation.md`.
+- A **superscript run** (`²`, `⁻¹`, `¹⁰`: optional `⁻`, then digits `⁰…⁹`) is one token,
+  sugar for `^` with that literal exponent. A lone `⁻` is a lex error.
+- The radicals `∛` and `∜` are prefix operators like `√`; they rewrite to `\root(x, 3)` and
+  `\root(x, 4)`. `!` (factorial) and `‼` / `!!` (double factorial) are postfix. `!=` is a
+  lex error pointing at `≠`.
 - The radical `√` is the one **prefix operator**: it is a math symbol, not a letter, so
   it lexes as its own token and cannot be a name — it can never be aliased, bound, or
   shadowed. The parser rewrites `√` + operand into a `\sqrt(...)` application
@@ -37,7 +43,7 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / @ ∘ ∪ ∩ ∖ ∈ ⊆ ^ < > <= >= = .. ( ) [ ] { } ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
+- Operators: `+ - * / @ ∘ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
   A lone `·` (U+00B7), `⋅` (U+22C5) or `_` is the partial-application placeholder
   (`## Composition and partial application`); inside a `\`-name `_` is an ordinary name
@@ -79,22 +85,28 @@ expr       ::= ternary ;
 ternary    ::= range ("?" ternary ":" ternary)? ;   (* right-associative *)
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
                                            (* the "," form is not read inside lists *)
-comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "\\in" | "⊆" | "\\subseteq") additive)? ;
+comparison ::= additive (cmp-op additive)? ;
+cmp-op     ::= "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈" | "\\approx"
+             | "∈" | "\\in" | "∉" | "\\notin" | "⊆" | "\\subseteq" | "⊂" | "\\subset"
+             | "⊇" | "\\supseteq" | "⊃" | "\\supset" ;
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
            ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "∩" | "\\cap" | "∘" | "\\circ") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
+nth-root   ::= ("∛" | "∜") unary ;         (* prefix spelling of \root(x, 3) / \root(x, 4) *)
 power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
-trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" ;
+trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" | "!" | "‼" | "!!" | superscript ;
+superscript ::= "⁻"? ("⁰" | "¹" | ... | "⁹")+ ;   (* sugar for "^" with a literal exponent *)
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg | hole | operator ;   (* holes and operators only as a whole argument *)
 hole       ::= "·" | "⋅" | "_" ;
 operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
-             | ">=" | "∈" | "⊆" | "√" | "\\contract" | "\\circ" | "\\cup" | "\\cap" | "\\setminus"
-             | "\\in" | "\\subseteq" ;
+             | ">=" | "≤" | "≥" | "≠" | "≈" | "∈" | "∉" | "⊆" | "⊂" | "⊇" | "⊃" | "√" | "∛" | "∜"
+             | "!" | "‼" | "\\contract" | "\\circ" | "\\cup" | "\\cap" | "\\setminus" | "\\in"
+             | "\\notin" | "\\subseteq" | "\\subset" | "\\supseteq" | "\\supset" | "\\neq" | "\\approx" ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
@@ -154,13 +166,13 @@ Loosest to tightest:
 | 1 | `? :` (ternary) | right |
 | 2 | `=` (binding/check) | statement level only, non-associative |
 | 3 | `..` (range) | non-associative |
-| 4 | `<` `>` `<=` `>=` `∈` `⊆` | non-associative |
+| 4 | `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
 | 5 | `+` `-` (binary), `∪` `∖` | left |
 | 6 | `*` `/` `@`, `∩`, `∘` | left |
 | 7 | juxtaposition (implicit `*`) | left |
-| 8 | unary `-`, `√` | prefix |
+| 8 | unary `-`, `√` `∛` `∜` | prefix |
 | 9 | `^` | right |
-| 10 | postfix `(…)` application, `[…]` index, `'` transpose | left |
+| 10 | postfix `(…)` application, `[…]` index, `'` transpose, `!` `‼` factorial, superscript `²` | left |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -178,13 +190,19 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 √2^2     ->  √(2²) = 2      -- the radical's operand parses at the unary level
 2^√2     ->  2^(√2)         -- a radical can sit inside the exponent
 2√3      ->  2*√3           -- the radical is an atom starter: it juxtaposes
+2x²      ->  2 * (x^2)      -- superscript is a postfix trailer, tighter than juxtaposition
+2^3!     ->  2^(3!) = 64    -- factorial binds tighter than ^
+-3!      ->  -(3!) = -6
+∛-8      ->  = -2           -- `\root(-8, 3)`
 ```
+
+Glyphs and their ASCII spellings are in `docs/notation.md`.
 
 A parenthesized composition is a call head: `(f ∘ g)(x)` applies. Unparenthesized,
 `f ∘ g(x)` composes `f` with the result of `g(x)`.
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `string`, `identifier`, `\`-name, `√`, `(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
+`number`, `string`, `identifier`, `\`-name, `√`, `∛`, `∜`, `(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
 parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
 parses as the multiplication it spells and dies as the usual typed "strings are not
 numbers" at evaluation — the same shape as any other string reaching a numeric operator.
@@ -412,11 +430,16 @@ are duplicates when the binding rule's check would call them equal.
 | `a ∖ b` | `a \setminus b` | difference | `+ -` |
 | `a ∩ b` | `a \cap b` | intersection | `* /` |
 | `x ∈ s` | `x \in s` | membership, a boolean | comparison |
+| `x ∉ s` | `x \notin s` | non-membership, a boolean | comparison |
 | `a ⊆ b` | `a \subseteq b` | subset, a boolean | comparison |
+| `a ⊂ b` | `a \subset b` | proper subset | comparison |
+| `a ⊇ b` `a ⊃ b` | `a \supseteq b` `a \supset b` | superset, proper superset | comparison |
 
-Every operator is infix. `∪ ∖ ∩ ⊆` need sets on both sides and `∈` a set on the right;
-anything else is a typed error, as are arithmetic, ordering, and indexing on a set. The
-five `\`-names are operators, never names: they cannot bind or be aliased, and stand as a
+Every operator is infix. `∪ ∖ ∩ ⊆ ⊂ ⊇ ⊃` need sets on both sides; `∈` and `∉` take a set, an
+array (element equality), or a range (a term of the progression, so `5 ∈ (1,3..9)`) on the
+right, and a range operand is parenthesized because `..` binds looser. `∅` / `\emptyset` is
+the empty set. Anything else is a typed error, as are arithmetic, ordering, and indexing on a set. The
+`\`-names `cup cap setminus in subseteq` and `notin subset supseteq supset neq approx` are operators, never names: they cannot bind or be aliased, and stand as a
 value only as `(\cup)` or a whole call argument (`## Operator values`).
 
 Sets display in first-seen order and compare regardless of it: `{1, 2} = {2, 1}` is
@@ -526,10 +549,14 @@ g(1, 2)                        ->  = 3
 | `@` `\contract` | 2 | contraction — the same as infix `@` |
 | `∘` `\circ` | 2 | composition |
 | `∪ ∩ ∖` `\cup \cap \setminus` | 2 | set operations |
-| `< > <= >=` | 2 | ordering, returns a boolean |
-| `∈` `\in` | 2 | `x ∈ s`: the element, then the set |
-| `⊆` `\subseteq` | 2 | subset, returns a boolean |
+| `< > <= >= ≤ ≥` | 2 | ordering, returns a boolean |
+| `≠` `\neq` | 2 | not equal: the negated `=` check |
+| `≈` `\approx` | 2 | approximately equal, numbers only |
+| `∈` `∉` `\in` `\notin` | 2 | `x ∈ s`: the element, then the set, array or range |
+| `⊆` `⊂` `⊇` `⊃` `\subseteq` `\subset` `\supseteq` `\supset` | 2 | subset relations, return booleans |
+| `!` `‼` | 1 | factorial, double factorial |
 | `√` | 1 | `\sqrt` itself |
+| `∛` `∜` | 1 | the partials `\root(·, 3)` and `\root(·, 4)` |
 
 | Rule | Detail |
 |---|---|
@@ -557,7 +584,7 @@ forms `(+)(·, 1)` and `(^)(2, ·)`.
 |---|---|
 | Operand | Reads as the operator's own right-hand side would, so `(+ 1*2)` fixes `1*2` and `(1 * 2 +)` fixes `1*2`; a looser operand is a parse error asking for parentheses: `(* 1 + 2)`, `(1 + 2 *)`, `(-2 ^)` |
 | Minus | `(- 1)` is negation, so a right section for `-` is `(+ -1)` or `(-)(·, 1)`; `(1 -)` is a section |
-| Radical | `(√ x)` is a call, not a section |
+| Radical | `(√ x)`, `(∛ x)` are calls, not sections; postfix `!` `‼` have none either |
 | Quotes | A section is the hole form: `\expr((+ 1))` prints `\expr((+)(·, 1))` |
 
 
@@ -764,7 +791,7 @@ Shared rules:
 
 ## The `\` sigil
 
-An identifier is exactly one character. Any language-defined name longer than one character
+A name is one letter, optionally subscripted. Any language-defined name longer than one character
 is `\`-prefixed, regardless of script — `\pi`, `\sum`, `\sin`, `\solve`, `\map`, `\graph`. Where
 a `\`-name has a single-character unicode form, they are the same name (`\pi` ≡ `π` — the
 name-alias mechanism, `## Name aliases`); where
@@ -896,6 +923,8 @@ in a prelude scope protected by the same mechanism:
 | `\isnan` / `\isinf` / `\isfinite` | test the float tier's non-finite states; exact-tier values are finite, so `\isnan` and `\isinf` are false and `\isfinite` is true. Non-numeric arguments are typed errors. Display as `<fn \isnan(x)>`, `<fn \isinf(x)>`, and `<fn \isfinite(x)>` |
 | `\complex` | builds a complex value from two real components: `\complex(2, 3)` is `2+3i`, a vanishing imaginary part collapses to the real; float components read as their exact decimals |
 | `\re` / `\im` | project the real or imaginary side (`\re(2+3i)` is `2`, `\im(π·i)` is `π`); a float's imaginary side is `0.0` |
+| `\root` | `\root(x, n)`: the exact positive integer `n`th root, `x^(1/n)` on the numeric seam; `∛x` is `\root(x, 3)`. Displays as `<fn \root(x)>` |
+| `\emptyset` / `∅` | the empty set, a protected constant |
 | `\map` / `\filter` / `\fold` / `\scan` / `\take` | higher-order functions over collections (`## Higher-order functions`). Display as `<fn \map(x)>` etc. |
 | `\len` / `\shape` / `\transpose` | collection length, tensor shape (a vector), and tensor transpose. Display as `<fn \len(x)>` etc. |
 | `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
@@ -944,9 +973,9 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators, symbolic algebra, graphing.
-An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
-rule's check is the only equality today, with tier-aware semantics: exact for
+Logical operators ([#80](https://todo.sr.ht/~takeiteasy/adhoc/80)), symbolic algebra, graphing.
+`==` and `!=` do not exist: `≠` / `\neq` is the inequality operator, and the binding
+rule's check is the only equality, with tier-aware semantics: exact for
 the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)
 and the Richardson–Fitch heuristic for any RRA-involved pair (docs/numerics.md).
 User-declarable *operator* spellings ride the phase-4 custom

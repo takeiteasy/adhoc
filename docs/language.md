@@ -25,8 +25,10 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - REPL history, persisted to `$ADHOC_HISTORY` (default `~/.adhoc_history`).
 - Arithmetic: `+ - * / ^`, unary minus, parentheses, implicit multiplication by juxtaposition
   (`2x` = `2 * x`, `ab` = `a * b`).
-- Bare identifiers are exactly one character (ASCII or unicode); multi-character names,
-  including user-defined function names, use the backslash sigil (`\fact`).
+- Bare identifiers are one letter (ASCII or unicode), optionally with subscript digits
+  (`x`, `x₁`); multi-character names, including user-defined function names, use the
+  backslash sigil (`\fact`).
+- Math notation: `x²`, `n!`, `∛x`, `≤ ≥ ≠ ≈`, `∉ ⊂ ⊇ ⊃ ∅` — see [`notation.md`](notation.md).
 - Assignment (`x = 1`) with declare-once-then-check semantics: a fresh name binds and
   echoes the spelling written at that occurrence; `x = 1` again *compares*, printing
   `true`/`false`. `\let x = 1` is the explicit fresh-only spelling, and the top-level
@@ -186,7 +188,7 @@ status.
 ## The `\` sigil, briefly
 
 Every name longer than one character is written with a `\` prefix — `\pi`, `\sum`, `\sin`,
-`\solve`. This falls out of a single rule: identifiers are exactly one character, so `ab`
+`\solve`. This falls out of a single rule: identifiers are one letter (with optional subscript digits), so `ab`
 unambiguously means `a * b`; anything spelled with more than one character needs a marker to
 avoid colliding with that. The `\` names are chosen to match LaTeX commands where one exists,
 so `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX —
@@ -211,8 +213,12 @@ phases add bindings without touching the lexer.
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
-- Set notation is `∪ ∩ ∖ ∈ ⊆` only; no `∉`, `⊂`, `⊇`, or `∅` —
-  [#74](https://todo.sr.ht/~takeiteasy/adhoc/74).
+- Logical operators (`∧ ∨ ¬ → ↔ ∀ ∃`) are not built — [#80](https://todo.sr.ht/~takeiteasy/adhoc/80).
+- Superscript and subscript letters, subscript ASCII spellings, and `\sin²(x)` are not notation —
+  [#81](https://todo.sr.ht/~takeiteasy/adhoc/81), [#82](https://todo.sr.ht/~takeiteasy/adhoc/82),
+  [#83](https://todo.sr.ht/~takeiteasy/adhoc/83).
+- A range operand of `∈` needs parentheses (`3 ∈ (1..5)`) —
+  [#84](https://todo.sr.ht/~takeiteasy/adhoc/84).
 - `/` is elementwise on tensors, and there is no determinant, inverse, or linear solve —
   [#76](https://todo.sr.ht/~takeiteasy/adhoc/76).
 
