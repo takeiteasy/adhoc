@@ -494,7 +494,7 @@ q = \map(s, 1..)                                 ->  q = <seq \map(s, 1..)>
 |---|---|
 | Re-iteration | A sequence re-runs from the start each time it is consumed; it caches nothing |
 | Errors | A failing element (or a `\filter` predicate returning a non-boolean) errors when it is reached, not when the sequence is built |
-| Folds | `\sum`/`\prod` binders iterate a sequence with the infinite-range convergence rule (`## Special forms`); `\fold` and `\len` reject it |
+| Folds | `\sum`/`\prod` binders iterate a sequence with the infinite-range convergence rule (`## Special forms`); `\fold` and `\len` reject it ([limitations](language.md#known-limitations-not-bugs)) |
 | `\filter` cap | A predicate that stops matching gives up after 2,000,000 elements in a row with a typed error |
 | Values | They bind, pass, and compare by identity; `\take` on a finite range gives an array |
 
