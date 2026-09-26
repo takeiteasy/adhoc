@@ -163,3 +163,103 @@ def pow_int(a, n: int) -> int | Fraction | Gaussian:
             base_r, base_i = (base_r * base_r - base_i * base_i,
                               2 * base_r * base_i)
     return make(result_r, result_i)
+
+
+# --- Gaussian-integer number theory: (re, im) int pairs ---
+
+_Z = tuple[int, int]
+
+
+def _zmul(a: _Z, b: _Z) -> _Z:
+    return a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]
+
+
+def _norm(a: _Z) -> int:
+    return a[0] * a[0] + a[1] * a[1]
+
+
+def _exact_quotient(a: _Z, b: _Z) -> _Z | None:
+    """`a / b` when b divides a, else None."""
+    re, im = _zmul(a, (b[0], -b[1]))
+    n = _norm(b)
+    return (re // n, im // n) if re % n == 0 and im % n == 0 else None
+
+
+def _associate(a: _Z) -> tuple[_Z, _Z]:
+    """The associate of nonzero `a` with re > 0, im >= 0, and the unit `u` with `a = u·associate`."""
+    for unit in ((1, 0), (0, 1), (-1, 0), (0, -1)):
+        candidate = _zmul(a, (unit[0], -unit[1]))
+        if candidate[0] > 0 and candidate[1] >= 0:
+            return candidate, unit
+    raise ValueError("zero has no associate")
+
+
+def _rounded_quotient(a: _Z, b: _Z) -> _Z:
+    re, im = _zmul(a, (b[0], -b[1]))
+    n = _norm(b)
+    return (2 * re + n) // (2 * n), (2 * im + n) // (2 * n)
+
+
+def _zgcd(a: _Z, b: _Z) -> _Z:
+    while b != (0, 0):
+        q = _rounded_quotient(a, b)
+        qb = _zmul(q, b)
+        a, b = b, (a[0] - qb[0], a[1] - qb[1])
+    return _associate(a)[0] if a != (0, 0) else a
+
+
+def _from_pair(z: _Z) -> int | Gaussian:
+    return make(*z)
+
+
+def gcd(*zs: _Z) -> int | Gaussian:
+    """Greatest common divisor of Gaussian-integer pairs, the associate in the first quadrant."""
+    g: _Z = (0, 0)
+    for z in zs:
+        g = _zgcd(g, z)
+    return _from_pair(g)
+
+
+def lcm(*zs: _Z) -> int | Gaussian:
+    """Least common multiple of Gaussian-integer pairs, the associate in the first quadrant; zero if any is zero."""
+    result: _Z = (1, 0)
+    for z in zs:
+        if z == (0, 0):
+            return 0
+        g = _zgcd(result, z)
+        product = _zmul(result, z)
+        result = _associate(_exact_quotient(product, g))[0]
+    return _from_pair(result)
+
+
+def factor(z: _Z) -> list[tuple[int | Gaussian, int]]:
+    """Prime factorization of a nonzero Gaussian integer as `(prime, exponent)` pairs, primes in the
+    first quadrant sorted by norm. A unit other than 1 leads as `(unit, 1)`."""
+    primes: list[tuple[_Z, int]] = []
+    remaining = z
+    for p, k in sorted(sympy.factorint(_norm(z)).items()):
+        if p == 2:
+            primes.append(((1, 1), k))
+        elif p % 4 == 3:
+            primes.append(((p, 0), k // 2))
+        else:
+            x = int(sympy.sqrt_mod(-1, p))
+            pi = _zgcd((p, 0), (x, 1))
+            conj = _associate((pi[0], -pi[1]))[0]
+            a, rest = 0, z
+            for _ in range(k):
+                rest = _exact_quotient(rest, pi)
+                if rest is None:
+                    break
+                a += 1
+            primes.extend(((pi, a), (conj, k - a)))
+    out: list[tuple[int | Gaussian, int]] = []
+    for prime, k in sorted(primes, key=lambda item: (_norm(item[0]), item[0])):
+        if k:
+            out.append((_from_pair(prime), k))
+    for prime, k in primes:
+        for _ in range(k):
+            remaining = _exact_quotient(remaining, prime)
+    if remaining != (1, 0):
+        out.insert(0, (_from_pair(remaining), 1))
+    return out

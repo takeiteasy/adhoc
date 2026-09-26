@@ -2081,24 +2081,44 @@ def _exact_rational(v: AdValue, label: str) -> Fraction:
     return Fraction(v)
 
 
-def _rational_args(args: tuple, label: str) -> list[Fraction]:
-    """Rationals given as arguments or as one collection: `\\gcd(12, 18)`, `\\gcd(⟨12, 18⟩)`."""
+def _number_args(args: tuple, label: str) -> list[AdValue]:
+    """Values given as arguments or as one collection: `\\gcd(12, 18)`, `\\gcd(⟨12, 18⟩)`."""
     items = list(args)
     if len(args) == 1 and _elements(args[0]) is not None:
         items = _finite_elements(args[0], label)
     if not items:
         raise NumError(f"{label} needs at least one rational")
+    return items
+
+
+def _rational_args(items: list[AdValue], label: str) -> list[Fraction]:
     return [_exact_rational(v, label) for v in items]
 
 
+def _gaussian_pair(v: AdValue, label: str) -> tuple[int, int]:
+    """A Gaussian integer as a (re, im) pair."""
+    if isinstance(v, bool) or not isinstance(v, int | Gaussian):
+        raise NumError(f"{label} needs Gaussian integers, got {nshow(v)}")
+    re, im = (v.re, v.im) if isinstance(v, Gaussian) else (v, 0)
+    if not isinstance(re, int) or not isinstance(im, int):
+        raise NumError(f"{label} needs Gaussian integers, got {nshow(v)}")
+    return re, im
+
+
 def _gcd_call(*args: AdValue) -> AdValue:
-    qs = _rational_args(args, "\\gcd")
+    items = _number_args(args, "\\gcd")
+    if any(isinstance(v, Gaussian) for v in items):
+        return gauss.gcd(*(_gaussian_pair(v, "\\gcd") for v in items))
+    qs = _rational_args(items, "\\gcd")
     return _normalize(Fraction(math.gcd(*(q.numerator for q in qs)),
                                math.lcm(*(q.denominator for q in qs))))
 
 
 def _lcm_call(*args: AdValue) -> AdValue:
-    qs = _rational_args(args, "\\lcm")
+    items = _number_args(args, "\\lcm")
+    if any(isinstance(v, Gaussian) for v in items):
+        return gauss.lcm(*(_gaussian_pair(v, "\\lcm") for v in items))
+    qs = _rational_args(items, "\\lcm")
     return _normalize(Fraction(math.lcm(*(q.numerator for q in qs)),
                                math.gcd(*(q.denominator for q in qs))))
 
@@ -2113,7 +2133,16 @@ def _isprime_call(n: AdValue) -> bool:
     return bool(sympy.isprime(_exact_int(n, "\\isprime")))
 
 
+def _factor_gaussian(n: Gaussian) -> ArrayValue:
+    re, im = _gaussian_pair(n, "\\factor")
+    if re * re + im * im > MAX_FACTOR:
+        raise NumError(f"\\factor is limited to arguments up to {MAX_FACTOR}")
+    return ArrayValue(tuple(ArrayValue((p, k)) for p, k in gauss.factor((re, im))))
+
+
 def _factor_call(n: AdValue) -> ArrayValue:
+    if isinstance(n, Gaussian):
+        return _factor_gaussian(n)
     q = _exact_rational(n, "\\factor")
     if q <= 0:
         raise NumError(f"\\factor needs a positive rational, got {nshow(n)}")

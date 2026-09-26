@@ -1,5 +1,6 @@
 import pytest
 
+from adhoc import gauss
 from adhoc.driver import run_source
 from adhoc.parser import ParseError
 from adhoc.runtime import EvalError
@@ -95,6 +96,12 @@ def test_modulo_errors():
     (r"\factor(360)", "= ⟨⟨2, 3⟩, ⟨3, 2⟩, ⟨5, 1⟩⟩"), (r"\factor(1)", "= ⟨⟩"),
     (r"\factor(97)", "= ⟨⟨97, 1⟩⟩"), (r"\factor(12/5)", "= ⟨⟨2, 2⟩, ⟨3, 1⟩, ⟨5, -1⟩⟩"),
     (r"\factor(1/7)", "= ⟨⟨7, -1⟩⟩"),
+    (r"\gcd(6, 3+3i)", "= 3+3i"), (r"\gcd(2, 1+i)", "= 1+i"), (r"\gcd(3, 2+i)", "= 1"),
+    (r"\gcd(⟨2i, 4⟩)", "= 2"), (r"\lcm(1+i, 1-i)", "= 1+i"), (r"\lcm(2, 1+i)", "= 2"),
+    (r"\lcm(3, 2+i)", "= 6+3i"), (r"\lcm(0, 1+i)", "= 0"),
+    (r"\factor(2i)", "= ⟨⟨1+i, 2⟩⟩"), (r"\factor(3i)", "= ⟨⟨i, 1⟩, ⟨3, 1⟩⟩"),
+    (r"\factor(3+4i)", "= ⟨⟨2+i, 2⟩⟩"), (r"\factor(2+2i)", "= ⟨⟨-i, 1⟩, ⟨1+i, 3⟩⟩"),
+    (r"\factor(-2i)", "= ⟨⟨-1, 1⟩, ⟨1+i, 2⟩⟩"),
     (r"\choose(5, 2)", "= 10"), (r"\choose(2, 5)", "= 0"), (r"\perm(5, 2)", "= 20"),
     (r"\fib(0)", "= 0"), (r"\fib(10)", "= 55"), (r"\fib(100)", "= 354224848179261915075"),
 ])
@@ -102,9 +109,38 @@ def test_number_theory(src, out):
     assert ev(src) == out
 
 
+def test_gaussian_factor_round_trips():
+    for a in range(-8, 9):
+        for b in range(-8, 9):
+            if (a, b) == (0, 0):
+                continue
+            product = 1
+            for prime, k in gauss.factor((a, b)):
+                product = gauss.mul(product, gauss.pow_int(prime, k))
+            assert product == gauss.make(a, b), (a, b)
+
+
+def _is_gaussian_integer(z):
+    parts = (z.re, z.im) if isinstance(z, gauss.Gaussian) else (z, 0)
+    return all(isinstance(p, int) for p in parts)
+
+
+def test_gaussian_gcd_and_lcm_relate_to_the_product():
+    def norm(z):
+        return z.re ** 2 + z.im ** 2 if isinstance(z, gauss.Gaussian) else z ** 2
+
+    for a, b in [((6, 0), (3, 3)), ((5, 5), (2, 1)), ((0, 4), (2, 0)), ((7, 1), (1, -7))]:
+        za, zb = gauss.make(*a), gauss.make(*b)
+        g, m = gauss.gcd(a, b), gauss.lcm(a, b)
+        assert _is_gaussian_integer(gauss.div(za, g)) and _is_gaussian_integer(gauss.div(zb, g))
+        assert _is_gaussian_integer(gauss.div(m, za)) and _is_gaussian_integer(gauss.div(m, zb))
+        assert norm(g) * norm(m) == norm(za) * norm(zb)
+
+
 @pytest.mark.parametrize("src, message", [
     (r"\gcd(1., 3)", "exact rational"), (r"\gcd()", "at least one"),
-    (r"\gcd(\true, 2)", "exact rational"), (r"\gcd(1+i, 2)", "exact rational"),
+    (r"\gcd(\true, 2)", "exact rational"), (r"\gcd(1/2, i)", "Gaussian integers"),
+    (r"\lcm(1+i, 1/2+i)", "Gaussian integers"), (r"\factor(1/2+i)", "Gaussian integers"),
     (r"\factor(0)", "positive rational"), (r"\factor(-1/2)", "positive rational"),
     (r"\factor(1.)", "exact rational"), (r"\factor(10^19)", "limited"),
     (r"\factor(1/10^19)", "limited"), (r"\choose(-1, 2)", "non-negative"),

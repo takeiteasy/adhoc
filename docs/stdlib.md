@@ -48,10 +48,11 @@ the other aggregates need finite input.
 | Function | Result | Example |
 |---|---|---|
 | `a % b`, `a \mod b` | floored modulo; rationals and symbolic reals work | `-7 % 3` -> `2` |
-| `\gcd(a, b, …)` `\lcm(…)` | arguments or one collection of exact rationals; gcd is the gcd of numerators over the lcm of denominators, lcm the reverse | `\gcd(⟨12, 18⟩)` -> `6`, `\gcd(1/2, 1/3)` -> `1/6` |
+| `\gcd(a, b, …)` `\lcm(…)` | arguments or one collection of exact rationals; gcd is the gcd of numerators over the lcm of denominators, lcm the reverse. With a Gaussian integer among them, all must be Gaussian integers and the result is the associate in the first quadrant | `\gcd(⟨12, 18⟩)` -> `6`, `\gcd(1/2, 1/3)` -> `1/6`, `\gcd(6, 3+3i)` -> `3+3i` |
 | `\divmod(a, b)` | `⟨⌊a/b⌋, a % b⟩` | `\divmod(-7, 3)` -> `⟨-3, 2⟩` |
 | `\isprime(n)` | boolean | `\isprime(97)` -> `true` |
 | `\factor(q)` | positive rational as `⟨p, exponent⟩` pairs, denominator primes negative; numerator and denominator up to 10¹⁸ | `\factor(12/5)` -> `⟨⟨2, 2⟩, ⟨3, 1⟩, ⟨5, -1⟩⟩` |
+| `\factor(z)` | nonzero Gaussian integer, norm up to 10¹⁸: first-quadrant primes sorted by norm, led by `⟨unit, 1⟩` when the unit is not 1 | `\factor(2+2i)` -> `⟨⟨-i, 1⟩, ⟨1+i, 3⟩⟩` |
 | `\choose(n, k)` `\perm(n, k)` | binomial and falling factorial, `n ≤ 100000` | `\choose(5, 2)` -> `10` |
 | `\fib(n)` | Fibonacci number, `n ≤ 1000000` | `\fib(10)` -> `55` |
 
@@ -93,5 +94,5 @@ Complex arguments are a typed error, except for `\abs`.
 
 ## Limitations
 
-- `\gcd`, `\lcm` and `\factor` reject Gaussian integers — [#92](https://todo.sr.ht/~takeiteasy/adhoc/92).
+- `\gcd`, `\lcm` and `\factor` reject Gaussian rationals (`1/2+i`) — [#94](https://todo.sr.ht/~takeiteasy/adhoc/94).
 - A float radius or angle cannot build a complex value (`2.∠1`) — [#93](https://todo.sr.ht/~takeiteasy/adhoc/93).
