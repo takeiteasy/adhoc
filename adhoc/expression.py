@@ -3,6 +3,7 @@
 from dataclasses import dataclass, fields
 
 from .syntax import (
+    is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
     Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef,
     PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnOp, Var,
@@ -51,11 +52,11 @@ def show(node: Node) -> str:
                            for stmt in statements[:-1]) + show(statements[-1])
         case Assign(name=name, value=value, spelling=spelling, fresh_only=fresh):
             prefix = "\\let " if fresh else ""
-            label = spelling or (name if len(name) == 1 else f"\\{name}")
+            label = spelling or (name if is_short_name(name) else f"\\{name}")
             return f"{prefix}{label} = {show(value)}"
         case FuncDef(name=name, params=params, body=body, spelling=spelling,
                      param_spellings=spellings):
-            label = spelling or (name if len(name) == 1 else f"\\{name}")
+            label = spelling or (name if is_short_name(name) else f"\\{name}")
             names = [spellings[i] if i < len(spellings) else param
                      for i, param in enumerate(params)]
             text = f"({show(body)})" if isinstance(body, Seq) else show(body)
@@ -78,7 +79,7 @@ def show(node: Node) -> str:
         case StrLit(text=text):
             return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t") + '"'
         case Var(ch=name, spelling=spelling) | BackslashRef(name=name, spelling=spelling):
-            return spelling or (name if len(name) == 1 else f"\\{name}")
+            return spelling or (name if is_short_name(name) else f"\\{name}")
         case UnOp(operand=operand):
             return f"(-{show(operand)})"
         case BinOp(op=op, lhs=left, rhs=right):
@@ -129,7 +130,7 @@ def show(node: Node) -> str:
 
 
 def kw_name(kw: KwArg) -> Node:
-    return BackslashRef(name=kw.name, span=kw.span, spelling=kw.spelling) if len(kw.name) > 1 else Var(ch=kw.name, span=kw.span, spelling=kw.spelling)
+    return BackslashRef(name=kw.name, span=kw.span, spelling=kw.spelling) if not is_short_name(kw.name) else Var(ch=kw.name, span=kw.span, spelling=kw.spelling)
 
 
 def show_quote(node: Node, statement_body: bool) -> str:

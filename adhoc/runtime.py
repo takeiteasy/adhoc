@@ -189,7 +189,7 @@ from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
 from .expression import ExpressionValue, show_quote
-from .syntax import OP_SYMBOLS, Seq
+from .syntax import OP_SYMBOLS, Seq, is_short_name
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
@@ -953,7 +953,7 @@ def _show_callable(fn: Any) -> str:
 
 
 def _name_text(name: str) -> str:
-    return name if len(name) == 1 else f"\\{name}"
+    return name if is_short_name(name) else f"\\{name}"
 
 
 def _display_name(name: str, spelling: str | None) -> str:

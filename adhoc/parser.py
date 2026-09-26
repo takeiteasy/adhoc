@@ -114,6 +114,7 @@ from .lexer import (
 from .runtime import PRELUDE, RESERVED_NAMES
 from .span import Span
 from .syntax import (
+    is_short_name,
     ArrayLit,
     Assign,
     BackslashRef,
@@ -315,7 +316,7 @@ class _Parser:
         single-character canonical name is a Var, a multi-character one a
         BackslashRef — the language's own long/short name convention."""
         canonical = self._canonical(spelling)
-        if len(canonical) == 1:
+        if is_short_name(canonical):
             return Var(ch=canonical, span=span, spelling=spelling)
         return BackslashRef(name=canonical, span=span, spelling=spelling)
 
@@ -477,7 +478,7 @@ class _Parser:
             raise ParseError(
                 f"`\\{canonical}` is an infix operator and cannot be aliased",
                 canonical_tok.span)
-        canonical_display = f"\\{canonical}" if len(canonical) > 1 else canonical
+        canonical_display = canonical if is_short_name(canonical) else f"\\{canonical}"
         for short_tok, short in names[1:]:
             if not isinstance(short_tok, Ident):
                 raise ParseError(

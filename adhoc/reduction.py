@@ -5,6 +5,7 @@ from itertools import count
 
 from .expression import ExpressionValue
 from .syntax import (
+    is_short_name,
     Assign, BackslashRef, Call, Fold, FuncDef, Import, Lambda, Limit, Node,
     NoOp, PyImport, Quote, Seq, Var,
 )
@@ -183,7 +184,7 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
     if isinstance(node, _Bound):
         name, spelling = context[node.index]
         written = node.spelling if name == node.name else spelling
-        if len(name) == 1:
+        if is_short_name(name):
             return Var(node.span, name, written)
         return BackslashRef(node.span, name, written)
     if isinstance(node, Lambda):
@@ -196,7 +197,7 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
                 spelling = f"\\{name}"
             else:
                 spelling = (node.param_spellings[index] if index < len(node.param_spellings)
-                            else name if len(name) == 1 else f"\\{name}")
+                            else name if is_short_name(name) else f"\\{name}")
             names.append(name)
             spellings.append(spelling)
             forbidden.add(name)

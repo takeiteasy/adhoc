@@ -13,6 +13,14 @@ from enum import Enum, auto
 
 from .span import Span
 
+SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉"
+
+
+def is_short_name(name: str) -> bool:
+    """A canonical name written without a sigil: one letter plus an optional subscript-digit
+    run (`x`, `x₁`, `α₂₃`). Every other name is `\\`-prefixed."""
+    return bool(name) and name[0].isalpha() and all(c in SUBSCRIPT_DIGITS for c in name[1:])
+
 
 class BinOperator(Enum):
     ADD = auto()

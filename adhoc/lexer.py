@@ -24,6 +24,7 @@ unclosed parenthesis.
 from dataclasses import dataclass
 
 from .span import Span
+from .syntax import SUBSCRIPT_DIGITS
 
 
 class LexError(Exception):
@@ -507,9 +508,12 @@ def tokenize(src: str) -> list[Token]:
             continue
 
         if c.isalpha():
-            end = pos + len(c.encode("utf-8"))
-            tokens.append(Ident(ch=c, span=Span(pos, end)))
-            i += 1
+            j = i + 1
+            while j < n and entries[j][1] in SUBSCRIPT_DIGITS:
+                j += 1
+            end = entries[j][0] if j < n else eof_off
+            tokens.append(Ident(ch=src[i:j], span=Span(pos, end)))
+            i = j
             continue
 
         if c == "√":
