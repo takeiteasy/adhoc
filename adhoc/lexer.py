@@ -324,11 +324,22 @@ class InfixOp(Token):
 
 @dataclass(frozen=True)
 class Prime(Token):
-    """Postfix transpose `'`."""
+    """Postfix `'`, or `ᵀ` (`glyph`): transpose, and derivative on a function for `'` only."""
+
+    glyph: str = "'"
 
     @property
     def describe(self) -> str:
-        return "`'`"
+        return f"`{self.glyph}`"
+
+
+@dataclass(frozen=True)
+class MapsTo(Token):
+    """The lambda arrow `↦`, ASCII `->` or `\\mapsto`."""
+
+    @property
+    def describe(self) -> str:
+        return "`↦`"
 
 
 @dataclass(frozen=True)
@@ -515,6 +526,13 @@ def tokenize(src: str) -> list[Token]:
                 i += 1
             continue
 
+        if c == "↦" or (c == "-" and i + 1 < n and entries[i + 1][1] == ">"):
+            width = 1 if c == "↦" else 2
+            end = entries[i + width][0] if i + width < n else eof_off
+            tokens.append(MapsTo(span=Span(pos, end)))
+            i += width
+            continue
+
         if c == '"':
             # Exactly four escapes decode inside a literal (`\"`, `\\`, `\n`, `\t`);
             # any other backslash pair is an error. The span stays over the raw source
@@ -600,7 +618,10 @@ def tokenize(src: str) -> list[Token]:
             span = Span(pos, end)
             if not name:
                 raise LexError("bare `\\` with no name following", span)
-            tokens.append(Backslash(name=name, span=span))
+            if name == "mapsto":
+                tokens.append(MapsTo(span=span))
+            else:
+                tokens.append(Backslash(name=name, span=span))
             i = j
             continue
 
@@ -622,11 +643,11 @@ def tokenize(src: str) -> list[Token]:
                            Span(pos, pos + len(c.encode("utf-8"))))
 
         if c == _TRANSPOSE_GLYPH:
-            tokens.append(Prime(span=Span(pos, pos + len(c.encode("utf-8")))))
+            tokens.append(Prime(glyph=c, span=Span(pos, pos + len(c.encode("utf-8")))))
             i += 1
             continue
 
-        if c in "∅∀∃":
+        if c in "∅∀∃∫∂":
             tokens.append(Ident(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
             i += 1
             continue

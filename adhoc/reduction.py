@@ -6,8 +6,8 @@ from itertools import count
 from .expression import ExpressionValue
 from .syntax import (
     is_short_name,
-    Assign, BackslashRef, Call, Fold, FuncDef, Import, Lambda, Limit, Node,
-    NoOp, PyImport, Quote, Seq, Var,
+    Assign, BackslashRef, Call, Diff, Fold, FuncDef, Import, Integral, Lambda, Limit, Node,
+    NoOp, PyImport, Quote, Seq, SetBuilder, Var,
 )
 
 
@@ -56,12 +56,17 @@ def _encode(node: Node, context: tuple[str, ...]) -> Node:
         return node
     if isinstance(node, Lambda):
         return replace(node, body=_encode(node.body, tuple(reversed(node.params)) + context))
-    if isinstance(node, Fold):
+    if isinstance(node, Fold | Integral):
         return replace(node, bound=_encode(node.bound, context),
                        body=_encode(node.body, (node.var,) + context))
-    if isinstance(node, Limit):
+    if isinstance(node, Limit | Diff):
         return replace(node, point=_encode(node.point, context),
                        body=_encode(node.body, (node.var,) + context))
+    if isinstance(node, SetBuilder):
+        inner = (node.var,) + context
+        return replace(node, domain=_encode(node.domain, context),
+                       element=None if node.element is None else _encode(node.element, inner),
+                       guards=tuple(_encode(g, inner) for g in node.guards))
     return _children(node, lambda child: _encode(child, context))
 
 
@@ -72,12 +77,17 @@ def _shift(node: Node, amount: int, depth: int = 0) -> Node:
         return replace(node, index=node.index + amount) if node.index >= depth else node
     if isinstance(node, Lambda):
         return replace(node, body=_shift(node.body, amount, depth + len(node.params)))
-    if isinstance(node, Fold):
+    if isinstance(node, Fold | Integral):
         return replace(node, bound=_shift(node.bound, amount, depth),
                        body=_shift(node.body, amount, depth + 1))
-    if isinstance(node, Limit):
+    if isinstance(node, Limit | Diff):
         return replace(node, point=_shift(node.point, amount, depth),
                        body=_shift(node.body, amount, depth + 1))
+    if isinstance(node, SetBuilder):
+        return replace(node, domain=_shift(node.domain, amount, depth),
+                       element=None if node.element is None
+                       else _shift(node.element, amount, depth + 1),
+                       guards=tuple(_shift(g, amount, depth + 1) for g in node.guards))
     return _children(node, lambda child: _shift(child, amount, depth))
 
 
@@ -93,12 +103,17 @@ def _substitute(node: Node, args: tuple[Node, ...], depth: int = 0) -> Node:
         return replace(node, index=node.index - len(args))
     if isinstance(node, Lambda):
         return replace(node, body=_substitute(node.body, args, depth + len(node.params)))
-    if isinstance(node, Fold):
+    if isinstance(node, Fold | Integral):
         return replace(node, bound=_substitute(node.bound, args, depth),
                        body=_substitute(node.body, args, depth + 1))
-    if isinstance(node, Limit):
+    if isinstance(node, Limit | Diff):
         return replace(node, point=_substitute(node.point, args, depth),
                        body=_substitute(node.body, args, depth + 1))
+    if isinstance(node, SetBuilder):
+        return replace(node, domain=_substitute(node.domain, args, depth),
+                       element=None if node.element is None
+                       else _substitute(node.element, args, depth + 1),
+                       guards=tuple(_substitute(g, args, depth + 1) for g in node.guards))
     return _children(node, lambda child: _substitute(child, args, depth))
 
 
@@ -155,7 +170,7 @@ def _all_names(node: Node) -> set[str]:
         names.add(node.name)
     elif isinstance(node, Lambda):
         names.update(node.params)
-    elif isinstance(node, Fold | Limit):
+    elif isinstance(node, Fold | Limit | Diff | Integral | SetBuilder):
         names.add(node.var)
     for field in fields(node):
         value = getattr(node, field.name)
@@ -204,12 +219,23 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
         inner = tuple(reversed(tuple(zip(names, spellings)))) + context
         return replace(node, params=tuple(names), param_spellings=tuple(spellings),
                        body=_reify(node.body, inner, fresh))
-    if isinstance(node, Fold | Limit):
+    if isinstance(node, SetBuilder):
+        scoped = tuple(p for p in (node.element, *node.guards) if p is not None)
+        forbidden = set().union(*map(_free_names, scoped)) | {name for name, _ in context}
+        name = fresh() if node.var in forbidden else node.var
+        spelling = f"\\{name}" if name != node.var else node.var_spelling
+        inner = ((name, spelling),) + context
+        return replace(node, var=name, var_spelling=spelling,
+                       domain=_reify(node.domain, context, fresh),
+                       element=None if node.element is None
+                       else _reify(node.element, inner, fresh),
+                       guards=tuple(_reify(g, inner, fresh) for g in node.guards))
+    if isinstance(node, Fold | Limit | Diff | Integral):
         forbidden = _free_names(node.body) | {name for name, _ in context}
         name = fresh() if node.var in forbidden else node.var
         spelling = f"\\{name}" if name != node.var else node.var_spelling
         inner = ((name, spelling),) + context
-        if isinstance(node, Fold):
+        if isinstance(node, Fold | Integral):
             return replace(node, var=name, var_spelling=spelling,
                            bound=_reify(node.bound, context, fresh),
                            body=_reify(node.body, inner, fresh))

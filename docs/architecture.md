@@ -14,12 +14,14 @@ adhoc/
 ├── parser      — precedence climbing over docs/grammar.md
 ├── expression  — frozen expression values and parseable display
 ├── reduction   — beta reduction over quoted expression ASTs
+├── tex         — LaTeX rendering of quoted ASTs and values behind `\tex` (formatting only)
 ├── tensor      — tensor values (shape, indexing, transpose, contraction; scalar
 │                 operations are passed in by runtime.py), array values, and set values
 ├── linalg      — elimination (det, inverse, solve, rank, rref), constructors, and
 │                 cross/outer/Kronecker products; scalar operations passed in by runtime.py
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
-│                 plus the \py boundary and its conversion matrix
+│                 plus the \py boundary and its conversion matrix, and the numeric
+│                 calculus (Ridders derivatives, Gauss–Kronrod quadrature)
 ├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
 │                 real or pure-imaginary, backed by sympy; only runtime.py
 │                 dispatches into it)

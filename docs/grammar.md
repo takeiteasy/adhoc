@@ -48,9 +48,10 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. `\atan2` is the one name ending in a digit. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
+- `∫` and `∂` lex as identifiers that alias `\int` and `\diff`.
 - The delimiters `⌊ ⌋ ⌈ ⌉` and the bars `|` and `‖` (`∥` reads as `‖`) bracket an expression
   (`## Delimited forms`).
-- Operators: `+ - * / % @ × ⊗ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
+- Operators: `↦ -> + - * / % @ × ⊗ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
   A lone `·` (U+00B7), `⋅` (U+22C5) or `_` is the partial-application placeholder
   (`## Composition and partial application`); inside a `\`-name `_` is an ordinary name
@@ -60,7 +61,8 @@ written against — it should stay in lockstep with the code.
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
   conditional and `:` closes it
   in expression position (the only other use of `:` is the import member list).
-- The lambda heads `\λ` / `\fn` are the one spelling the parser consumes specially —
+- The lambda arrow `↦` (ASCII `->` or `\mapsto`, which is never a name) is one token. The
+  lambda heads `\λ` / `\fn` are the one name the parser consumes specially —
   and only when a parameter-list paren follows. Any other `\`-name lexes cleanly,
   binds like any name, and fails at evaluation if unbound.
 
@@ -127,11 +129,14 @@ func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
               | "(" operator ")" | "(" operator operand ")" | "(" operand operator ")"
-              | lambda | radical | delimited | quote | tensor | array | set ;
+              | lambda | arrow-lambda | radical | delimited | quote | tensor | array | set | piecewise | builder ;
 delimited  ::= "⌊" expr "⌋" | "⌈" expr "⌉" | "|" expr "|" | "‖" expr "‖" ;
 tensor     ::= "[" expr ("," expr)* "]"
              | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
 set        ::= "{" (expr ("," expr)*)? "}" ;
+piecewise  ::= "{" (expr ":" expr sep)* (expr ":" expr | expr) sep? "}" ;
+builder    ::= "{" name "∈" expr "|" guards "}" | "{" expr "|" name "∈" expr ("," guards)? "}" ;
+guards     ::= expr ("," expr)* ;
 array      ::= ("⟨" | "#[") (expr ("," expr)*)? ("⟩" | "]")
              | "\\arr" "(" (expr ("," expr)*)? ")" ;
 quote      ::= ("\\expr" | "`") "(" expr ")"
@@ -139,6 +144,7 @@ quote      ::= ("\\expr" | "`") "(" expr ")"
 eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
 sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
+arrow-lambda ::= (name | "(" params? ")") ("↦" | "->" | "\mapsto") expr ;
 ```
 
 `\let` is a statement form. Its variable form is legal wherever a statement is legal;
@@ -172,6 +178,8 @@ argument is a binding, not a general expression (see `## Special forms`):
 fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident ("=" | "∈") expr ")" expr ;
 quantifier ::= ("\forall" | "∀" | "\exists" | "∃") "(" ident ("=" | "∈") expr ")" expr ;
 limit      ::= "\lim" "(" ident "=" expr ")" expr ;
+diff       ::= ("\diff" | "∂") "(" ident "=" expr ")" expr ;
+integral   ::= ("\int" | "∫") "(" ident "=" range ")" expr ;
 ```
 
 ## Precedence table
@@ -195,7 +203,7 @@ Loosest to tightest:
 | 13 | juxtaposition (implicit `*`) | left |
 | 14 | unary `-`, `√` `∛` `∜` | prefix |
 | 15 | `^` | right |
-| 16 | postfix `(…)` application, `[…]` index, `'` transpose, `!` `‼` factorial, superscript `²` | left |
+| 16 | postfix `(…)` application, `[…]` index, `'` transpose or derivative, `!` `‼` factorial, superscript `²` | left |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -258,8 +266,9 @@ argument. A nested pair of the same glyph reached after an operand needs parenth
 Trailers attach to the closer: `|x|²`, `⌊x⌋!`. A stray closer is an `unexpected token` error, a
 mismatched one ``expected `⌋`, found `⌉` ``, and an unclosed form is incomplete input.
 
-[^bars]: `|a|b||` reads as `|a|·b·|` and fails at the last bar. The `|` inside `{x ∈ s | p}`
-    is set-builder notation and does not exist yet ([#79](https://todo.sr.ht/~takeiteasy/adhoc/79)).
+[^bars]: `|a|b||` reads as `|a|·b·|` and fails at the last bar. Inside `{ }` the first item
+    reads with a separator bar on the stack, so `{a |b|}` is set-builder and needs `{a*|b|}`
+    for the product (`## Sets`).
 
 ## Application: dynamic name-headed parens
 
@@ -416,7 +425,7 @@ m[2, 1]  ->  = 3                m[1]  ->  = [1, 2]
 | `[a, b; c, d]` | matrix; `;` rows hold numbers and have one length |
 | `[a, b;]` / `[a; b]` | one-row / one-column matrix — a trailing `;` keeps a single row a matrix |
 | `x[i, j]` | 1-based index; fewer indices than axes gives the sub-tensor |
-| `x'` | transpose: reverses the axes; a vector is unchanged |
+| `x'`, `xᵀ` | transpose: reverses the axes; a vector is unchanged (`'` on a function is its derivative, docs/calculus.md) |
 | `a @ b`, `a \contract b` | contraction of `a`'s last axis with `b`'s first: dot product, matrix product |
 | `a × b`, `a \times b` | cross product of two length-3 vectors; with a scalar operand, the same as `*` |
 | `a ⊗ b`, `a \otimes b` | tensor product: the operands' shapes concatenate; with a scalar operand, the same as `*` |
@@ -498,6 +507,25 @@ right; the range reads unparenthesized (`3 ∈ 1..5`), though `..` stays looser 
 the empty set. Anything else is a typed error, as are arithmetic, ordering, and indexing on a set. The
 `\`-names `cup cap setminus in subseteq` and `notin subset supseteq supset neq approx` are operators, never names: they cannot bind or be aliased, and stand as a
 value only as `(\cup)` or a whole call argument (`## Operator values`).
+
+### Set-builder
+
+`{x ∈ S | p}` filters, `{e | x ∈ S}` maps, and guards follow after commas. The result is a
+set: elements deduplicate as in a literal.
+
+```
+{x ∈ 1..10 | x^2 < 50}     ->  = {1, 2, 3, 4, 5, 6, 7}
+{x^2 | x ∈ 1..4}           ->  = {1, 4, 9, 16}
+{x^2 | x ∈ 1..4, x > 1}    ->  = {4, 9, 16}
+{x ∈ 1..10 | x > 2, x < 5} ->  = {3, 4}
+```
+
+The first top-level `|` after the first item of a `{ }` is the separator, decided before
+bars are read: bars still open at an operand (`{|x| | x ∈ s}`), but after an operand the
+bar separates. A first item of the form `x ∈ S` is the filter form; otherwise the binder
+`x ∈ S` follows the bar. The domain is a finite range or collection (an infinite one is an
+error; parenthesize `(1..)` when a bar follows a range end), guards are booleans, and
+the binder scopes like a fold's. One binder only.
 
 Sets display in first-seen order and compare regardless of it: `{1, 2} = {2, 1}` is
 `true`. Sets nest (`{{1, 2}, {2, 1}}` is `{{1, 2}}`) and hold tensors, arrays, strings,
@@ -673,6 +701,26 @@ a > 0 ? 1 : b > 0 ? 2 : 3       -- a ? 1 : (b ? 2 : 3)
          x + 1) : 99            ->  = 5    -- a group is the multi-statement branch
 ```
 
+### Piecewise
+
+`{c₁: v₁; c₂: v₂; otherwise}` is a chain of conditions in braces: the first true
+condition's value, evaluated lazily. Clauses separate on `;` or a newline; the last bare value
+is the default and may be left out, in which case an uncovered input is the typed error
+`no piecewise case matched`. Conditions are booleans.
+
+```
+f(x) = {x < 0: -x; x}
+f(-3)                         ->  = 3
+s(x) = {x < 0: -1; x > 0: 1; 0}
+{
+x < 0: "neg"
+"other"
+}                             -- clauses on their own lines
+```
+
+A `{ }` whose first item is followed by `:` is a piecewise; `{c ? a : b}` is still a set of
+a ternary.
+
 Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
 Booleans are valid values and conditions but are not numeric operands. There is no
 numeric truthiness: a number is never a condition — `0 ? 1 : 2` is a typed error,
@@ -694,6 +742,21 @@ Lambdas display as `<λ(x)>` and compare by identity like other callables; they 
 positional arguments only, and a parameter named like a prelude constant is rejected
 at evaluation, exactly as for defs — with the one exception of `i` (see
 `## Assignment semantics`).
+
+### Arrow form
+
+`x ↦ body` is `\fn(x) body`, and `(x, y) ↦ body` is `\fn(x, y) body`; `() ↦ body` takes no
+arguments. The ASCII spellings are `->` and `\mapsto`.[^arrow] The node and the greedy body
+are the lambda's, so arrows nest right-associatively.
+
+```
+\map(x -> x^2, [1, 2, 3])     ->  = [1, 4, 9]
+((x, y) ↦ x * y)(3, 4)       ->  = 12
+(x -> y -> x + y)(1)(2)      ->  = 3
+```
+
+[^arrow]: `->` in these docs' examples also marks "evaluates to" (`f(3)  ->  = 10`); in code it
+    is always the lambda arrow. It is not the implication `→` (`\implies`).
 
 **Body extent** follows the fold/limit rule: the body extends greedily over the rest
 of the current expression, up to the enclosing delimiter (`,` `)` `;`, end of
@@ -733,7 +796,7 @@ not `=` — name it with `f(x) = body`).
 
 ## Special forms: folds and limits
 
-`\sum`, `\prod`, `\lim`, `\forall` and `\exists` are
+`\sum`, `\prod`, `\lim`, `\diff`, `\int`, `\forall` and `\exists` are
 **special forms**, not functions: their first parenthesized argument is a binding — an
 identifier, `=`, then the bound expression — which general expressions cannot contain.
 Folds and quantifiers also take `∈` (or `\in`) in place of `=`; `\lim` binds a point, so it
@@ -749,6 +812,8 @@ and a user `\alias` onto those names gets the same treatment for free.
 \prod(j=1..5) j              ->  = 120          -- fold *
 Σ(k=1,3..7) k                ->  = 16           -- stepped ranges bind too
 \lim(x=0) x/x                ->  = 1.0          -- numeric limit; anchor never evaluated
+\diff(x=1) \sin(x)          ->  = 0.5403…      -- numeric derivative (∂ is the same name)
+∫(x=0..π) \sin(x)            ->  = 2.0          -- numeric integral (∫ is the same name)
 ∀(x=1..5) x > 0              ->  = true         -- quantifiers bind like \sum
 ∀(x∈1..5) x > 0              ->  = true         -- `∈` reads the same as `=`
 Σ(k∈⟨1, 2, 3⟩) k             ->  = 6            -- folds take it too
@@ -778,6 +843,10 @@ the float tier until consecutive values stabilize within `CONVERGENCE_TOLERANCE`
 sums additionally stop early on a confirmed tail estimate (monotone-decay or Leibniz
 shapes with a bounded claimed error). The cap produces a typed error rather
 than returning a possibly-misleading partial result; so does any non-finite partial.
+
+`\diff` and `\int` bind `x` the same way and evaluate the body in a fresh frame per probe;
+`\int` takes a range binder. Their methods and tolerances are in docs/calculus.md, and `\diff`
+and `\int` (`∂`, `∫`) join `Σ` and `Π` in the alias table.
 
 **Limits are numeric only** — this is a calculator, not a CAS. `\lim(x=a) body` probes
 both sides with geometrically shrinking steps and never binds `x` to `a` itself. Each
@@ -891,6 +960,8 @@ everywhere a name is consumed, seeded with:
 | `π` | `\pi` |
 | `∀` | `\forall` |
 | `∃` | `\exists` |
+| `∫` | `\int` |
+| `∂` | `\diff` |
 
 `\alias` extends the map for the rest of the session:
 

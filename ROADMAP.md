@@ -146,9 +146,6 @@ active-pair rewriting from earlier drafts are retired: `DESIGN.md` keeps the des
 but nothing builds toward them unless an HVM-style engine is ever actually adopted as a real
 backend.
 
-- **LaTeX export** — `\tex(\expr(...))` renders an expression value back out as TeX/Unicode
-  source: `ad` reads like LaTeX, this is the round-trip. Small once phase-4 expression
-  values exist — pretty-printing over the quoted AST.
 - **Literate script mode** — strings are already comment-like statements; a script-mode flag
   emits a Markdown/LaTeX transcript with each result inline. Half the feature exists.
 - **Number-theory prelude + postfix `!`** — `\gcd`, `\mod`, `\choose`, and factorial as a
@@ -165,7 +162,7 @@ backend.
 - **Units and dimensional analysis** — `9.8 \m \per \s^2` with dimension errors at the
   numeric seam. The exact tower loves it and prelude protection gives unit names a home;
   costly, high ceiling — positions `ad` as the physics quick-calc tool.
-- **Exact symbolic differentiation** — `\diff(\expr(x^2), x)` via product/chain-rule AST
+- **Exact symbolic differentiation** — a symbolic counterpart of the numeric `\diff(x=a)` binder (spelling open, since `\diff(\expr(x^2), x)` no longer parses), via product/chain-rule AST
   rewriting; easier than `\solve` and exact where CAS-lite tools float. A candidate to
   promote into phase 4 rather than past it.
 - **Arbitrary-precision float tier** — MPFR/gmpy2 behind the numeric seam with a `\prec(n)`

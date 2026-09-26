@@ -24,6 +24,9 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 | `¬` | `\not` | negation | prefix |
 | `∀` `∃` | `\forall` `\exists` | quantifiers over a range or collection | special form |
 | `r∠θ` | `\angle` `\polar(r, θ)` | polar form: modulus and angle | above `+`, below comparison |
+| `∫(x=a..b)` `∂(x=a)` | `\int` `\diff` | numeric integral and derivative ([calculus](calculus.md)) | special form |
+| `f'` `f''` | — | derivative of a function; `'` on a tensor stays the transpose | postfix |
+| `x ↦ body` | `x -> body` `x \mapsto body` | lambda; `(x, y) ↦ body` for several parameters | loosest, greedy body |
 | `⌊x⌋` `⌈x⌉` | `\floor(x)` `\ceil(x)` | floor and ceiling | atom |
 | `\|x\|` | `\abs(x)` | absolute value, complex modulus | atom |
 | `‖v‖` `∥v∥` | `\norm(v)` | 2-norm of a vector, Frobenius norm of a matrix | atom |

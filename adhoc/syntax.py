@@ -183,6 +183,50 @@ class Limit(Node):
 
 
 @dataclass(frozen=True)
+class Diff(Node):
+    """`\\diff(x=a) f(x)` — the numeric derivative of the body at the point."""
+
+    var: str
+    point: Node
+    body: Node
+    spelling: str | None = field(default=None, compare=False)
+    var_spelling: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class Integral(Node):
+    """`\\int(x=a..b) f(x)` — the numeric integral of the body over a range."""
+
+    var: str
+    bound: Node
+    body: Node
+    spelling: str | None = field(default=None, compare=False)
+    var_spelling: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class Piecewise(Node):
+    """`{c₁: v₁; c₂: v₂; otherwise}` — the first true condition's value; `otherwise` is
+    the optional final bare value."""
+
+    conditions: tuple[Node, ...]
+    values: tuple[Node, ...]
+    otherwise: Node | None = None
+
+
+@dataclass(frozen=True)
+class SetBuilder(Node):
+    """`{x ∈ S | p, q}` or `{e | x ∈ S, p}` — the set of `element` (the variable itself when
+    None) over the domain's members that satisfy every guard."""
+
+    var: str
+    domain: Node
+    element: Node | None
+    guards: tuple[Node, ...]
+    var_spelling: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
 class KwArg(Node):
     """A `name=value` argument inside a call's argument list. Names are single-character
     identifiers or `\\`-sigiled multi-character names (`\\dpi`); the value may be any
@@ -365,6 +409,7 @@ class Index(Node):
 
 @dataclass(frozen=True)
 class Transpose(Node):
-    """Postfix `x'`."""
+    """Postfix `x'` (or `xᵀ`)."""
 
     operand: Node
+    glyph: str = "'"

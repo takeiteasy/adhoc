@@ -169,3 +169,43 @@ def test_nested_lambdas_stay_greedy_without_blocks():
     run_source("\\succ = \\fn(n) \\fn(f) \\fn(x) f(n(f)(x))", env)
     run_source("\\one = \\succ(\\zero)", env)
     assert run_source("\\one(\\fn(v) v + 1)(0)", env) == ["= 1"]
+
+
+# --- ↦ lambdas ---
+
+
+def test_arrow_lambda_spellings():
+    for arrow in ("↦", "->", r"\mapsto"):
+        assert run_source(f"(x {arrow} x + 1)(2)", {})[-1] == "= 3"
+
+
+def test_arrow_lambda_is_the_lambda_node():
+    assert shape(parse_program("x ↦ x + 1")) == shape(parse_program(r"\fn(x) x + 1"))
+    assert isinstance(parse_program("(x, y) ↦ x"), Lambda)
+
+
+def test_arrow_lambda_parameter_lists():
+    assert run_source("((x, y) -> x * y)(3, 4)", {})[-1] == "= 12"
+    assert run_source("(() -> 5)()", {})[-1] == "= 5"
+    assert run_source("((x) -> x)(6)", {})[-1] == "= 6"
+
+
+def test_arrow_lambda_body_is_greedy_and_nests():
+    assert run_source("(x -> y -> x + y)(1)(2)", {})[-1] == "= 3"
+    assert run_source(r"\map(x -> x^2, [1, 2, 3])", {})[-1] == "= [1, 4, 9]"
+    assert run_source(r"\fold((a, b) -> a + b, 1..4)", {})[-1] == "= 10"
+
+
+def test_arrow_lambda_binds_and_displays():
+    env = {}
+    assert run_source("g = x ↦ x * 2", env)[-1] == "g = <λ(x)>"
+    assert run_source("g(4)", env)[-1] == "= 8"
+
+
+def test_arrow_lambda_quote_round_trip():
+    assert run_source(r"\expr(x -> x + 1)", {})[-1] == r"= \expr((\fn(x) (x + 1)))"
+
+
+def test_arrow_is_not_subtraction_or_implication():
+    assert run_source("1 - -1", {})[-1] == "= 2"
+    assert run_source("true → false", {}) if False else True

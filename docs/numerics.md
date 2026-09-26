@@ -223,6 +223,8 @@ result. Three knobs live at the top of `runtime.py`:
 | `CONVERGENCE_TOLERANCE` | `1e-12` | plateau test shared by both features (`EXACT_CONVERGENCE_TOLERANCE = 1/10^12` mirrors it for exact-tier comparisons). The float branch scales relatively — `|Δ| <= tol · max(1, |prev|, |cur|)` — so O(1) and near-zero iteration behaves exactly as before while large-magnitude iteration (whose float64 ulps dwarf an absolute tolerance) can still settle |
 | `MAX_TERMS` | `2_000_000` | fold-term budget before `` `\sum did not converge within … terms `` |
 | `MAX_PROBES` | `200` | per-side `\lim` probe budget |
+| `DIFF_TOLERANCE` / `DIFF2_TOLERANCE` | `1e-9` / `1e-6` | Ridders error estimate accepted by `\diff` / `f'` and by `f''` |
+| `MAX_INTERVALS` | `2000` | adaptive `\int` subintervals before `did not converge` |
 
 RRA approximation (`approximate` in `adhoc/rra.py`) shares the shape with a
 caller-supplied tolerance rather than the fixed knob: escalate precision until
@@ -266,6 +268,10 @@ The two riders:
   part below the tolerance (scaled by the modulus), so `\lim(x=i) x^2` is `-1.0`. Eight rays
   are a heuristic, not a proof of the two-dimensional limit (see
   [Limitations](stdlib.md#limitations)).
+
+`\diff` and `\int` (`docs/calculus.md`) reuse the float tier and the typed-error-at-the-cap rule,
+with their own estimators (Ridders extrapolation, adaptive Gauss–Kronrod) in place of the
+plateau test.
 
 Known sharp edges (not bugs): series whose terms change sign irregularly have no
 boundable tail shape, so they keep the plateau's best effort — near zero that stays

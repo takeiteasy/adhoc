@@ -50,23 +50,27 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    Diff,
     Fold,
     FuncDef,
     Hole,
     IfExpr,
     Import,
     Index,
+    Integral,
     Lambda,
     Limit,
     Node,
     NoOp,
     NumLit,
     OpRef,
+    Piecewise,
     PyImport,
     Quote,
     Eval,
     Range,
     Seq,
+    SetBuilder,
     SetLit,
     StrLit,
     TensorLit,
@@ -301,10 +305,10 @@ class _Lowerer:
                                                    ctx=pyast.Load()),
                                        pyast.Constant(sid),
                                        pyast.Constant(_call_spelling(head))])
-            case Transpose(operand=operand, span=span):
+            case Transpose(operand=operand, glyph=glyph, span=span):
                 inner = self.expr(operand)
                 sid = self._push(span)
-                return _call("transpose", [inner, pyast.Constant(sid)])
+                return _call("transpose", [inner, pyast.Constant(sid), pyast.Constant(glyph)])
             case Range(start=start, second=second, end=end, span=span):
                 sid = self._push(span)
                 return _call("range", [self.expr(start),
@@ -332,6 +336,39 @@ class _Lowerer:
                 return _call("limit", [pyast.Constant(var), self.expr(point),
                                        pyast.Constant(sid), pyast.Constant(spelling),
                                        pyast.Constant(var_spelling)])
+            case Diff(var=var, point=point, body=body, spelling=spelling,
+                      var_spelling=var_spelling, span=span):
+                sid = self._push(span)
+                self.definitions[sid] = _compile_body(body, self.source)
+                return _call("diff", [pyast.Constant(var), self.expr(point),
+                                      pyast.Constant(sid), pyast.Constant(spelling),
+                                      pyast.Constant(var_spelling)])
+            case Integral(var=var, bound=bound, body=body, spelling=spelling,
+                          var_spelling=var_spelling, span=span):
+                sid = self._push(span)
+                self.definitions[sid] = _compile_body(body, self.source)
+                return _call("integral", [pyast.Constant(var), self.expr(bound),
+                                          pyast.Constant(sid), pyast.Constant(spelling),
+                                          pyast.Constant(var_spelling)])
+            case Piecewise(conditions=conditions, values=values, otherwise=otherwise, span=span):
+                sid = self._push(span)
+                return _call("piecewise", [
+                    pyast.Tuple(elts=[self._thunk(c) for c in conditions], ctx=pyast.Load()),
+                    pyast.Tuple(elts=[self._thunk(v) for v in values], ctx=pyast.Load()),
+                    self._thunk(otherwise) if otherwise is not None else pyast.Constant(None),
+                    pyast.Constant(sid)])
+            case SetBuilder(var=var, domain=domain, element=element, guards=guards,
+                            var_spelling=var_spelling, span=span):
+                sid = self._push(span)
+                body_sids = []
+                for part in (*guards, *([element] if element is not None else [])):
+                    part_sid = self._push(part.span)
+                    self.definitions[part_sid] = _compile_body(part, self.source)
+                    body_sids.append(part_sid)
+                return _call("set_builder", [pyast.Constant(var), self.expr(domain),
+                                             pyast.Constant(tuple(body_sids[:len(guards)])),
+                                             pyast.Constant(body_sids[-1] if element is not None else None),
+                                             pyast.Constant(sid), pyast.Constant(var_spelling)])
             case Lambda(params=params, body=body, param_spellings=param_spellings,
                         span=span):
                 # Same shape as FuncDef/Fold: the body compiles once into

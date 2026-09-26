@@ -160,6 +160,14 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   without evaluating arithmetic or expanding named functions. Free names remain free;
   `\eval` can bind them later. Statement quotes are not reducible.
 
+- Calculus: `\diff(x=a) body` (`∂`) and `\int(x=a..b) body` (`∫`) are numeric binders, and
+  `f'` / `f''` are derivative functions (docs/calculus.md).
+- Lambda arrow: `x ↦ x^2`, ASCII `x -> x^2` or `x \mapsto x^2`; `(x, y) ↦ x + y` for several
+  parameters (docs/grammar.md, `## Lambdas`).
+- Piecewise definitions `{x < 0: -x; x}` and set-builder `{x ∈ 1..10 | x^2 < 50}`
+  (docs/grammar.md, `## Sets`, `## Conditionals`).
+- `\tex(e)` returns LaTeX for a quote, function or value (docs/tex.md).
+
 - Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors order 1, matrices order 2,
   higher orders nest). Indexing is 1-based (`m[2, 1]`), `'` transposes, `+ - * / ^` are
   elementwise with scalar broadcast, and `@` / `\contract` contracts (dot and matrix
@@ -220,6 +228,7 @@ phases add bindings without touching the lexer.
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
+- Numeric calculus stops at finite bounds and order 2 — see docs/calculus.md, `## Limitations`.
 - `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
 - `/` is elementwise on tensors, and there is no determinant, inverse, or linear solve —
   [#76](https://todo.sr.ht/~takeiteasy/adhoc/76).

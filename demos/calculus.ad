@@ -1,0 +1,28 @@
+-- calculus.ad — numeric derivatives and integrals
+-- run with: adhoc run demos/calculus.ad
+
+-- \diff(x=a) body: the derivative at a (∂ is the same name)
+\diff(x=1) \sin(x)
+∂(x=2) x^3
+
+-- f' and f'' are the derivative functions; a tensor's ' is still the transpose
+f(x) = x^3
+f'(2)
+f''(2)
+\map(f', [1, 2, 3])
+
+-- \int(x=a..b) body: the integral over a range (∫ is the same name)
+∫(x=0..π) \sin(x)
+\int(x=0..1) x^2
+
+-- endpoint singularities and infinite ranges converge too
+∫(x=0..1) 1/√x
+∫(x=0..) e^(-x)
+
+-- a reversed range negates
+∫(x=1..0) x
+
+-- \tex renders a quote, a function, or a value as LaTeX
+\tex(\expr(∫(x=0..) e^(-x)))
+\tex(f)
+\tex(1/2)

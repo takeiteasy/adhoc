@@ -91,6 +91,7 @@ from .lexer import (
     LParen,
     Less,
     LessEq,
+    MapsTo,
     Minus,
     Newline,
     Number,
@@ -128,12 +129,14 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    Diff,
     Fold,
     FuncDef,
     Hole,
     IfExpr,
     Import,
     Index,
+    Integral,
     KwArg,
     Lambda,
     Limit,
@@ -142,11 +145,13 @@ from .syntax import (
     NumLit,
     OP_SYMBOLS,
     OpRef,
+    Piecewise,
     PyImport,
     Quote,
     Eval,
     Range,
     Seq,
+    SetBuilder,
     SetLit,
     StrLit,
     TensorLit,
@@ -226,7 +231,7 @@ _LAMBDA_HEADS = ("λ", "fn")
 # fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
 # hardcoded parser/prelude special cases (docs/grammar.md, `## Name aliases`).
 ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi", "∅": "emptyset",
-                              "∀": "forall", "∃": "exists"}
+                              "∀": "forall", "∃": "exists", "∫": "int", "∂": "diff"}
 
 
 def _spelling(tok: Ident | Backslash) -> str:
@@ -728,6 +733,33 @@ class _Parser:
         return Lambda(params=params, body=body, span=head.span.to(body.span),
                       param_spellings=param_spellings)
 
+    # arrow-lambda ::= name "↦" expr | "(" params? ")" "↦" expr ;  — the same node and the
+    # same greedy body as `\fn(params) expr`.
+    def _arrow_lambda(self) -> Node:
+        head = self.peek()
+        if isinstance(head, LParen):
+            self.advance()
+            params, spellings = self._func_params()
+        else:
+            self.advance()
+            params = (self._canonical(head.ch) if isinstance(head, Ident) else head.name,)
+            spellings = (_spelling(head),)
+        self.expect(MapsTo, "`↦`")
+        body = self.expr()
+        return Lambda(params=params, body=body, span=head.span.to(body.span),
+                      param_spellings=spellings)
+
+    def _paren_arrow_ahead(self) -> bool:
+        """`(` names `)` `↦`, the parenthesized lambda head."""
+        k = 1
+        if not isinstance(self.look(k), RParen):
+            while isinstance(self.look(k), Ident | Backslash):
+                k += 1
+                if not isinstance(self.look(k), Comma):
+                    break
+                k += 1
+        return isinstance(self.look(k), RParen) and isinstance(self.look(k + 1), MapsTo)
+
     def expr(self) -> Node:
         return self.ternary()
 
@@ -823,7 +855,9 @@ class _Parser:
         self._skip_newlines()
         # A closing delimiter terminates the range just like `,` `)` `;` and EOF —
         # `( r = 1.. )` is the infinite range, not a broken one.
-        end = None if isinstance(self.peek(), (Comma, RParen, Semi, Eof)) else bound()
+        closed = isinstance(self.peek(), (Comma, RParen, Semi, Eof)) or (
+            isinstance(self.peek(), Delim) and self._bars and self._bars[-1] == self.peek().ch)
+        end = None if closed else bound()
         return Range(start=start, second=second, end=end,
                      span=start.span.to((end or dotdot).span))
 
@@ -1025,13 +1059,13 @@ class _Parser:
     # user `\alias` onto those names gets the same treatment for free).
     _FOLD_HEADS = {("sum", None): BinOperator.ADD, ("prod", None): BinOperator.MUL,
                    ("forall", None): BinOperator.AND, ("exists", None): BinOperator.OR}
-    _LIMIT_LABEL = "\\lim"
+    _BINDER_USAGE = {"lim": "(x=a) body", "diff": "(x=a) body", "int": "(x=a..b) body"}
 
     # A `∘` node only reaches a trailer parenthesized (`(f ∘ g)(x)`); unparenthesized,
     # the trailer already bound to its right operand.
     @staticmethod
     def _is_call_head(node: Node) -> bool:
-        return isinstance(node, _Parser._NAMEISH) or (
+        return isinstance(node, _Parser._NAMEISH + (Transpose,)) or (
             isinstance(node, BinOp) and node.op is BinOperator.COMPOSE)
 
     def postfix(self) -> Node:
@@ -1046,8 +1080,7 @@ class _Parser:
                 # that is not the binder shape is a usage error, not an application of
                 # an unbound name.
                 label = self._form_label(node)
-                usage = (f"{label}(x=a) body" if fold_op is None
-                         else f"{label}(i=a..b) body")
+                usage = f"{label}{_Parser._BINDER_USAGE[node.name] if fold_op is None else '(i=a..b) body'}"
                 raise ParseError(
                     f"{self._form_label(node)} takes a binder as its first "
                     f"argument: {usage}",
@@ -1079,7 +1112,7 @@ class _Parser:
                 continue
             if isinstance(self.peek(), Prime):
                 tick = self.advance()
-                node = Transpose(operand=node, span=node.span.to(tick.span))
+                node = Transpose(operand=node, glyph=tick.glyph, span=node.span.to(tick.span))
                 continue
             if not (self._is_call_head(node) and isinstance(self.peek(), LParen)):
                 break
@@ -1199,23 +1232,97 @@ class _Parser:
             raise ParseError("tensor rows have different lengths", span)
         return TensorLit(items=tuple(items), row_length=row_lengths[0], span=span)
 
-    # set ::= "{" (expr ("," expr)*)? "}"
-    def _set_literal(self) -> SetLit:
+    # set       ::= "{" (expr ("," expr)*)? "}" ;
+    # piecewise ::= "{" (expr ":" expr sep)* (expr ":" expr | expr) sep? "}" ;
+    # builder   ::= "{" name "∈" expr "|" guards "}" | "{" expr "|" name "∈" expr ("," guards)? "}" ;
+    # The first item reads with a `|` sentinel on the bar stack, so a top-level `|` after an
+    # operand ends it rather than opening a bar form (`## Delimited forms`).
+    def _set_literal(self) -> Node:
         opener = self.advance()
         self._skip_newlines()
-        items: list[Node] = []
-        if not isinstance(self.peek(), RBrace):
-            with self._list_context(True):
-                items.append(self.expr())
-                self._skip_newlines()
+        if isinstance(self.peek(), RBrace):
+            return SetLit(items=(), span=opener.span.to(self.advance().span))
+        with self._list_context(True):
+            self._bars = ["|"]
+            first = self.expr()
+            self._bars = []
+            self._skip_newlines()
+            if isinstance(self.peek(), Colon):
+                node = self._piecewise(opener, first)
+            elif isinstance(self.peek(), Delim) and self.peek().ch == "|":
+                node = self._set_builder(opener, first)
+            else:
+                items = [first]
                 while isinstance(self.peek(), Comma):
                     self.advance()
                     self._skip_newlines()
                     items.append(self.expr())
                     self._skip_newlines()
-        close = self.expect(RBrace, "`}`")
+                close = self.expect(RBrace, "`}`")
+                node = SetLit(items=tuple(items), span=opener.span.to(close.span))
         self._nl = False
-        return SetLit(items=tuple(items), span=opener.span.to(close.span))
+        return node
+
+    def _piecewise(self, opener: Token, condition: Node) -> Piecewise:
+        conditions: list[Node] = []
+        values: list[Node] = []
+        otherwise = None
+        while True:
+            self.expect(Colon, "`:`")
+            conditions.append(condition)
+            values.append(self.expr())
+            while isinstance(self.peek(), Semi | Newline):
+                self.advance()
+            if isinstance(self.peek(), RBrace):
+                break
+            condition = self.expr()
+            while isinstance(self.peek(), Newline):
+                self.advance()
+            if not isinstance(self.peek(), Colon):
+                otherwise = condition
+                while isinstance(self.peek(), Semi | Newline):
+                    self.advance()
+                break
+        close = self.expect(RBrace, "`}`")
+        return Piecewise(conditions=tuple(conditions), values=tuple(values),
+                         otherwise=otherwise, span=opener.span.to(close.span))
+
+    def _set_builder(self, opener: Token, first: Node) -> SetBuilder:
+        self.advance()  # `|`
+        self._skip_newlines()
+        if isinstance(first, Compare) and first.op is CompareOperator.IN:
+            var_node, element, domain = first.lhs, None, first.rhs
+        else:
+            var_tok = self.peek()
+            if not (isinstance(var_tok, Ident | Backslash)
+                    and (self._is_member(self.peek2()))):
+                raise ParseError(
+                    "set-builder needs a binder `x ∈ set` after `|`; write `a*|b|` for a product of bars",
+                    var_tok.span)
+            var_node = self._name_node(var_tok.ch, var_tok.span) if isinstance(var_tok, Ident) \
+                else BackslashRef(name=var_tok.name, span=var_tok.span, spelling=_spelling(var_tok))
+            self.advance()
+            self.advance()  # `∈`
+            element, domain = first, self.expr()
+            self._skip_newlines()
+        if not isinstance(var_node, Var | BackslashRef):
+            raise ParseError("set-builder binds a name", var_node.span)
+        var = var_node.ch if isinstance(var_node, Var) else var_node.name
+        guards: list[Node] = []
+        if element is None or isinstance(self.peek(), Comma):
+            if element is not None:
+                self.advance()  # `,`
+            self._skip_newlines()
+            guards.append(self.expr())
+            self._skip_newlines()
+            while isinstance(self.peek(), Comma):
+                self.advance()
+                self._skip_newlines()
+                guards.append(self.expr())
+                self._skip_newlines()
+        close = self.expect(RBrace, "`}`")
+        return SetBuilder(var=var, domain=domain, element=element, guards=tuple(guards),
+                          var_spelling=var_node.spelling, span=opener.span.to(close.span))
 
     # array ::= "⟨" (expr ("," expr)*)? "⟩" | "#[" (expr ("," expr)*)? "]"
     def _array_literal(self, closer: type, closer_text: str) -> ArrayLit:
@@ -1305,7 +1412,7 @@ class _Parser:
         return None
 
     def _limit_head(self, node: Node) -> bool:
-        return isinstance(node, BackslashRef) and node.name == "lim"
+        return isinstance(node, BackslashRef) and node.name in _Parser._BINDER_USAGE
 
     # special-form ::= fold | limit ;
     # fold  ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident "=" expr ")" expr ;
@@ -1354,8 +1461,13 @@ class _Parser:
             return Fold(op=fold_op, var=var, bound=bound, body=body, span=span,
                         spelling=label, var_spelling=_spelling(var_tok),
                         member_binder=self._is_member(binder))
-        return Limit(var=var, point=bound, body=body, span=span,
-                     spelling=label, var_spelling=_spelling(var_tok))
+        names = dict(spelling=label, var_spelling=_spelling(var_tok))
+        match head.name:
+            case "diff":
+                return Diff(var=var, point=bound, body=body, span=span, **names)
+            case "int":
+                return Integral(var=var, bound=bound, body=body, span=span, **names)
+        return Limit(var=var, point=bound, body=body, span=span, **names)
 
     def _form_label(self, head: Node) -> str:
         match head:
@@ -1437,6 +1549,10 @@ class _Parser:
             case Str():
                 self.advance()
                 return StrLit(text=tok.text, span=tok.span)
+            case Ident() | Backslash() if isinstance(self.peek2(), MapsTo):
+                return self._arrow_lambda()
+            case LParen() if self._paren_arrow_ahead():
+                return self._arrow_lambda()
             case Ident():
                 self.advance()
                 node = self._name_node(tok.ch, tok.span)

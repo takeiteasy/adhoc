@@ -1,0 +1,26 @@
+-- syntax.ad — ↦ lambdas and piecewise definitions
+-- run with: adhoc run demos/syntax.ad
+
+-- x ↦ body; the ASCII spellings are x -> body and x \mapsto body
+\map(x -> x^2, [1, 2, 3])
+((x, y) ↦ x * y)(3, 4)
+(x -> y -> x + y)(1)(2)
+\total = (x, y) \mapsto x + y
+\total(1, 2)
+
+-- piecewise: the first true condition wins, a bare last value is the default
+\step(x) = {x < 0: -1; x > 0: 1; 0}
+\map(\step, [-5, 0, 7])
+
+-- clauses may sit on their own lines
+\word(x) = {
+x < 0: "negative"
+x > 0: "positive"
+"zero"
+}
+\word(-2)
+\word(0)
+
+-- with no default, an uncovered input is an error
+\pos(x) = {x > 0: x}
+\pos(3)

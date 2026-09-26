@@ -6,8 +6,8 @@ from .lexer import SUPERSCRIPTS
 from .syntax import (
     is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
-    Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, PowCall,
-    PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var,
+    Assign, ArrayLit, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
+    PyImport, Quote, Range, Seq, SetBuilder, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var,
 )
 
 
@@ -125,6 +125,26 @@ def show(node: Node) -> str:
                    var_spelling=var_spelling):
             head = spelling or "\\lim"
             return f"({head}({var_spelling or var}={show(point)}) {show(body)})"
+        case Diff(var=var, point=point, body=body, spelling=spelling,
+                  var_spelling=var_spelling):
+            head = spelling or "\\diff"
+            return f"({head}({var_spelling or var}={show(point)}) {show(body)})"
+        case Integral(var=var, bound=bound, body=body, spelling=spelling,
+                      var_spelling=var_spelling):
+            head = spelling or "\\int"
+            return f"({head}({var_spelling or var}={show(bound)}) {show(body)})"
+        case Piecewise(conditions=conditions, values=values, otherwise=otherwise):
+            clauses = [f"{show(c)}: {show(v)}" for c, v in zip(conditions, values)]
+            if otherwise is not None:
+                clauses.append(show(otherwise))
+            return f"{{{'; '.join(clauses)}}}"
+        case SetBuilder(var=var, domain=domain, element=element, guards=guards,
+                        var_spelling=var_spelling):
+            name = var_spelling or (var if is_short_name(var) else f"\\{var}")
+            tail = "".join(f", {show(g)}" for g in guards)
+            if element is None:
+                return f"{{{name} ∈ {show(domain)} | {', '.join(show(g) for g in guards)}}}"
+            return f"{{{show(element)} | {name} ∈ {show(domain)}{tail}}}"
         case Lambda(params=params, body=body, param_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name for i, name in enumerate(params)]
             return f"(\\fn({', '.join(names)}) {show(body)})"
@@ -140,8 +160,8 @@ def show(node: Node) -> str:
             return f"{{{', '.join(show(item) for item in items)}}}"
         case Index(head=head, items=items):
             return f"{show(head)}[{', '.join(show(item) for item in items)}]"
-        case Transpose(operand=operand):
-            return f"{show(operand)}'"
+        case Transpose(operand=operand, glyph=glyph):
+            return f"{show(operand)}{glyph}"
         case Quote(body=body, statement_body=statement_body):
             return show_quote(body, statement_body)
         case Eval(value=value, bindings=bindings):

@@ -404,7 +404,8 @@ def test_superscript_error_span_covers_glyphs():
 def test_transpose_glyph():
     assert ev("A = [1, 2; 3, 4]; Aᵀ") == ev("A = [1, 2; 3, 4]; A'")
     assert ev("A = [1, 2; 3, 4]; Aᵀ²") == ev("A = [1, 2; 3, 4]; (A')²")
-    assert roundtrip("Aᵀ") == "A'"
+    assert roundtrip("Aᵀ") == "Aᵀ"
+    assert roundtrip("A'") == "A'"
 
 
 def test_function_power():

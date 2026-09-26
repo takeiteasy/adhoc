@@ -179,13 +179,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 import functools
+import heapq
 import importlib
-from itertools import islice
+from itertools import count, islice
 import cmath
 import math
 import numbers
 import os
 import re
+import sys
 import sympy
 import types
 from typing import Any, Callable, NoReturn
@@ -217,6 +219,9 @@ CONVERGENCE_TOLERANCE = 1e-12
 EXACT_CONVERGENCE_TOLERANCE = Fraction(1, 10**12)
 MAX_TERMS = 2_000_000
 MAX_PROBES = 200
+DIFF_TOLERANCE = 1e-9  # Ridders error estimate for `\\diff` and `f'`, relatively scaled
+DIFF2_TOLERANCE = 1e-6  # the same for `f''`: second differences amplify rounding noise
+MAX_INTERVALS = 2000  # adaptive quadrature subintervals for `\\int`
 
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod", "and": "\\forall", "or": "\\exists"}
 
@@ -466,6 +471,14 @@ def _transpose_call(value: Any) -> AdValue:
     return ntranspose(value)
 
 
+def _tex_call(value: Any) -> str:
+    from .tex import TexError, value_tex
+    try:
+        return value_tex(value, nshow)
+    except TexError as e:
+        raise NumError(e.args[0]) from None
+
+
 def _len_call(value: Any) -> int:
     if isinstance(value, TensorValue):
         return value.shape[0]
@@ -520,6 +533,7 @@ PRELUDE: dict[str, Any] = {
     "reduce": PreludeFn("reduce", _reduce_call),
     "transpose": PreludeFn("transpose", _transpose_call),
     "len": PreludeFn("len", _len_call),
+    "tex": PreludeFn("tex", _tex_call),
     "shape": PreludeFn("shape", _shape_call),
 }
 
@@ -1121,7 +1135,7 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
             return rra.show(v, digits)
         except rra.DomainError as e:
             raise NumError(e.args[0])
-    if isinstance(v, Composed | Partial | OperatorFn):
+    if isinstance(v, Composed | Partial | OperatorFn | Derivative):
         return f"<fn {_callable_label(v)}>"
     if isinstance(v, PreludeFn):
         return f"<fn \\{v.name}(x)>"
@@ -1284,6 +1298,131 @@ def _agree(left: float | complex, right: float | complex) -> bool:
     is a genuine disagreement."""
     scale = max(1.0, abs(left), abs(right))
     return math.isfinite(scale) and abs(left - right) <= 2 * CONVERGENCE_TOLERANCE * scale
+
+
+def _ridders(evaluate: Callable[[float], AdValue], anchor: float, order: int,
+             label: str) -> float | complex:
+    """Ridders' extrapolation of central differences (order 1) or second differences
+    (order 2) at `anchor`, in the float tier. The step halves geometrically; the answer
+    is the tableau entry with the smallest error estimate, accepted within
+    DIFF_TOLERANCE (DIFF2_TOLERANCE for order 2), relatively scaled. Order 1 never
+    evaluates at the anchor itself."""
+    if order > 2:
+        raise NumError(f"{label}: derivatives above the second order are not supported")
+
+    def sample(t: float) -> float | complex:
+        value = _as_inexact(evaluate(t))
+        if not cmath.isfinite(value):
+            raise NumError(f"{label}: the body is not finite near {nshow(anchor)}")
+        return value
+
+    centre = sample(anchor) if order == 2 else 0.0
+
+    def quotient(h: float) -> float | complex:
+        if order == 1:
+            return (sample(anchor + h) - sample(anchor - h)) / (2 * h)
+        return (sample(anchor + h) - 2 * centre + sample(anchor - h)) / (h * h)
+
+    shrink, tableau_size, safe = 1.4, 10, 2.0
+    h = 0.1 * abs(anchor) if anchor else 0.1
+    table = [[quotient(h)]]
+    best, error = table[0][0], math.inf
+    for i in range(1, tableau_size):
+        h /= shrink
+        row = [quotient(h)]
+        factor = shrink * shrink
+        for j in range(1, i + 1):
+            row.append((row[j - 1] * factor - table[i - 1][j - 1]) / (factor - 1))
+            factor *= shrink * shrink
+            trial = max(abs(row[j] - row[j - 1]), abs(row[j] - table[i - 1][j - 1]))
+            if trial <= error:
+                best, error = row[j], trial
+        table.append(row)
+        if abs(row[i] - table[i - 1][i - 1]) >= safe * error:
+            break
+    tolerance = DIFF2_TOLERANCE if order == 2 else DIFF_TOLERANCE
+    if not error <= tolerance * max(1.0, abs(best)):
+        raise NumError(f"{label} did not converge: estimated error {error:.1e}")
+    return _drop_stray_parts(best)
+
+
+_GK_NODES = (0.991455371120812639206854697526329, 0.949107912342758524526189684047851,
+             0.864864423359769072789712788640926, 0.741531185599394439863864773280788,
+             0.586087235467691130294144838258730, 0.405845151377397166906606412076961,
+             0.207784955007898467600689403773245, 0.0)
+_GK_WEIGHTS = (0.022935322010529224963732008058970, 0.063092092629978553290700663189204,
+               0.104790010322250183839876322541518, 0.140653259715525918745189590510238,
+               0.169004726639267902826583426598550, 0.190350578064785409913256402421014,
+               0.204432940075298892414161999234649, 0.209482141084727828012999174891714)
+_GAUSS_WEIGHTS = (0.129484966168869693270611432679082, 0.279705391489276667901467771423780,
+                  0.381830050505118944950369775488975, 0.417959183673469387755102040816327)
+
+
+def _kronrod(f: Callable[[float], float | complex], lo: float, hi: float):
+    """One G7–K15 panel: (integral, error estimate, integral of |f|)."""
+    centre, half = (lo + hi) / 2, (hi - lo) / 2
+    fc = f(centre)
+    values = [fc]
+    kronrod, gauss = fc * _GK_WEIGHTS[7], fc * _GAUSS_WEIGHTS[3]
+    for j in range(7):
+        pair = (f(centre - half * _GK_NODES[j]), f(centre + half * _GK_NODES[j]))
+        kronrod += _GK_WEIGHTS[j] * (pair[0] + pair[1])
+        if j % 2:
+            gauss += _GAUSS_WEIGHTS[j // 2] * (pair[0] + pair[1])
+        values.extend(pair)
+    weights = (_GK_WEIGHTS[7],) + tuple(w for w in _GK_WEIGHTS[:7] for _ in (0, 1))
+    absolute = sum(w * abs(v) for w, v in zip(weights, values)) * abs(half)
+    mean = kronrod / 2
+    spread = sum(w * abs(v - mean) for w, v in zip(weights, values)) * abs(half)
+    error = abs((kronrod - gauss) * half)
+    if spread and error:
+        error = spread * min(1.0, (200 * error / spread) ** 1.5)
+    return kronrod * half, max(error, 50 * sys.float_info.epsilon * absolute), absolute
+
+
+def _quadrature(evaluate: Callable[[float], AdValue], lo: float, hi: float | None,
+                label: str) -> float | complex:
+    """Globally adaptive Gauss–Kronrod over `[lo, hi]`, or `[lo, ∞)` through
+    `x = lo + t/(1-t)`. The panel with the largest error bisects until the summed error
+    is within CONVERGENCE_TOLERANCE (relatively scaled) or MAX_INTERVALS panels exist.
+    Endpoints are never evaluated."""
+    def sample(x: float) -> float | complex:
+        value = _as_inexact(evaluate(x))
+        if not cmath.isfinite(value):
+            raise NumError(f"{label}: the body is not finite at {nshow(x)}")
+        return value
+
+    if hi is None:
+        origin = lo
+
+        def f(t: float) -> float | complex:
+            if t >= 1:
+                raise NumError(f"{label} did not converge: the integral diverges or decays too slowly")
+            return sample(origin + t / (1 - t)) / (1 - t) ** 2
+        lo, hi = 0.0, 1.0
+    else:
+        f = sample
+    ids = count()
+    panels = []
+
+    def add(a: float, b: float) -> None:
+        value, error, absolute = _kronrod(f, a, b)
+        heapq.heappush(panels, (-error, next(ids), a, b, value, absolute))
+
+    add(lo, hi)
+    while True:
+        total = sum(p[4] for p in panels)
+        error = sum(-p[0] for p in panels)
+        scale = max(1.0, abs(total), sum(p[5] for p in panels))
+        if error <= CONVERGENCE_TOLERANCE * scale:
+            return _drop_stray_parts(total)
+        if len(panels) >= MAX_INTERVALS:
+            raise NumError(f"{label} did not converge within {MAX_INTERVALS} subintervals")
+        _, _, a, b, _, _ = heapq.heappop(panels)
+        if (a + b) / 2 in (a, b):
+            raise NumError(f"{label} did not converge: the integrand is singular inside the range")
+        add(a, (a + b) / 2)
+        add((a + b) / 2, b)
 
 
 # Tail-estimation knobs for infinite-range folds (ticket #32). The raw
@@ -1558,7 +1697,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | ExpressionValue
+    if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | Derivative | ExpressionValue
                       | TensorValue | ArrayValue | SetValue):
         return value
     if isinstance(value, RangeValue | LazySeq):
@@ -1915,7 +2054,24 @@ OPERATORS = {name: OperatorFn(OP_SYMBOLS[name], fn, arities)
              for name, (fn, arities) in _OPERATOR_IMPLS.items()}
 
 
-_INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial, OperatorFn)
+class Derivative:
+    """`f'` / `f''`: the numeric derivative of a one-argument function, as a function."""
+
+    def __init__(self, fn: Any, order: int):
+        self.fn, self.order = fn, order
+
+    def __call__(self, *args):
+        if len(args) != 1:
+            raise NumError(f"{_callable_label(self)} takes 1 argument, got {len(args)}")
+        _reject_non_numeric(args[0])
+        anchor = _as_inexact(args[0])
+        if isinstance(anchor, complex) or not math.isfinite(anchor):
+            raise NumError(f"{_callable_label(self)} needs a finite real point")
+        return _ridders(lambda t: _invoke(self.fn, (t,)), anchor, self.order,
+                        _callable_label(self))
+
+
+_INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial, OperatorFn, Derivative)
 
 
 def _callable_label(fn: Any) -> str:
@@ -1931,6 +2087,8 @@ def _callable_label(fn: Any) -> str:
         return _partial_text(fn)
     if isinstance(fn, OperatorFn):
         return fn.symbol
+    if isinstance(fn, Derivative):
+        return f"{_callable_label(fn.fn)}{'′' * fn.order}"
     return _show_callable(fn)[len("<py "):-1]
 
 
@@ -3073,6 +3231,89 @@ class Engine:
             total = self._binop(nadd, estimate, total, sid)
         return _drop_stray_parts(self._binop(ndiv, total, len(estimates), sid))
 
+    def diff(self, name: str, point_value: AdValue, sid: int,
+             spelling: str | None = None, var_spelling: str | None = None) -> float | complex:
+        """`\\diff(x=a) body`: the numeric derivative at `a` (`_ridders`); the body
+        evaluates in a fresh frame holding only the loop variable, like `\\lim`."""
+        label = spelling or "\\diff"
+        if self._protected(name):
+            self._fail(f"`{_display_name(name, var_spelling)}` is protected", sid)
+        body = self.definitions[sid]
+        try:
+            _reject_non_numeric(point_value)
+            anchor = _as_inexact(point_value)
+            if isinstance(anchor, complex) or not math.isfinite(anchor):
+                raise NumError(f"{label} needs a finite real point")
+            return _ridders(lambda t: self._eval_bound(body, {name: t}, label, sid),
+                            anchor, 1, label)
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def integral(self, name: str, bound: AdValue, sid: int,
+                 spelling: str | None = None, var_spelling: str | None = None) -> float | complex:
+        """`\\int(x=a..b) body`: the numeric integral over a range (`_quadrature`); `a..`
+        runs to infinity and a reversed range negates."""
+        label = spelling or "\\int"
+        if self._protected(name):
+            self._fail(f"`{_display_name(name, var_spelling)}` is protected", sid)
+        if not isinstance(bound, RangeValue):
+            self._fail(f"{label} integrates over a range a..b or a.., got {nshow(bound)}", sid)
+        if bound.second is not None:
+            self._fail(f"{label} takes a plain range a..b, not a stepped one", sid)
+        body = self.definitions[sid]
+        try:
+            lo = _as_float(bound.start)
+            hi = None if bound.end is None else _as_float(bound.end)
+            sign = 1
+            if hi is not None and hi < lo:
+                lo, hi, sign = hi, lo, -1
+            if hi is not None and hi == lo:
+                return 0.0
+            result = _quadrature(lambda x: self._eval_bound(body, {name: x}, label, sid),
+                                 lo, hi, label)
+            return -result if sign < 0 else result
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def piecewise(self, conditions, values, otherwise, sid):
+        """`{c: v; …}` — the first true condition's value; only that branch evaluates."""
+        for condition, value in zip(conditions, values):
+            holds = condition()
+            if not isinstance(holds, bool):
+                self._fail("piecewise condition must be boolean", sid)
+            if holds:
+                return _to_ad(value(), preserve_bool=True)
+        if otherwise is None:
+            self._fail("no piecewise case matched", sid)
+        return _to_ad(otherwise(), preserve_bool=True)
+
+    def set_builder(self, name, domain, guard_sids, element_sid, sid, var_spelling=None):
+        """`{x ∈ S | p}` / `{e | x ∈ S, p}`: the deduplicated set of the element over the
+        domain's members whose guards all hold."""
+        label = "set-builder"
+        if self._protected(name):
+            self._fail(f"`{_display_name(name, var_spelling)}` is protected", sid)
+        items = _elements(domain)
+        if items is None:
+            self._fail(f"{label} ranges over a range or collection, got {nshow(domain)}", sid)
+        if _is_infinite(domain):
+            self._fail(f"{label} cannot range over an infinite range or sequence", sid)
+        kept = []
+        try:
+            for item in items:
+                for guard in guard_sids:
+                    verdict = self._eval_bound(self.definitions[guard], {name: item}, label, guard)
+                    if not isinstance(verdict, bool):
+                        self._fail(f"{label} guards must be boolean, got {nshow(verdict)}", guard)
+                    if not verdict:
+                        break
+                else:
+                    kept.append(item if element_sid is None else self._eval_bound(
+                        self.definitions[element_sid], {name: item}, label, element_sid))
+            return SetValue(_dedup(kept))
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
     def tensor(self, items, row_length, sid):
         try:
             for item in items:
@@ -3129,7 +3370,14 @@ class Engine:
             self._fail(f"{spelling or nshow(head)} is not indexable", sid)
         return self.mul(head, self.tensor(items, None, sid), sid)
 
-    def transpose(self, value, sid):
+    def transpose(self, value, sid, glyph="'"):
+        if callable(value) and not isinstance(value, TensorValue | ArrayValue | SetValue):
+            if glyph != "'":
+                self._fail("`ᵀ` transposes tensors; a function's derivative is `f'`", sid)
+            order = value.order + 1 if isinstance(value, Derivative) else 1
+            if order > 2:
+                self._fail("derivatives above the second order are not supported", sid)
+            return Derivative(value.fn if isinstance(value, Derivative) else value, order)
         try:
             return ntranspose(value)
         except NumError as e:

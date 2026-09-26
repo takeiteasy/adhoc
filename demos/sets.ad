@@ -25,3 +25,9 @@ s = {1, 2, 3}
 -- folds iterate the elements
 \sum(x=s) x^2
 \len(s)
+
+-- set-builder: filter, map, and guards
+{x ∈ 1..10 | x^2 < 50}
+{x^2 | x ∈ 1..4}
+{x^2 | x ∈ 1..6, x % 2 < 1}
+{|x| | x ∈ {-2, -1, 1}}
