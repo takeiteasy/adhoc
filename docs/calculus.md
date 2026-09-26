@@ -1,15 +1,15 @@
 # Calculus
 
-Numeric derivatives, integrals and inverses: `\diff`, `\int`, `f'` and `f⁻¹`. All four run in the float
-tier and return a float (a complex float for a complex body), or a typed error when they do
-not converge.
+Derivatives, integrals and inverses: `\diff`, `\int`, `f'` and `f⁻¹`. They run in the float tier and
+return a float (a complex float for a complex body), or a typed error when they do not
+converge. `f'`, `f''` and `f⁻¹` are exact when the function body is symbolic (docs/symbolic.md).
 
 | Form | Meaning |
 |---|---|
 | `\diff(x=a) body`, `∂(x=a) body` | derivative of `body` at `a` |
 | `\int(x=a..b) body`, `∫(x=a..b) body` | integral of `body` over `[a, b]` |
 | `\int(x=a..) body` | integral over `[a, ∞)` |
-| `f'`, `f''` | the first and second derivative of a function, as a function |
+| `f'`, `f''` | the first and second derivative of a function, as a function; exact where the body allows |
 | `f⁻¹` | the numeric inverse of a function, as a function |
 
 ```
@@ -17,7 +17,8 @@ not converge.
 ∫(x=0..π) \sin(x)           ->  = 2.0
 ∫(x=0..) e^(-x)             ->  = 1.0
 f(x) = x^3
-f'(2)                       ->  = 11.999999999999986
+f'(2)                       ->  = 12
+f'(2.)                      ->  = 11.999999999999986
 f⁻¹(8)                      ->  = 2
 (x ↦ 2x)⁻¹(6)               ->  = 3
 ```
@@ -36,8 +37,10 @@ within `1e-9` (relatively scaled) and is otherwise a `did not converge` error. T
 real; the body may be complex.
 
 `f'` and `f''` apply to any function value: a definition, a lambda, a composition, a prelude
-function or a Python callable. `f''` uses second differences (tolerance `1e-6`) and does
-evaluate `f(a)`. Postfix `'` on a tensor is still the transpose, so `A'` is unchanged; `ᵀ` is
+function or a Python callable. At an exact point (an integer, fraction or Gaussian), a
+one-parameter definition or lambda whose body bridges to sympy is differentiated exactly, once
+per function: `f'(1/2)` is `3/4` for `x^3`. Anything else, and any float point, is numeric:
+`f''` uses second differences (tolerance `1e-6`) and does evaluate `f(a)`. Postfix `'` on a tensor is still the transpose, so `A'` is unchanged; `ᵀ` is
 always the transpose and is an error on a function. The result of `f'` is an ordinary
 function: it passes to `\map`, composes, and displays as `<fn f′>`.
 

@@ -101,8 +101,10 @@ def test_int_errors():
 def test_prime_on_a_function_is_the_derivative():
     env = {}
     run_source("f(x) = x^3", env)
-    assert num("f'(2)", env) == pytest.approx(12, abs=1e-8)
-    assert num("f''(2)", env) == pytest.approx(12, abs=1e-5)
+    assert ev("f'(2)", env) == "= 12"
+    assert ev("f''(2)", env) == "= 12"
+    assert num("f'(2.)", env) == pytest.approx(12, abs=1e-8)
+    assert num("f''(2.)", env) == pytest.approx(12, abs=1e-5)
     assert ev("f'", env) == "= <fn f′>"
     assert ev("f''", env) == "= <fn f′′>"
 
@@ -116,7 +118,17 @@ def test_prime_on_builtins_lambdas_and_compositions():
 def test_derivative_values_pass_around():
     env = {}
     run_source("f(x) = x^2", env)
-    assert ev(r"\map(f', [1, 2])", env).startswith("= [1.99999999")
+    assert ev(r"\map(f', [1, 2])", env) == "= [2, 4]"
+    assert ev(r"\map(f', [1., 2.])", env).startswith("= [1.99999999")
+
+
+def test_prime_is_exact_at_exact_points_only_for_bridgeable_bodies():
+    env = {}
+    run_source("f(x) = x^3\ng(x) = (y = x; y^3)", env)
+    assert ev("f'(1/2)", env) == "= 3/4"
+    assert ev("f'(i)", env) == "= -3"
+    assert ev("g'(2)", env).startswith("= 11.99999")
+    assert ev(r"(x ↦ \sin(x))'(0)", env) == "= 1"
 
 
 def test_third_derivative_is_an_error():
@@ -141,7 +153,7 @@ def test_derivative_arity_and_point_errors():
     env = {}
     run_source("f(x) = x", env)
     fails("f'(1, 2)", "takes 1 argument", env)
-    fails("f'(i)", "finite real point", env)
+    fails(r"\sin'(i)", "finite real point", env)
 
 
 # --- quotes and reduction ---

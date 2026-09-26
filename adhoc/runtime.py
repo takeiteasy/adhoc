@@ -485,6 +485,14 @@ def _solve_call(value: Any, unknown: Any = None) -> SetValue:
         raise NumError(f"\\solve {error}") from None
 
 
+def _deriv_call(value: Any, unknown: Any = None) -> ExpressionValue:
+    from . import rewrite
+    try:
+        return rewrite.derivative(value, unknown)
+    except rewrite.RewriteError as error:
+        raise NumError(f"\\deriv {error}") from None
+
+
 def _transpose_call(value: Any) -> AdValue:
     return ntranspose(value)
 
@@ -2086,15 +2094,46 @@ OPERATORS = {name: OperatorFn(OP_SYMBOLS[name], fn, arities)
 
 
 class Derivative:
-    """`f'` / `f''`: the numeric derivative of a one-argument function, as a function."""
+    """`f'` / `f''`: the derivative of a one-argument function, as a function. Exact when the
+    body bridges to sympy and the point is exact; otherwise numeric (`_ridders`)."""
 
     def __init__(self, fn: Any, order: int):
         self.fn, self.order = fn, order
+        self._symbolic: tuple[sympy.Symbol, sympy.Expr] | None | bool = False
+
+    def _exact_form(self) -> tuple[sympy.Symbol, sympy.Expr] | None:
+        if self._symbolic is False:
+            self._symbolic = None
+            if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1:
+                from . import rewrite
+                try:
+                    origin = rewrite.bridge_function(self.fn)
+                    with rewrite.time_limit():
+                        form = sympy.diff(origin.expr, origin.params[0], self.order)
+                    self._symbolic = (origin.params[0], form)
+                except (rewrite.RewriteError, NotImplementedError, NumError):
+                    pass
+        return self._symbolic
+
+    def _exact(self, point: AdValue) -> AdValue | None:
+        if isinstance(point, float | complex):
+            return None
+        form = self._exact_form()
+        if form is None:
+            return None
+        symbol, expr = form
+        try:
+            return _sympy_to_ad(expr.subs(symbol, value_to_sympy(point)), "sympy expression")
+        except (NumError, TypeError, ValueError, ZeroDivisionError):
+            return None
 
     def __call__(self, *args):
         if len(args) != 1:
             raise NumError(f"{_callable_label(self)} takes 1 argument, got {len(args)}")
         _reject_non_numeric(args[0])
+        exact = self._exact(args[0])
+        if exact is not None:
+            return exact
         anchor = _as_inexact(args[0])
         if isinstance(anchor, complex) or not math.isfinite(anchor):
             raise NumError(f"{_callable_label(self)} needs a finite real point")
@@ -2124,7 +2163,9 @@ class Inverse:
                 from . import rewrite
                 try:
                     origin = rewrite.bridge_function(self.fn)
-                    self._solved = (target, sympy.solve(origin.expr - target, origin.params[0]))
+                    with rewrite.time_limit():
+                        roots = sympy.solve(origin.expr - target, origin.params[0])
+                    self._solved = (target, roots)
                 except (rewrite.RewriteError, NotImplementedError, NumError):
                     pass
         return self._solved
@@ -2705,6 +2746,7 @@ PRELUDE.update({
     "simplify": _rewrite_call("simplify", sympy.simplify),
     "expand": _rewrite_call("expand", sympy.expand),
     "solve": PreludeFn("solve", _solve_call),
+    "deriv": PreludeFn("deriv", _deriv_call),
     "gcd": PreludeFn("gcd", _gcd_call),
     "lcm": PreludeFn("lcm", _lcm_call),
     "divmod": PreludeFn("divmod", _divmod_call),

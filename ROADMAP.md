@@ -115,8 +115,9 @@ AST enum directly (`match`-and-rebuild), the same way any other Rust code manipu
 tree.
 
 - `\expr(...)` / `` `(...) `` quoting and `\eval(e, binding...)` are implemented.
-- `\solve`, `\simplify`, `\expand`, `\factor` are implemented over expression quotes and
-  single-expression functions, backed by sympy (docs/symbolic.md).
+- `\solve`, `\simplify`, `\expand`, `\factor` and `\deriv` are implemented over expression
+  quotes and single-expression functions, backed by sympy with a time limit
+  (docs/symbolic.md); `f'` is exact on such functions.
 - Function composition (`∘`), `\map`/`\fold`/`\filter`, and partial application (`f(a, _)`)
   and operators as function values (`\fold(+, xs)`, `(+)`) are implemented.
 - Reflection: `\body(f)` is implemented for user-defined functions and lambdas.
@@ -161,9 +162,6 @@ backend.
 - **Units and dimensional analysis** — `9.8 \m \per \s^2` with dimension errors at the
   numeric seam. The exact tower loves it and prelude protection gives unit names a home;
   costly, high ceiling — positions `ad` as the physics quick-calc tool.
-- **Exact symbolic differentiation** — a symbolic counterpart of the numeric `\diff(x=a)` binder (spelling open, since `\diff(\expr(x^2), x)` no longer parses), via product/chain-rule AST
-  rewriting; easier than `\solve` and exact where CAS-lite tools float. A candidate to
-  promote into phase 4 rather than past it.
 - **Arbitrary-precision float tier** — MPFR/gmpy2 behind the numeric seam with a `\prec(n)`
   directive (docs/numerics.md already anticipates the slot); makes RRA display tunable.
 - **Module system growth** — `\import`/`\pyimport` exist (ad files and Python members,

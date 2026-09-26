@@ -23,6 +23,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
       ^~~
   ```
 - REPL history, persisted to `$ADHOC_HISTORY` (default `~/.adhoc_history`).
+- `$ADHOC_SYMBOLIC_TIMEOUT`: seconds before a symbolic rewrite stops (default 5, `0` for none;
+  docs/symbolic.md).
 - Arithmetic: `+ - * / ^`, unary minus, parentheses, implicit multiplication by juxtaposition
   (`2x` = `2 * x`, `ab` = `a * b`).
 - Bare identifiers are one letter (ASCII or unicode), optionally with a subscript
@@ -161,14 +163,14 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   `\eval` can bind them later. Statement quotes are not reducible.
 
 - Calculus: `\diff(x=a) body` (`∂`) and `\int(x=a..b) body` (`∫`) are numeric binders, and
-  `f'` / `f''` are derivative functions (docs/calculus.md).
+  `f'` / `f''` are derivative functions, exact where the body allows (docs/calculus.md).
 - Lambda arrow: `x ↦ x^2`, ASCII `x -> x^2` or `x \mapsto x^2`; `(x, y) ↦ x + y` for several
   parameters (docs/grammar.md, `## Lambdas`).
 - Piecewise definitions `{x < 0: -x; x}` and set-builder `{x ∈ 1..10 | x^2 < 50}`
   (docs/grammar.md, `## Sets`, `## Conditionals`).
-- Symbolic rewriting: `\simplify(q)`, `\expand(q)`, `\factor(q)` and `\solve(q)` take a quote or
-  a function and return a quote (`\solve`: a set of solutions), e.g. `\solve(\expr(x^2 - 4))` is
-  `{-2, 2}` (docs/symbolic.md).
+- Symbolic rewriting: `\simplify(q)`, `\expand(q)`, `\factor(q)`, `\solve(q)` and `\deriv(q)` take a
+  quote or a function and return a quote (`\solve`: a set of solutions), e.g.
+  `\solve(\expr(x^2 - 4))` is `{-2, 2}` (docs/symbolic.md).
 - `\tex(e)` returns LaTeX for a quote, function or value (docs/tex.md).
 
 - Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors order 1, matrices order 2,

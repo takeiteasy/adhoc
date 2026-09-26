@@ -1,6 +1,6 @@
 # Symbolic rewriting
 
-`\simplify`, `\expand`, `\factor` and `\solve` rewrite an expression quote or a user function and
+`\simplify`, `\expand`, `\factor`, `\solve` and `\deriv` rewrite an expression quote or a user function and
 answer with an expression quote (or, for `\solve`, a set of solutions). They run on sympy;
 free names stay symbols.
 
@@ -11,6 +11,8 @@ free names stay symbols.
 | `\factor(e)` | the factored expression (`\factor(12)` on a number is prime factors, docs/stdlib.md) |
 | `\solve(e)` | the set of `x` with `e = 0`, over the complex numbers |
 | `\solve(e, `(y))` | the same, solving for `y` |
+| `\deriv(e)` | the exact derivative with respect to the one free name |
+| `\deriv(e, `(y))` | the same, with respect to `y` |
 
 ```
 \simplify(\expr((x^2 - 1)/(x - 1)))   ->  = \expr((x + 1))
@@ -21,7 +23,12 @@ free names stay symbols.
 \solve(\expr(a x - b), `(x))         ->  = {\expr((b / a))}
 f(x) = x^2 - 9
 \solve(f)                            ->  = {-3, 3}
+\deriv(\expr(x^3))                    ->  = \expr((3 * (x ^ 2)))
+\deriv(\expr(a x^2), `(a))           ->  = \expr((x ^ 2))
 ```
+
+`\deriv` names its unknown the way `\solve` does. Numeric derivatives at a point are `f'` and
+`\diff` (docs/calculus.md); `f'` uses the exact derivative when the body bridges.
 
 ## Inputs
 
@@ -56,6 +63,12 @@ error.
 `f⁻¹(y)` on a user function solves `f(x) = y` this way once per function, then substitutes
 `y`, so the result is exact and `y` may be complex (docs/calculus.md, `## Inverses`).
 
+## Time limit
+
+Each rewrite stops after 5 seconds with `took longer than 5s`. `ADHOC_SYMBOLIC_TIMEOUT` sets
+the seconds; `0` removes the limit. `f⁻¹` and `f'` treat a timeout as "no exact form" and use
+their numeric path.[^timer]
+
 ## Limitations
 
 | Limit | Ticket |
@@ -63,4 +76,8 @@ error.
 | One unknown; no systems | [#112](https://todo.sr.ht/~takeiteasy/adhoc/112) |
 | `\solve(e)` solves `e = 0`; `lhs = rhs` is not read as an equation | [#113](https://todo.sr.ht/~takeiteasy/adhoc/113) |
 | Infinite solution families are an error; no real-domain option | [#114](https://todo.sr.ht/~takeiteasy/adhoc/114) |
-| No time limit on large inputs | [#115](https://todo.sr.ht/~takeiteasy/adhoc/115) |
+| The time limit needs SIGALRM on the main thread | [#119](https://todo.sr.ht/~takeiteasy/adhoc/119) |
+| `\deriv` has no order argument; third derivatives are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
+
+[^timer]: A `setitimer(ITIMER_REAL)` interrupt. Off the main thread, without SIGALRM, or while
+    another interval timer runs, the rewrite is unlimited.

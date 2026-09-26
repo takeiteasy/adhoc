@@ -6,8 +6,12 @@ result crosses back as an expression quote. Free names stay symbols; a function'
 supplies its numeric bindings. Only the numeric seam converts ad values to sympy
 (`runtime.value_to_sympy`)."""
 
+import os
+import signal
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 import sympy
 
@@ -21,6 +25,48 @@ from .syntax import (
 
 class RewriteError(Exception):
     pass
+
+
+class _Timeout(BaseException):
+    """Raised from the timer handler; not an `Exception`, so sympy's own handlers pass it on."""
+
+
+DEFAULT_TIMEOUT = 5.0
+
+
+def _timeout_seconds() -> float:
+    text = os.environ.get("ADHOC_SYMBOLIC_TIMEOUT")
+    if text is None:
+        return DEFAULT_TIMEOUT
+    try:
+        return float(text)
+    except ValueError:
+        raise RewriteError(f"needs ADHOC_SYMBOLIC_TIMEOUT to be a number of seconds, got {text!r}") from None
+
+
+@contextmanager
+def time_limit() -> Iterator[None]:
+    """Bounds the sympy work inside it. Unlimited where SIGALRM is unavailable, off the main
+    thread, or when a timer is already running."""
+    seconds = _timeout_seconds()
+    if (seconds <= 0 or not hasattr(signal, "SIGALRM")
+            or threading.current_thread() is not threading.main_thread()
+            or signal.getitimer(signal.ITIMER_REAL)[0] > 0):
+        yield
+        return
+
+    def expire(*_: Any) -> None:
+        raise _Timeout
+
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    except _Timeout:
+        raise RewriteError(f"took longer than {seconds:g}s") from None
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 _FUNCTIONS = {
@@ -242,7 +288,17 @@ def quote(expr: sympy.Expr, bridge: Bridge, source: str) -> ExpressionValue:
 
 def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr]) -> ExpressionValue:
     origin = bridge_value(value)
-    return quote(operation(origin.expr), origin.bridge, origin.source)
+    with time_limit():
+        result = operation(origin.expr)
+    return quote(result, origin.bridge, origin.source)
+
+
+def derivative(value: Any, unknown: Any = None) -> ExpressionValue:
+    origin = bridge_value(value)
+    symbol = _unknown(origin, unknown)
+    with time_limit():
+        result = sympy.diff(origin.expr, symbol)
+    return quote(result, origin.bridge, origin.source)
 
 
 def solve(value: Any, unknown: Any = None) -> Any:
@@ -250,8 +306,8 @@ def solve(value: Any, unknown: Any = None) -> Any:
     from .runtime import NumError, SetValue, _dedup, _sympy_to_ad
     origin = bridge_value(value)
     symbol = _unknown(origin, unknown)
-    # TODO: sympy has no time limit, so a large input can hang; add one (#115)
-    solutions = sympy.solveset(origin.expr, symbol, sympy.S.Complexes)
+    with time_limit():
+        solutions = sympy.solveset(origin.expr, symbol, sympy.S.Complexes)
     if solutions is sympy.S.EmptySet:
         return SetValue(())
     if not isinstance(solutions, sympy.FiniteSet):

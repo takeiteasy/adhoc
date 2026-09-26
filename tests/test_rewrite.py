@@ -1,5 +1,7 @@
 import pytest
 
+from adhoc import rewrite
+
 from adhoc.driver import run_source
 from adhoc.runtime import EvalError
 
@@ -112,3 +114,89 @@ def test_inverse_solves_once_per_function():
     env = {}
     run_source("f(x) = x^3\ng = f⁻¹", env)
     assert run_source(r"\sum(k=1..3) g(k^3)", env) == ["= 6"]
+
+
+def test_deriv_of_quotes_functions_and_lambdas():
+    assert ev(r"\deriv(\expr(x^3))") == r"= \expr((3 * (x ^ 2)))"
+    assert ev(r"\deriv(\expr(a x^2), \expr(a))") == r"= \expr((x ^ 2))"
+    assert ev("f(x) = x^2 + x\n\\deriv(f)") == r"= \expr(((2 * x) + 1))"
+    assert ev(r"\deriv(t ↦ \sin(t))") == r"= \expr(\cos(t))"
+    assert ev(r"\deriv(\expr(\ln(x)))") == r"= \expr((1 / x))"
+
+
+def test_deriv_errors():
+    fails(r"\deriv(\expr(a x))", "needs the unknown")
+    fails(r"\deriv(\expr(x < 1))", "cannot rewrite compare")
+    fails(r"\deriv(3)", "expression quote")
+    fails(r"\deriv(\expr((y = 1; y)))", "statement")
+
+
+def test_deriv_result_evaluates():
+    env = {}
+    run_source(r"d = \deriv(\expr(x^3))", env)
+    assert run_source(r"\eval(d, x=2)", env) == ["= 12"]
+
+
+def _quote(text):
+    env = {}
+    run_source(f"q = \\expr({text})", env)
+    return env["q"]
+
+
+def _spin(*_, **__):
+    while True:
+        pass
+
+
+def test_symbolic_work_has_a_time_limit(monkeypatch):
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
+    monkeypatch.setattr(rewrite.sympy, "diff", _spin)
+    fails(r"\solve(\expr(x^2 - 4))", "\\solve took longer than 0.1s")
+    fails(r"\deriv(\expr(x^2))", "\\deriv took longer than 0.1s")
+    with pytest.raises(rewrite.RewriteError, match="took longer than 0.1s"):
+        rewrite.rewrite(_quote("x"), _spin)
+    monkeypatch.undo()
+    assert ev(r"\solve(\expr(x^2 - 4))") == "= {-2, 2}"
+
+
+def test_time_limit_is_swallow_proof(monkeypatch):
+    def spin_and_swallow(*_, **__):
+        while True:
+            try:
+                while True:
+                    pass
+            except Exception:
+                pass
+
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    monkeypatch.setattr(rewrite.sympy, "solveset", spin_and_swallow)
+    fails(r"\solve(\expr(x^2 - 4))", "took longer")
+
+
+def test_zero_timeout_disables_the_limit(monkeypatch):
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0")
+    with rewrite.time_limit():
+        pass
+    assert ev(r"\solve(\expr(x^2 - 4))") == "= {-2, 2}"
+
+
+def test_bad_timeout_names_the_variable(monkeypatch):
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "soon")
+    fails(r"\simplify(\expr(x + x))", "ADHOC_SYMBOLIC_TIMEOUT")
+
+
+def test_inverse_falls_back_when_the_exact_solve_times_out(monkeypatch):
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    monkeypatch.setattr(rewrite.sympy, "solve", _spin)
+    monkeypatch.setattr("adhoc.runtime.sympy.solve", _spin)
+    assert ev("f(x) = x^3\nf⁻¹(8)").startswith("= 2.0")
+
+
+def test_time_limit_restores_the_timer_and_handler():
+    import signal
+    before = signal.getsignal(signal.SIGALRM)
+    with rewrite.time_limit():
+        pass
+    assert signal.getsignal(signal.SIGALRM) is before
+    assert signal.getitimer(signal.ITIMER_REAL)[0] == 0
