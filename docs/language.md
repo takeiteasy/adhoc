@@ -211,8 +211,8 @@ phases add bindings without touching the lexer.
   [#70](https://todo.sr.ht/~takeiteasy/adhoc/70).
 - Operator sections with one operand fixed (`(+ 1)`) are not supported; write `(+)(_, 1)` —
   [#71](https://todo.sr.ht/~takeiteasy/adhoc/71).
-- `\map`/`\filter`/`\fold` reject infinite ranges instead of iterating lazily —
-  [#68](https://todo.sr.ht/~takeiteasy/adhoc/68).
+- `\fold` rejects infinite ranges and lazy sequences; use `\take` first, or a `\sum` binder —
+  [#72](https://todo.sr.ht/~takeiteasy/adhoc/72).
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).

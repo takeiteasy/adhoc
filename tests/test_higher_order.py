@@ -194,7 +194,6 @@ def test_map_result_must_restack_into_a_tensor():
 def test_map_errors():
     fails(r"\map(1, ⟨1⟩)", "1 is not a function")
     fails(r"\map(\fn(x) x, 3)", r"\\map needs a range or collection, got 3")
-    fails(r"\map(\fn(x) x, (1..))", "infinite range")
     fails(r"\map(\fn(a, b) a, ⟨1⟩)", "takes 2 arguments, got 1")
     fails(r"\map(1)", r"\\map takes a function and a collection")
     fails(r"\map = 3", "protected")
@@ -252,6 +251,7 @@ def test_fold_over_every_collection():
 def test_fold_errors():
     fails(r"\fold(\fn(a, b) a, ⟨⟩)", "empty collection needs a seed")
     fails(r"\fold(\fn(a, b) a, (1..))", "infinite range")
+    fails(r"\fold(\fn(a, b) a, \map(\fn(x) x, 1..))", "infinite range or sequence")
     fails(r"\fold(\fn(a, b) a)", r"\\fold takes a function")
     fails(r"\fold(1, 2, 3, 4)", r"\\fold takes a function")
 
@@ -264,5 +264,59 @@ def test_prelude_names_are_protected():
 def test_demo_script_runs():
     with open("demos/functions.ad", encoding="utf-8") as f:
         out = run_source(f.read(), {})
-    assert out[-8:] == ["= 7", "= [1, 4, 9]", "= {2, 3}", "= 6", "= ⟨1, 2, 3⟩",
-                        "= 55", "= [2, 3]", "= ⟨1, 2⟩"]
+    assert out[-9:] == ["= 7", "= [1, 4, 9]", "= {2, 3}", "= 6", "= ⟨1, 2, 3⟩",
+                        "= 55", "= [2, 3]", "= ⟨1, 2⟩", "= ⟨1, 4, 9⟩"]
+
+
+# --- infinite ranges: lazy sequences and \take ---
+
+
+def test_map_and_filter_over_an_infinite_range_are_lazy():
+    env = {}
+    assert ev(DEFS + r"q = \map(s, 1..)", env) == r"q = <seq \map(s, 1..)>"
+    assert ev(r"\take(3, q)", env) == "= ⟨1, 4, 9⟩"
+    assert ev(r"\take(2, \filter(\fn(x) x > 5, q))", env) == "= ⟨9, 16⟩"
+    assert ev(r"\filter(\fn(x) x > 5, q)", env).startswith("= <seq \\filter(")
+
+
+def test_lazy_sequence_is_reiterable_and_runs_nothing_until_consumed():
+    env = {}
+    ev(r"q = \map(\fn(x) 1/(x-1), 1..)", env)  # x=1 would divide by zero
+    assert ev(r"\take(0, q)", env) == "= ⟨⟩"
+    fails(r"\take(1, \map(\fn(x) 1/(x-1), 1..))", "division by zero")
+
+
+def test_fold_binds_over_a_lazy_sequence_like_an_infinite_range():
+    assert ev(r"\sum(k=\map(\fn(x) 1/x^2, 1..)) k").startswith("= 1.6449")
+    fails(r"\sum(k=\map(\fn(x) [x], 1..)) k", "numbers")
+
+
+def test_take_on_finite_collections_keeps_the_kind():
+    assert ev(r"\take(2, [1, 2, 3])") == "= [1, 2]"
+    assert ev(r"\take(2, ⟨1, 2, 3⟩)") == "= ⟨1, 2⟩"
+    assert ev(r"\take(5, ⟨1, 2⟩)") == "= ⟨1, 2⟩"
+    assert ev(r"\take(2, (1..10))") == "= ⟨1, 2⟩"
+    assert ev(r"\take(3, (2,4..))") == "= ⟨2, 4, 6⟩"
+
+
+def test_take_errors():
+    fails(r"\take(-1, 1..)", "non-negative exact integer")
+    fails(r"\take(1.5, 1..)", "non-negative exact integer")
+    fails(r"\take(2, 3)", "needs a range or collection")
+    fails(r"\take(1)", r"\\take takes a count and a collection")
+    fails(r"\take = 3", "protected")
+
+
+def test_lazy_errors():
+    fails(r"\map(1, 1..)", "1 is not a function")
+    fails(r"\take(2, \filter(\fn(x) x, 1..))", "needs a boolean")
+    fails(r"\len(\map(\fn(x) x, 1..))", "needs a collection")
+
+
+def test_filter_that_never_matches_stops_at_the_cap(monkeypatch):
+    monkeypatch.setattr("adhoc.runtime.MAX_TERMS", 50)
+    fails(r"\take(1, \filter(\fn(x) x < 0, 1..))", "no match within 50 elements")
+
+
+def test_function_can_return_a_prelude_function():
+    assert ev("h(x) = \\sqrt\nh(1)(9)") == "= 3"

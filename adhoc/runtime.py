@@ -174,6 +174,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 import importlib
+from itertools import islice
 import math
 import numbers
 import os
@@ -902,6 +903,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
         return f"<fn {v.display_name}({', '.join(v.param_spellings)})>"
     if isinstance(v, str):
         return _show_str(v)
+    if isinstance(v, LazySeq):
+        return f"<seq {v.text()}>"
     if isinstance(v, RangeValue):
         start = nshow(v.start, digits)
         middle = f",{nshow(v.second, digits)}" if v.second is not None else ""
@@ -1287,11 +1290,10 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    # FIXME: PreludeFn is missing here, so a user function returning `\\sqrt` fails to convert.
-    if isinstance(value, AdFunction | Composed | Partial | OperatorFn | ExpressionValue
+    if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | ExpressionValue
                       | TensorValue | ArrayValue | SetValue):
         return value
-    if isinstance(value, RangeValue):
+    if isinstance(value, RangeValue | LazySeq):
         return value
     if isinstance(value, bool):  # before int — bool is an int subclass
         return value if preserve_bool else int(value)
@@ -1560,10 +1562,50 @@ def _partial_text(p: Partial) -> str:
     return f"{_callable_label(p.fn)}({', '.join(parts)})"
 
 
+class LazySeq:
+    """`\\map`/`\\filter` over an infinite range or sequence: nothing runs until a
+    consumer (`\\take`, a fold) iterates. Always unbounded — a filter that stops
+    matching is cut off at MAX_TERMS elements rather than looping forever."""
+
+    def __init__(self, kind: str, fn: Any, source: Any):
+        self.kind, self.fn, self.source = kind, fn, source
+
+    def __iter__(self):
+        if self.kind == "map":
+            for x in self.source:
+                yield _invoke(self.fn, (x,))
+            return
+        gap = 0
+        for x in self.source:
+            if _keeps(self.fn, x):
+                gap = 0
+                yield x
+            else:
+                gap += 1
+                if gap >= MAX_TERMS:
+                    raise NumError(f"\\filter found no match within {MAX_TERMS} elements")
+
+    def text(self) -> str:
+        source = (self.source.text() if isinstance(self.source, LazySeq)
+                  else nshow(self.source)[len("<range "):-len(" (lazy, infinite)>")])
+        return f"\\{self.kind}({_callable_label(self.fn)}, {source})"
+
+
+def _is_infinite(value: Any) -> bool:
+    return isinstance(value, LazySeq) or (isinstance(value, RangeValue) and value.end is None)
+
+
+def _keeps(predicate: Any, x: Any) -> bool:
+    keep = _invoke(predicate, (x,))
+    if not isinstance(keep, bool):
+        raise NumError(f"\\filter needs a boolean from its predicate, got {nshow(keep)}")
+    return keep
+
+
 def _elements(value: Any) -> Any:
     """The elements a range or collection iterates (tensors by outer slice), or
     None when the value is not iterable."""
-    if isinstance(value, RangeValue):
+    if isinstance(value, RangeValue | LazySeq):
         return value
     if isinstance(value, TensorValue):
         return tn.slices(value)
@@ -1576,8 +1618,8 @@ def _finite_elements(value: Any, label: str) -> list:
     items = _elements(value)
     if items is None:
         raise NumError(f"{label} needs a range or collection, got {nshow(value)}")
-    if isinstance(value, RangeValue) and value.end is None:
-        raise NumError(f"{label} cannot iterate an infinite range")
+    if _is_infinite(value):
+        raise NumError(f"{label} cannot iterate an infinite range or sequence")
     return list(items)
 
 
@@ -1603,9 +1645,28 @@ def _takes(name: str, args: tuple, low: int, high: int, usage: str) -> None:
         raise NumError(f"\\{name} takes {usage}")
 
 
+def _lazy(kind: str, fn: Any, source: Any) -> LazySeq:
+    if not callable(fn):
+        raise NumError(f"{nshow(fn)} is not a function")
+    return LazySeq(kind, fn, source)
+
+
+def _take_call(*args: Any) -> Any:
+    _takes("take", args, 2, 2, "a count and a collection")
+    n, xs = args
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        raise NumError(f"\\take needs a non-negative exact integer count, got {nshow(n)}")
+    items = _elements(xs)
+    if items is None:
+        raise NumError(f"\\take needs a range or collection, got {nshow(xs)}")
+    return _rebuild(xs, list(islice(items, n)), "\\take")
+
+
 def _map_call(*args: Any) -> Any:
     _takes("map", args, 2, 2, "a function and a collection")
     f, xs = args
+    if _is_infinite(xs):
+        return _lazy("map", f, xs)
     items = _finite_elements(xs, "\\map")
     return _rebuild(xs, [_invoke(f, (x,)) for x in items], "\\map")
 
@@ -1613,13 +1674,9 @@ def _map_call(*args: Any) -> Any:
 def _filter_call(*args: Any) -> Any:
     _takes("filter", args, 2, 2, "a predicate and a collection")
     p, xs = args
-    kept = []
-    for x in _finite_elements(xs, "\\filter"):
-        keep = _invoke(p, (x,))
-        if not isinstance(keep, bool):
-            raise NumError(f"\\filter needs a boolean from its predicate, got {nshow(keep)}")
-        if keep:
-            kept.append(x)
+    if _is_infinite(xs):
+        return _lazy("filter", p, xs)
+    kept = [x for x in _finite_elements(xs, "\\filter") if _keeps(p, x)]
     return _rebuild(xs, kept, "\\filter")
 
 
@@ -1642,6 +1699,7 @@ PRELUDE.update({
     "map": PreludeFn("map", _map_call),
     "filter": PreludeFn("filter", _filter_call),
     "fold": PreludeFn("fold", _fold_call),
+    "take": PreludeFn("take", _take_call),
 })
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
@@ -1902,14 +1960,21 @@ class Engine:
         unit = 1 if op_name == "mul" else 0
         body = self.definitions[sid]
         acc: AdValue = unit
-        infinite = isinstance(value, RangeValue) and value.end is None
+        infinite = _is_infinite(value)
         previous: AdValue | None = None
         # Sums-only tail estimation (products keep the plateau — see
         # _FoldTailEstimator); finite folds never estimate.
         estimator = _FoldTailEstimator() if infinite and op_name == "add" else None
         count = 0
-        for item in items:
-            binding = _as_float(item) if infinite else item
+        iterator = iter(items)
+        while True:
+            try:
+                item = next(iterator)
+                binding = _as_float(item) if infinite else item
+            except StopIteration:
+                break
+            except NumError as e:
+                self._fail(e.args[0], sid)
             term = self._eval_bound(body, {name: binding}, label, sid)
             if infinite and isinstance(term, TensorValue):
                 self._fail(f"{label} over an infinite range needs numeric terms", sid)
