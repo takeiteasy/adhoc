@@ -56,3 +56,53 @@ def test_abs_of_a_gaussian_with_irrational_modulus_is_algebraic():
 
 def test_sign_rejects_complex():
     fails(r"\sign(1+i)", "needs a real number")
+
+
+# --- modulo ---
+
+
+@pytest.mark.parametrize("src, out", [
+    (r"-7 % 3", "= 2"), (r"7 % -3", "= -2"), (r"7/2 % 1", "= 1/2"),
+    (r"5 \mod 3", "= 2"), (r"(%)(9, 4)", "= 1"), (r"2 * 7 % 4", "= 2"),
+    (r"(\mod)(10, 4)", "= 2"), (r"\map((%)(·, 3), ⟨4, 5, 6⟩)", "= ⟨1, 2, 0⟩"),
+    (r"[5, 7] % 3", "= [2, 1]"),
+])
+def test_modulo_is_floored(src, out):
+    assert ev(src) == out
+
+
+def test_modulo_of_a_symbolic_real_stays_exact():
+    assert ev(r"(\pi + 1) % 1 + 3 - \pi") == "= 0"
+
+
+def test_modulo_errors():
+    fails(r"5 % 0", "division by zero")
+    fails(r"(1+i) % 2", "needs real numbers")
+    assert ev(r"\inf % 3") == "= NaN"
+
+
+# --- number theory ---
+
+
+@pytest.mark.parametrize("src, out", [
+    (r"\gcd(12, 18)", "= 6"), (r"\gcd(⟨12, 18, 30⟩)", "= 6"), (r"\gcd(-4, 6)", "= 2"),
+    (r"\lcm(4, 6)", "= 12"), (r"\lcm({2, 3, 4})", "= 12"),
+    (r"\divmod(-7, 3)", "= ⟨-3, 2⟩"), (r"\divmod(7/2, 1)", "= ⟨3, 1/2⟩"),
+    (r"\isprime(97)", "= true"), (r"\isprime(1)", "= false"), (r"\isprime(-7)", "= false"),
+    (r"\factor(360)", "= ⟨2, 2, 2, 3, 3, 5⟩"), (r"\factor(1)", "= ⟨⟩"),
+    (r"\factor(97)", "= ⟨97⟩"),
+    (r"\choose(5, 2)", "= 10"), (r"\choose(2, 5)", "= 0"), (r"\perm(5, 2)", "= 20"),
+    (r"\fib(0)", "= 0"), (r"\fib(10)", "= 55"), (r"\fib(100)", "= 354224848179261915075"),
+])
+def test_number_theory(src, out):
+    assert ev(src) == out
+
+
+@pytest.mark.parametrize("src, message", [
+    (r"\gcd(1/2, 3)", "exact integer"), (r"\gcd()", "at least one"),
+    (r"\gcd(\true, 2)", "exact integer"), (r"\factor(0)", "positive integer"),
+    (r"\factor(10^19)", "limited"), (r"\choose(-1, 2)", "non-negative"),
+    (r"\perm(5)", "takes"), (r"\fib(-1)", "non-negative"), (r"\isprime(1/2)", "exact integer"),
+])
+def test_number_theory_errors(src, message):
+    fails(src, message)

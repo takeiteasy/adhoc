@@ -97,7 +97,7 @@ cmp-op     ::= "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈"
              | "⊇" | "\\supseteq" | "⊃" | "\\supset" ;
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
-           ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "∩" | "\\cap" | "∘" | "\\circ") juxtaposed)* ;
+           ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "∩" | "\\cap" | "∘" | "\\circ" | "%" | "\\mod") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
@@ -175,7 +175,7 @@ Loosest to tightest:
 | 3 | `..` (range) | non-associative |
 | 4 | `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
 | 5 | `+` `-` (binary), `∪` `∖` | left |
-| 6 | `*` `/` `@`, `∩`, `∘` | left |
+| 6 | `*` `/` `@` `%`, `∩`, `∘` | left |
 | 7 | juxtaposition (implicit `*`) | left |
 | 8 | unary `-`, `√` `∛` `∜` | prefix |
 | 9 | `^` | right |
@@ -552,6 +552,7 @@ g(1, 2)                        ->  = 3
 | Operator | Arguments | Meaning |
 |---|---|---|
 | `+ * / ^` | 2 | arithmetic |
+| `%` `\mod` | 2 | floored modulo: the result takes the divisor's sign |
 | `-` | 1 or 2 | negate, or subtract |
 | `@` `\contract` | 2 | contraction — the same as infix `@` |
 | `∘` `\circ` | 2 | composition |

@@ -37,7 +37,7 @@ _BIN = {
     BinOperator.ADD: "+", BinOperator.SUB: "-", BinOperator.MUL: "*",
     BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "@",
     BinOperator.UNION: "∪", BinOperator.INTERSECT: "∩", BinOperator.SETMINUS: "∖",
-    BinOperator.COMPOSE: "∘",
+    BinOperator.COMPOSE: "∘", BinOperator.MOD: "%",
 }
 _POSTFIX = {UnaryOperator.FACT: "!", UnaryOperator.DFACT: "‼"}
 _CMP = {

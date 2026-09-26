@@ -90,6 +90,7 @@ _BIN_METHODS = {
     BinOperator.INTERSECT: "intersect",
     BinOperator.SETMINUS: "setminus",
     BinOperator.COMPOSE: "compose",
+    BinOperator.MOD: "mod",
 }
 
 # The fold operator each Fold node accumulates with; the runtime maps these back to

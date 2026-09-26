@@ -187,18 +187,18 @@ _SYMBOL_OPERATORS = {Bang: "fact", DoubleBang: "dfact", Plus: "add", Minus: "sub
 _INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
                     "subseteq": "subseteq", "neq": "ne", "approx": "approx", "notin": "notmember",
-                    "subset": "subset", "supseteq": "supseteq", "supset": "supset"}
+                    "subset": "subset", "supseteq": "supseteq", "supset": "supset", "mod": "mod"}
 
 # Operator key -> the parser level that reads its right-hand side, which is the extent of
 # a section's operand: `(+ 1*2)` fixes `1*2`, `(* 1 + 2)` is a parse error.
 _ADDITIVE_KEYS = frozenset({"add", "sub", "union", "setminus"})
-_MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose"})
+_MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose", "mod"})
 _COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq", "ne", "approx",
                           "notmember", "subset", "supseteq", "supset"})
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "cap": BinOperator.INTERSECT,
-                         "circ": BinOperator.COMPOSE}
+                         "circ": BinOperator.COMPOSE, "mod": BinOperator.MOD}
 _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ,
                   "neq": CompareOperator.NE, "approx": CompareOperator.APPROX,
                   "notin": CompareOperator.NOTIN, "subset": CompareOperator.SUBSET,

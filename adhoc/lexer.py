@@ -417,7 +417,7 @@ _SINGLE_CHAR_TOKENS = {
 
 _INFIX_GLYPHS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
                   "∘": "circ", "≠": "neq", "≈": "approx", "∉": "notin", "⊂": "subset",
-                  "⊇": "supseteq", "⊃": "supset"}
+                  "⊇": "supseteq", "⊃": "supset", "%": "mod"}
 _GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
 
 _ROOT_INDEX = {"∛": 3, "∜": 4}

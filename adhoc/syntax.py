@@ -43,6 +43,7 @@ class BinOperator(Enum):
     INTERSECT = auto()
     SETMINUS = auto()
     COMPOSE = auto()
+    MOD = auto()
 
 
 class CompareOperator(Enum):
@@ -220,7 +221,7 @@ class Hole(Node):
 OP_SYMBOLS = {
     "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "@",
     "fact": "!", "dfact": "‼", "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
-    "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆", "ne": "≠", "approx": "≈",
+    "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆", "ne": "≠", "approx": "≈", "mod": "%",
     "notmember": "∉", "subset": "⊂", "supseteq": "⊇", "supset": "⊃",
 }
 

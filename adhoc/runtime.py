@@ -222,7 +222,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "arr", "cup", "cap", "setminus",
-                           "in", "subseteq", "circ", "neq", "approx", "notin", "subset",
+                           "in", "subseteq", "circ", "mod", "neq", "approx", "notin", "subset",
                            "supseteq", "supset"})
 
 
@@ -680,6 +680,26 @@ def ndiv(a: AdValue, b: AdValue) -> AdValue:
     if divisor == 0:
         raise NumError(DIVISION_BY_ZERO)
     return _normalize(Fraction(a) / divisor)
+
+
+def nmod(a: AdValue, b: AdValue) -> AdValue:
+    """`a % b`, floored: the result takes the divisor's sign."""
+    if isinstance(a, TensorValue) or isinstance(b, TensorValue):
+        return _tensor_op(nmod, a, b)
+    _reject_non_numeric(a, b)
+    if _is_complex(a) or _is_complex(b):
+        raise NumError("`%` needs real numbers")
+    if _is_float(a) or _is_float(b):
+        try:
+            return _to_float(a) % _to_float(b)
+        except ZeroDivisionError:
+            return math.nan
+    if isinstance(a, (int, Fraction)) and isinstance(b, (int, Fraction)):
+        if b == 0:
+            raise NumError(DIVISION_BY_ZERO)
+        return _normalize(Fraction(a) % Fraction(b))
+    quotient = ndiv(a, b)
+    return nsub(a, nmul(b, _integral(quotient, "floor")))
 
 
 def _fdiv(fa: float, fb: float) -> float:
@@ -1638,7 +1658,7 @@ _OPERATOR_IMPLS = {
     "fact": (nfact, (1,)), "dfact": (ndfact, (1,)),
     "add": (nadd, (2,)), "sub": (_minus, (1, 2)), "mul": (nmul, (2,)),
     "div": (ndiv, (2,)), "pow": (npow, (2,)), "dot": (ndot, (2,)),
-    "compose": (ncompose, (2,)), "union": (nunion, (2,)),
+    "compose": (ncompose, (2,)), "mod": (nmod, (2,)), "union": (nunion, (2,)),
     "intersect": (nintersect, (2,)), "setminus": (nsetminus, (2,)),
     "lt": (_cmp("lt"), (2,)), "le": (_cmp("le"), (2,)),
     "gt": (_cmp("gt"), (2,)), "ge": (_cmp("ge"), (2,)),
@@ -1961,6 +1981,88 @@ PRELUDE.update({
     "round": PreludeFn("round", _round_call),
     "abs": PreludeFn("abs", _abs_call),
     "sign": PreludeFn("sign", _sign_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+
+MAX_FACTOR = 10**18
+MAX_FIB = 1_000_000
+
+
+def _exact_int(v: AdValue, label: str) -> int:
+    n = _integer_exponent(v) if not isinstance(v, bool) else None
+    if n is None:
+        raise NumError(f"{label} needs an exact integer, got {nshow(v)}")
+    return n
+
+
+def _integer_args(args: tuple, label: str) -> list[int]:
+    """Integers given as arguments or as one collection: `\\gcd(12, 18)`, `\\gcd(⟨12, 18⟩)`."""
+    items = list(args)
+    if len(args) == 1 and _elements(args[0]) is not None:
+        items = _finite_elements(args[0], label)
+    if not items:
+        raise NumError(f"{label} needs at least one integer")
+    return [_exact_int(v, label) for v in items]
+
+
+def _gcd_call(*args: AdValue) -> int:
+    return math.gcd(*_integer_args(args, "\\gcd"))
+
+
+def _lcm_call(*args: AdValue) -> int:
+    return math.lcm(*_integer_args(args, "\\lcm"))
+
+
+def _divmod_call(*args: AdValue) -> ArrayValue:
+    _takes("divmod", args, 2, 2, "a dividend and a divisor")
+    a, b = args
+    return ArrayValue((_integral(ndiv(a, b), "floor"), nmod(a, b)))
+
+
+def _isprime_call(n: AdValue) -> bool:
+    return bool(sympy.isprime(_exact_int(n, "\\isprime")))
+
+
+def _factor_call(n: AdValue) -> ArrayValue:
+    n = _exact_int(n, "\\factor")
+    if n < 1:
+        raise NumError(f"\\factor needs a positive integer, got {n}")
+    if n > MAX_FACTOR:
+        raise NumError(f"\\factor is limited to arguments up to {MAX_FACTOR}")
+    return ArrayValue(tuple(p for p, k in sorted(sympy.factorint(n).items()) for _ in range(k)))
+
+
+def _count_call(name: str, fn: Callable[[int, int], int]) -> PreludeFn:
+    def call(*args: AdValue) -> int:
+        _takes(name, args, 2, 2, "n and k")
+        n, k = (_exact_int(v, f"\\{name}") for v in args)
+        if n < 0 or k < 0:
+            raise NumError(f"\\{name} needs non-negative integers")
+        if n > MAX_FACTORIAL:
+            raise NumError(f"\\{name} is limited to arguments up to {MAX_FACTORIAL}")
+        return fn(n, k)
+    return PreludeFn(name, call)
+
+
+def _fib_call(n: AdValue) -> int:
+    n = _exact_int(n, "\\fib")
+    if n < 0:
+        raise NumError(f"\\fib needs a non-negative integer, got {n}")
+    if n > MAX_FIB:
+        raise NumError(f"\\fib is limited to arguments up to {MAX_FIB}")
+    return int(sympy.fibonacci(n))
+
+
+PRELUDE.update({
+    "gcd": PreludeFn("gcd", _gcd_call),
+    "lcm": PreludeFn("lcm", _lcm_call),
+    "divmod": PreludeFn("divmod", _divmod_call),
+    "isprime": PreludeFn("isprime", _isprime_call),
+    "factor": PreludeFn("factor", _factor_call),
+    "choose": _count_call("choose", math.comb),
+    "perm": _count_call("perm", math.perm),
+    "fib": PreludeFn("fib", _fib_call),
 })
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
@@ -2606,6 +2708,9 @@ class Engine:
 
     def div(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         return self._binop(ndiv, a, b, sid)
+
+    def mod(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(nmod, a, b, sid)
 
     def pow(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         if callable(a) and isinstance(b, (int, Fraction, float)) and not isinstance(b, bool) \
