@@ -28,7 +28,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 - Bare identifiers are one letter (ASCII or unicode), optionally with a subscript
   (`x`, `x₁`, `xᵢ`, ASCII `x_1`); multi-character names, including user-defined function names, use the
   backslash sigil (`\fact`).
-- Math notation: `x²`, `xⁿ⁻¹`, `\sin²(x)`, `n!`, `∛x`, `≤ ≥ ≠ ≈`, `∉ ⊂ ⊇ ⊃ ∅` — see [`notation.md`](notation.md).
+- Math notation: `x²`, `xⁿ⁻¹`, `\sin²(x)`, `\sin⁻¹(x)`, `3 ∈ 1..5`, `n!`, `∛x`, `≤ ≥ ≠ ≈`, `∉ ⊂ ⊇ ⊃ ∅` — see [`notation.md`](notation.md).
 - Assignment (`x = 1`) with declare-once-then-check semantics: a fresh name binds and
   echoes the spelling written at that occurrence; `x = 1` again *compares*, printing
   `true`/`false`. `\let x = 1` is the explicit fresh-only spelling, and the top-level
@@ -107,7 +107,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   binding may shadow — `i = 5` or `\sum(i=1..3) i` is an ordinary identifier clash,
   docs/grammar.md, `## Assignment semantics`), `\inf`/`\nan` the non-finite floats,
   `\true`/`\false` the booleans,
-  and the `\sin`, `\cos`, `\tan`, `\ln`, `\sqrt` function builtins — exact arguments
+  and the `\sin`, `\cos`, `\tan`, `\asin`, `\acos`, `\atan`, `\ln`, `\sqrt` function builtins — exact arguments
   go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sqrt(-2)` is
   `√2·i`), algebraic `√` arguments through the algebraic tier, anything finite the
   lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact), everything
@@ -214,11 +214,7 @@ phases add bindings without touching the lexer.
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
 - Logical operators (`∧ ∨ ¬ → ↔ ∀ ∃`) are not built — [#80](https://todo.sr.ht/~takeiteasy/adhoc/80).
-- Function inverses (`f⁻¹`, `\sin⁻¹`) are not built — [#85](https://todo.sr.ht/~takeiteasy/adhoc/85).
-- Some letters have no superscript or subscript glyph —
-  [#86](https://todo.sr.ht/~takeiteasy/adhoc/86).
-- A range operand of `∈` needs parentheses (`3 ∈ (1..5)`) —
-  [#84](https://todo.sr.ht/~takeiteasy/adhoc/84).
+- `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
 - `/` is elementwise on tensors, and there is no determinant, inverse, or linear solve —
   [#76](https://todo.sr.ht/~takeiteasy/adhoc/76).
 

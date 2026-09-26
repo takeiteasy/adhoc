@@ -28,9 +28,10 @@ written against — it should stay in lockstep with the code.
   values: see `## String literals` for their operators.
 - An **identifier** is one ASCII or unicode letter, optionally followed by a subscript run of
   digits `₀…₉` and letters `ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ` (`x`, `π`, `α`, `x₁`, `a₂₃`, `xᵢⱼ`); `x₁` is a
-  name unrelated to `x`. The ASCII spelling is a letter, `_`, then ASCII digits or those
-  letters (`x_1`, `x_ij`); it is the same name as the glyph form. A `_` with none of those
-  after it is the placeholder. A subscript glyph with no letter before it is a lex error. `ab` is still
+  name unrelated to `x`. The ASCII spelling is a letter, `_`, then ASCII letters or digits
+  (`x_1`, `x_ij`, `x_b`); it is the same name as the glyph form where every character has a
+  glyph, and its own name otherwise (`x_b`, `x_ib`). A `_` with no alphanumeric after it is
+  the placeholder. A subscript glyph with no letter before it is a lex error. `ab` is still
   `a * b`, and `∅` lexes as an identifier that aliases `\emptyset`. See `docs/notation.md`.
 - A **superscript run** (`²`, `⁻¹`, `ⁿ⁺¹`, `⁽ⁿ⁺¹⁾`: digits, letters, `⁺ ⁻ ⁽ ⁾`) is one token,
   sugar for `^` with the run read as an expression. A run without digits or letters is a lex
@@ -89,7 +90,8 @@ expr       ::= ternary ;
 ternary    ::= range ("?" ternary ":" ternary)? ;   (* right-associative *)
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
                                            (* the "," form is not read inside lists *)
-comparison ::= additive (cmp-op additive)? ;
+comparison ::= additive (cmp-op additive)? | additive ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
+range-tail ::= additive (".." additive? | "," additive ".." additive?) ;   (* membership only *)
 cmp-op     ::= "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈" | "\\approx"
              | "∈" | "\\in" | "∉" | "\\notin" | "⊆" | "\\subseteq" | "⊂" | "\\subset"
              | "⊇" | "\\supseteq" | "⊃" | "\\supset" ;
@@ -442,7 +444,7 @@ are duplicates when the binding rule's check would call them equal.
 
 Every operator is infix. `∪ ∖ ∩ ⊆ ⊂ ⊇ ⊃` need sets on both sides; `∈` and `∉` take a set, an
 array (element equality), or a range (a term of the progression, so `5 ∈ (1,3..9)`) on the
-right, and a range operand is parenthesized because `..` binds looser. `∅` / `\emptyset` is
+right; the range reads unparenthesized (`3 ∈ 1..5`), though `..` stays looser than every other comparison. `∅` / `\emptyset` is
 the empty set. Anything else is a typed error, as are arithmetic, ordering, and indexing on a set. The
 `\`-names `cup cap setminus in subseteq` and `notin subset supseteq supset neq approx` are operators, never names: they cannot bind or be aliased, and stand as a
 value only as `(\cup)` or a whole call argument (`## Operator values`).
