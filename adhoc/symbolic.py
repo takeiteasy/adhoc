@@ -271,7 +271,7 @@ _DOMAIN_MESSAGES = {
     "gamma": "gamma is not defined at zero or the negative integers",
     "erf": "erf is not defined here",
     "atan2": "atan2 is not defined at the origin",
-    "log": "log needs a positive base other than 1 and a positive argument",
+    "log": "log needs a base other than 1 (and not zero)",
 }
 _APPLY_FUNCS = {
     "sqrt": sympy.sqrt, "ln": sympy.log,

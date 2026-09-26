@@ -45,10 +45,10 @@ written against — it should stay in lockstep with the code.
   (docs/numerics.md for the values it produces).
 - A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
   After the first character a name may continue with letters or underscores (`\rel_tol`,
-  `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
+  `\my_var`); a `_` cannot start a name. `\atan2` is the one name ending in a digit. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / @ ∘ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
+- Operators: `+ - * / % @ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
   A lone `·` (U+00B7), `⋅` (U+22C5) or `_` is the partial-application placeholder
   (`## Composition and partial application`); inside a `\`-name `_` is an ordinary name

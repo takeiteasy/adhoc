@@ -269,7 +269,7 @@ float-argument call, or from an IEEE non-finite value. A plain decimal
 (`0.5`) is an exact rational; the float spellings exist so the inexact tier
 stays reachable and visually marked.
 
-CPython floats deviate from MPFR in three places; the seam pins each deliberately rather
+CPython floats deviate from MPFR in five places; the seam pins each deliberately rather
 than inheriting the Python default:
 
 | Situation | MPFR/rug behavior | Python default | Seam behavior |
@@ -277,6 +277,20 @@ than inheriting the Python default:
 | `x / ±0.0` | signed infinity (`NaN` only for `0/0`) | raises `ZeroDivisionError` | signed infinity / `NaN` |
 | float power overflow | unbounded exponent range | raises `OverflowError` | saturates to signed infinity |
 | negative base, fractional exponent | `NaN` | returns a `complex` | `NaN` (the exact tiers instead take the odd-root real branch or the complex principal) |
+| `x % 0.0` | `NaN` | raises `ZeroDivisionError` | `NaN` (exact `x % 0` is a typed `division by zero`) |
+| `\round(x, n)` of a float | decimal rounding of the shortest repr | rounds the binary value (`round(2.675, 2)` is `2.67`) | half away from zero on the shortest repr (`2.68`) |
+
+Exactness of the standard library ([`stdlib.md`](stdlib.md)):
+
+- `%` is floored and exact on rationals; on symbolic reals it is `a - b⌊a/b⌋` through the
+  seam. `⌊ ⌋`, `\ceil`, `\trunc` and `\round` return exact integers for every exact tier.
+- `\log(b, x)` is exact when both are positive rationals with proportional prime
+  factorizations (`\log(1/2, 8)` is `-3`); otherwise it is the symbolic or RRA value.
+  Negative or complex-valued cases give the complex principal value, like `\ln(-1)`.
+- `\gamma(x)` and `x!` of a half-integer are `√π` multiples; other non-integers are held
+  to arbitrary precision (RRA).
+- `r∠θ` of a non-special angle is RRA, so `\abs(2∠1)` is `2` only to display precision
+  (see Limitations in `stdlib.md`).
 
 ## Non-finite values
 

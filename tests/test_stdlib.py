@@ -225,3 +225,15 @@ def test_angle_is_non_associative_and_looser_than_addition():
 ])
 def test_complex_errors(src, message):
     fails(src, message)
+
+
+# --- pinned behavior ---
+
+
+def test_float_modulo_by_zero_is_nan_and_round_uses_the_decimal_repr():
+    assert ev(r'\py("float")("2.5") % 0') == "= NaN"
+    assert ev(r'\round(\py("float")("2.675"), 2)') == "= 2.68"
+
+
+def test_angle_of_a_non_special_angle_is_held_approximately():
+    assert ev(r"\abs(2∠1) ≈ 2") == "= true"

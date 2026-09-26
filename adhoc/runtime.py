@@ -155,6 +155,9 @@ protected or already-visible name is an error. The one shadowable prelude name i
   CPython's `/` would raise `ZeroDivisionError`.
 - Float exponentiation overflow saturates to signed infinity — MPFR has unbounded
   exponent range; CPython raises `OverflowError`.
+- `x % 0.0` yields NaN on the float tier, where CPython raises `ZeroDivisionError`.
+- `\\round(x, n)` of a float rounds its shortest-repr decimal half away from zero
+  (`2.675` gives `2.68`), where CPython's `round` works on the binary value (`2.67`).
 - Negative base with a fractional exponent yields NaN on the float tier — MPFR
   semantics; CPython's `**` would silently return a `complex`. The exact tiers
   instead take the real branch for odd-denominator rationals (`(-8)^(1/3)` is

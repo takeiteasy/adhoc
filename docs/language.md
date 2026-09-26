@@ -117,6 +117,8 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   else falls to the `math.*` float tier. The `\isnan`/`\isinf`/`\isfinite` predicates
   test float non-finiteness and treat exact tiers as finite. `\complex`/`\re`/`\im`
   build and project complex values, and `\prec` is the display-precision setting above.
+  Rounding, number theory, more elementary and special functions, aggregates and complex
+  helpers are listed in docs/stdlib.md.
   Prelude names other than `i` can never be rebound or shadowed, and unicode/ASCII
   spellings are one and the same value (`π` and `\pi` are a single constant, via the
   name alias map). `√` is the

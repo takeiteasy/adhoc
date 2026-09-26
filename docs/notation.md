@@ -100,6 +100,7 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 
 ## Limitations
 
+- `∀` and `∃` bind with `(x=domain)` only — [#88](https://todo.sr.ht/~takeiteasy/adhoc/88).
 - `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII

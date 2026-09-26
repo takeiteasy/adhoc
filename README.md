@@ -93,7 +93,7 @@ The two heavyweight convergence tests are marked `slow`;
 
 ## Docs
 
-See [`docs/`](docs/) for the language reference, grammar, notation glyphs, architecture, and numerics notes.
+See [`docs/`](docs/) for the language reference, grammar, notation glyphs, standard library, architecture, and numerics notes.
 
 ## License
 

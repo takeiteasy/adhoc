@@ -7,11 +7,11 @@ the float tier. Every name is protected: it cannot be rebound or shadowed.
 
 | Function | Result | Example |
 |---|---|---|
-| `\conj(z)` | complex conjugate | `\conj(3+4i)` → `3-4i` |
-| `\arg(z)` | angle in `(-π, π]`, an error at zero | `\arg(-1)` → `π` |
-| `\abs(z)` | modulus (see Rounding) | `\abs(3+4i)` → `5` |
-| `\polar(r, θ)` `r∠θ` `r \angle θ` | `r·cos θ + r·sin θ·i` | `2∠(π/2)` → `2i` |
-| `\re(z)` `\im(z)` | components | `\im(3+4i)` → `4` |
+| `\conj(z)` | complex conjugate | `\conj(3+4i)` -> `3-4i` |
+| `\arg(z)` | angle in `(-π, π]`, an error at zero | `\arg(-1)` -> `π` |
+| `\abs(z)` | modulus (see Rounding) | `\abs(3+4i)` -> `5` |
+| `\polar(r, θ)` `r∠θ` `r \angle θ` | `r·cos θ + r·sin θ·i` | `2∠(π/2)` -> `2i` |
+| `\re(z)` `\im(z)` | components | `\im(3+4i)` -> `4` |
 
 `∠` binds looser than `+` and tighter than comparison, so `2∠π/2` is `2∠(π/2)` and
 `2∠π/2 ≈ 2i` is `true`. It does not chain: `1∠2∠3` is a parse error. `(∠)` is its function
@@ -24,15 +24,15 @@ Each takes several arguments or one collection (array, set, tensor, range) unles
 
 | Function | Result | Example |
 |---|---|---|
-| `\min(…)` `\max(…)` | smallest, largest | `\max(⟨3, 1, 2⟩)` → `3` |
-| `\mean(…)` `\median(…)` | exact where the inputs are | `\mean(⟨1, 2, 4⟩)` → `7/3` |
-| `\stdev(…)` `\sstdev(…)` | population and sample deviation | `\stdev(⟨1, 2⟩)` → `1/2` |
-| `\sort(xs)` | ascending; a set gives an array | `\sort({3, 1, 2})` → `⟨1, 2, 3⟩` |
-| `\reverse(xs)` | reversed; a set is an error | `\reverse(⟨1, 2, 3⟩)` → `⟨3, 2, 1⟩` |
-| `\any(p, xs)` `\all(p, xs)` | short-circuit tests with a predicate | `\all(\fn(x) x > 0, 1..5)` → `true` |
-| `\count(p, xs)` | elements satisfying `p` | `\count(\fn(x) x % 2 ≠ 0, 1..10)` → `5` |
-| `\zip(a, b, …)` | array of tuples, cut to the shortest | `\zip(⟨1, 2⟩, ⟨3, 4⟩)` → `⟨⟨1, 3⟩, ⟨2, 4⟩⟩` |
-| `\enumerate(xs)` | `⟨⟨1, x₁⟩, ⟨2, x₂⟩, …⟩`, 1-based like indexing | `\enumerate(⟨7, 8⟩)` → `⟨⟨1, 7⟩, ⟨2, 8⟩⟩` |
+| `\min(…)` `\max(…)` | smallest, largest | `\max(⟨3, 1, 2⟩)` -> `3` |
+| `\mean(…)` `\median(…)` | exact where the inputs are | `\mean(⟨1, 2, 4⟩)` -> `7/3` |
+| `\stdev(…)` `\sstdev(…)` | population and sample deviation | `\stdev(⟨1, 2⟩)` -> `1/2` |
+| `\sort(xs)` | ascending; a set gives an array | `\sort({3, 1, 2})` -> `⟨1, 2, 3⟩` |
+| `\reverse(xs)` | reversed; a set is an error | `\reverse(⟨1, 2, 3⟩)` -> `⟨3, 2, 1⟩` |
+| `\any(p, xs)` `\all(p, xs)` | short-circuit tests with a predicate | `\all(\fn(x) x > 0, 1..5)` -> `true` |
+| `\count(p, xs)` | elements satisfying `p` | `\count(\fn(x) x % 2 ≠ 0, 1..10)` -> `5` |
+| `\zip(a, b, …)` | array of tuples, cut to the shortest | `\zip(⟨1, 2⟩, ⟨3, 4⟩)` -> `⟨⟨1, 3⟩, ⟨2, 4⟩⟩` |
+| `\enumerate(xs)` | `⟨⟨1, x₁⟩, ⟨2, x₂⟩, …⟩`, 1-based like indexing | `\enumerate(⟨7, 8⟩)` -> `⟨⟨1, 7⟩, ⟨2, 8⟩⟩` |
 
 Ordering rejects complex values and booleans. Empty input is a typed error, except that
 `\any` of nothing is `false`, `\all` is `true` and `\count` is `0`. `\any` and `\all` also
@@ -43,13 +43,13 @@ the other aggregates need finite input.
 
 | Function | Result | Example |
 |---|---|---|
-| `a % b`, `a \mod b` | floored modulo; rationals and symbolic reals work | `-7 % 3` → `2` |
-| `\gcd(a, b, …)` `\lcm(…)` | arguments or one collection of exact integers | `\gcd(⟨12, 18⟩)` → `6` |
-| `\divmod(a, b)` | `⟨⌊a/b⌋, a % b⟩` | `\divmod(-7, 3)` → `⟨-3, 2⟩` |
-| `\isprime(n)` | boolean | `\isprime(97)` → `true` |
-| `\factor(n)` | prime factors with repetition, up to 10¹⁸ | `\factor(360)` → `⟨2, 2, 2, 3, 3, 5⟩` |
-| `\choose(n, k)` `\perm(n, k)` | binomial and falling factorial, `n ≤ 100000` | `\choose(5, 2)` → `10` |
-| `\fib(n)` | Fibonacci number, `n ≤ 1000000` | `\fib(10)` → `55` |
+| `a % b`, `a \mod b` | floored modulo; rationals and symbolic reals work | `-7 % 3` -> `2` |
+| `\gcd(a, b, …)` `\lcm(…)` | arguments or one collection of exact integers | `\gcd(⟨12, 18⟩)` -> `6` |
+| `\divmod(a, b)` | `⟨⌊a/b⌋, a % b⟩` | `\divmod(-7, 3)` -> `⟨-3, 2⟩` |
+| `\isprime(n)` | boolean | `\isprime(97)` -> `true` |
+| `\factor(n)` | prime factors with repetition, up to 10¹⁸ | `\factor(360)` -> `⟨2, 2, 2, 3, 3, 5⟩` |
+| `\choose(n, k)` `\perm(n, k)` | binomial and falling factorial, `n ≤ 100000` | `\choose(5, 2)` -> `10` |
+| `\fib(n)` | Fibonacci number, `n ≤ 1000000` | `\fib(10)` -> `55` |
 
 `%` sits at the multiplicative level; `\mod` is the same operator, and `(%)` and `(\mod)`
 are its function value. `%` by zero is `division by zero`; a float modulo by `0.0` is `NaN`.
@@ -58,13 +58,13 @@ are its function value. `%` by zero is `division by zero`; a float modulo by `0.
 
 | Function | Result | Example |
 |---|---|---|
-| `\exp(x)` | eˣ | `\exp(0)` → `1` |
-| `\log(b, x)` | logarithm of `x` in base `b`; `\log(x)` is `\ln(x)` | `\log(2, 8)` → `3` |
-| `\sinh \cosh \tanh` | hyperbolics | `\cosh(0)` → `1` |
-| `\asinh \acosh \atanh` | inverse hyperbolics | `\atanh(0)` → `0` |
-| `\atan2(y, x)` | angle of the point `(x, y)` | `\atan2(1, 1)` → `π/4` |
-| `\gamma(x)` | Γ; `x!` is `\gamma(x + 1)` | `\gamma(5)` → `24` |
-| `\erf(x)` | error function | `\erf(0)` → `0` |
+| `\exp(x)` | eˣ | `\exp(0)` -> `1` |
+| `\log(b, x)` | logarithm of `x` in base `b`; `\log(x)` is `\ln(x)` | `\log(2, 8)` -> `3` |
+| `\sinh \cosh \tanh` | hyperbolics | `\cosh(0)` -> `1` |
+| `\asinh \acosh \atanh` | inverse hyperbolics | `\atanh(0)` -> `0` |
+| `\atan2(y, x)` | angle of the point `(x, y)` | `\atan2(1, 1)` -> `π/4` |
+| `\gamma(x)` | Γ; `x!` is `\gamma(x + 1)` | `\gamma(5)` -> `24` |
+| `\erf(x)` | error function | `\erf(0)` -> `0` |
 
 Exact arguments stay exact where a closed form exists (`\log(1/2, 8)` is `-3`,
 `\gamma(1/2)` is `√π`); otherwise the value is held to arbitrary precision, like `\sin(1)`.
@@ -76,13 +76,19 @@ Exact arguments stay exact where a closed form exists (`\log(1/2, 8)` is `-3`,
 
 | Function | Result | Example |
 |---|---|---|
-| `\floor(x)` | greatest integer ≤ x | `\floor(-5/2)` → `-3` |
-| `\ceil(x)` | least integer ≥ x | `\ceil(\pi)` → `4` |
-| `\trunc(x)` | toward zero | `\trunc(-5/2)` → `-2` |
-| `\round(x)` | nearest integer, ties away from zero | `\round(-5/2)` → `-3` |
-| `\round(x, n)` | round to `n` decimal digits (`n` may be negative) | `\round(22/7, 2)` → `157/50` |
-| `\abs(x)` | magnitude; on a complex value, the modulus | `\abs(3+4i)` → `5` |
-| `\sign(x)` | `-1`, `0` or `1` | `\sign(-\pi)` → `-1` |
+| `\floor(x)` | greatest integer ≤ x | `\floor(-5/2)` -> `-3` |
+| `\ceil(x)` | least integer ≥ x | `\ceil(\pi)` -> `4` |
+| `\trunc(x)` | toward zero | `\trunc(-5/2)` -> `-2` |
+| `\round(x)` | nearest integer, ties away from zero | `\round(-5/2)` -> `-3` |
+| `\round(x, n)` | round to `n` decimal digits (`n` may be negative) | `\round(22/7, 2)` -> `157/50` |
+| `\abs(x)` | magnitude; on a complex value, the modulus | `\abs(3+4i)` -> `5` |
+| `\sign(x)` | `-1`, `0` or `1` | `\sign(-\pi)` -> `-1` |
 
 Exact and symbolic arguments give exact integers; non-finite floats pass through.
 Complex arguments are a typed error, except for `\abs`.
+
+## Limitations
+
+- `\gcd`, `\lcm` and `\factor` take exact integers only — [#89](https://todo.sr.ht/~takeiteasy/adhoc/89).
+- `\zip` and `\enumerate` need finite input — [#90](https://todo.sr.ht/~takeiteasy/adhoc/90).
+- `r∠θ` and `\abs` of a non-special angle are held approximately (`\abs(2∠1)` shows `2...`) — [#91](https://todo.sr.ht/~takeiteasy/adhoc/91).
