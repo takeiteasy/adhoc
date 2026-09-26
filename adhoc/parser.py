@@ -76,6 +76,7 @@ from .lexer import (
     Colon,
     Comma,
     Caret,
+    Superscript,
     Eq,
     Eof,
     Ident,
@@ -951,6 +952,9 @@ class _Parser:
             if isinstance(node, _Parser._INDEXABLE) and isinstance(self.peek(), LBracket):
                 node = self._index(node)
                 continue
+            if isinstance(self.peek(), Superscript):
+                node = self._superscript(node)
+                continue
             if isinstance(self.peek(), Prime):
                 tick = self.advance()
                 node = Transpose(operand=node, span=node.span.to(tick.span))
@@ -1006,6 +1010,15 @@ class _Parser:
                 raise ParseError(
                     f"`{self._form_label(node.head)}` takes exactly one argument", node.span)
         return node
+
+    # superscript ::= "²" | "⁻¹" | ... — a postfix trailer, sugar for `^` with a literal exponent.
+    def _superscript(self, base: Node) -> Node:
+        tok = self.advance()
+        digits = tok.text.lstrip("-")
+        exp: Node = NumLit(text=digits, span=tok.span)
+        if tok.text.startswith("-"):
+            exp = UnOp(op=UnaryOperator.NEG, operand=exp, span=tok.span)
+        return BinOp(op=BinOperator.POW, lhs=base, rhs=exp, span=base.span.to(tok.span))
 
     # index ::= "[" expr ("," expr)* "]" — a trailer on name-ish heads and transposes.
     def _index(self, head: Node) -> Index:

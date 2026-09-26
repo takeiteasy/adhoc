@@ -97,6 +97,18 @@ class Radical(Token):
 
 
 @dataclass(frozen=True)
+class Superscript(Token):
+    """A superscript exponent run (`²`, `⁻¹`, `¹⁰`): sugar for `^`. `text` is the
+    exponent in ASCII (`"2"`, `"-1"`, `"10"`)."""
+
+    text: str
+
+    @property
+    def describe(self) -> str:
+        return "a superscript"
+
+
+@dataclass(frozen=True)
 class Plus(Token):
     @property
     def describe(self) -> str:
@@ -371,6 +383,8 @@ _SET_OPERATORS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "�
                   "∘": "circ"}
 _SET_SYMBOLS = {name: symbol for symbol, name in _SET_OPERATORS.items()}
 
+_SUPERSCRIPT_DIGITS = {c: str(d) for d, c in enumerate("⁰¹²³⁴⁵⁶⁷⁸⁹")}
+
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}
 
 
@@ -504,6 +518,20 @@ def tokenize(src: str) -> list[Token]:
             if not name:
                 raise LexError("bare `\\` with no name following", span)
             tokens.append(Backslash(name=name, span=span))
+            i = j
+            continue
+
+        if c in _SUPERSCRIPT_DIGITS or c == "⁻":
+            j = i + 1 if c == "⁻" else i
+            digits_from = j
+            while j < n and entries[j][1] in _SUPERSCRIPT_DIGITS:
+                j += 1
+            end = entries[j][0] if j < n else eof_off
+            if j == digits_from:
+                raise LexError("`⁻` needs superscript digits after it", Span(pos, end))
+            digits = "".join(_SUPERSCRIPT_DIGITS[entries[k][1]] for k in range(digits_from, j))
+            tokens.append(Superscript(text=("-" if c == "⁻" else "") + digits,
+                                      span=Span(pos, end)))
             i = j
             continue
 

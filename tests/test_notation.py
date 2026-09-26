@@ -51,3 +51,46 @@ def test_subscripted_name_juxtaposes_and_takes_alias():
 def test_subscript_digit_alone_is_a_lex_error():
     with pytest.raises(Exception, match="unexpected character"):
         tokenize("₁")
+
+
+# --- superscript powers ---
+
+
+@pytest.mark.parametrize("digit,value", list(zip("⁰¹²³⁴⁵⁶⁷⁸⁹", range(10))))
+def test_every_superscript_digit(digit, value):
+    assert ev(f"2{digit}") == f"= {2 ** value}"
+
+
+def test_superscript_run_is_one_exponent():
+    assert ev("2¹⁰") == "= 1024"
+    assert ev("2⁻¹") == "= 1/2"
+    assert ev("2⁻²") == "= 1/4"
+    tok = tokenize("x⁻¹⁰")[1]
+    assert (tok.text, tok.span.start, tok.span.end) == ("-10", 1, 1 + 3 + 2 + 3)
+
+
+def test_superscript_precedence():
+    assert ev("x = 3; 2x²") == "= 18"
+    assert ev("x = 3; -x²") == "= -9"
+    assert ev("2^3²") == "= 512"
+    assert ev("√4²") == "= 4"
+    assert ev("(1+2)²") == "= 9"
+    assert ev("f(x) = x + 1\nf(2)²") == "= 9"
+    assert ev("[1, 2; 3, 4]²") == "= [1, 4; 9, 16]"
+    assert ev("[1, 2]²'") == "= [1, 4]"
+
+
+def test_superscript_roundtrips_as_caret():
+    assert roundtrip("2x²") == "(2 * (x ^ 2))"
+    assert roundtrip("x⁻¹") == "(x ^ (-1))"
+
+
+def test_lone_superscript_minus_is_a_lex_error():
+    with pytest.raises(Exception, match="superscript digits"):
+        tokenize("x⁻")
+
+
+def test_caret_after_multibyte_glyph_points_at_the_error():
+    with pytest.raises(ParseError) as e:
+        parse_program("x² +")
+    assert e.value.span.start == len("x² +".encode())
