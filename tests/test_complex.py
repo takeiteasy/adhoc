@@ -317,6 +317,16 @@ def test_lim_takes_complex_bodies_and_anchors(src, expected):
     assert abs(_value(src) - expected) <= 1e-8
 
 
+def test_lim_complex_anchor_diagonal_rays_are_probed():
+    with pytest.raises(EvalError, match="does not exist"):
+        last(r"\lim(x=i) \re(x - i)*\im(x - i)/\abs(x - i)^2")
+
+
+def test_lim_drops_stray_tiny_parts():
+    assert last(r"\lim(x=1+i) x^2") == "= 2.0i"
+    assert last(r"\lim(x=i) x^2") == "= -1.0"
+
+
 def test_lim_complex_anchor_rays_that_disagree_have_no_limit():
     with pytest.raises(EvalError, match="does not exist"):
         last(r"\lim(x=i) \re(x - i)/\abs(x - i)")

@@ -26,6 +26,7 @@ from adhoc.runtime import (
     _agree,
     _as_float,
     _as_inexact,
+    _drop_stray_parts,
     _settled,
     _FoldTailEstimator,
 )
@@ -391,6 +392,14 @@ def test_settled_and_agree_compare_complex_values_by_modulus():
     assert _agree(1j, 1j + 1.5e-12)
     assert not _agree(1j, 1j + 3e-12)
     assert not _agree(1 + 0j, 1j)
+
+
+def test_drop_stray_parts_zeroes_parts_below_the_scaled_tolerance():
+    assert _drop_stray_parts(2e-25 + 2j) == 2j
+    assert _drop_stray_parts(-1 + 2e-13j) == -1.0
+    assert _drop_stray_parts(1 + 1e-6j) == 1 + 1e-6j
+    assert _drop_stray_parts(1e6 + 1e-7j) == 1e6
+    assert _drop_stray_parts(0.5) == 0.5
 
 
 def test_as_inexact_widens_complex_values():

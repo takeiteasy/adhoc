@@ -94,4 +94,4 @@ Complex arguments are a typed error, except for `\abs`.
 
 ## Limitations
 
-- `\lim` with a complex anchor probes four rays, not every direction — [#96](https://todo.sr.ht/~takeiteasy/adhoc/96).
+- `\lim` with a complex anchor probes eight rays, so a body that vanishes on all of them (`\im((x - a)^4)/\abs(x - a)^4`) reads as a limit — [#97](https://todo.sr.ht/~takeiteasy/adhoc/97).

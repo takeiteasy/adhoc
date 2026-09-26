@@ -1222,6 +1222,20 @@ def _as_inexact(value: AdValue) -> float | complex:
     return _as_float(value)
 
 
+_RAYS = (1.0, -1.0, 1j, -1j) + tuple(complex(a, b) / math.sqrt(2)
+                                     for a in (1, -1) for b in (1, -1))
+
+
+def _drop_stray_parts(value: AdValue) -> AdValue:
+    """A complex float with a part below the convergence tolerance (scaled by the modulus)
+    loses that part: `\\lim(x=i) x^2` is `-1.0`, not `-1.0+2e-13i`."""
+    if not isinstance(value, complex):
+        return value
+    cutoff = CONVERGENCE_TOLERANCE * max(1.0, abs(value))
+    return _inexact(complex(0.0 if abs(value.real) <= cutoff else value.real,
+                            0.0 if abs(value.imag) <= cutoff else value.imag))
+
+
 def _finite(value: AdValue) -> bool:
     return cmath.isfinite(_to_complex(value)) if _is_complex(value) else math.isfinite(value)
 
@@ -2915,7 +2929,7 @@ class Engine:
         """`\\lim(x=a) body`, numeric only: probe each side with geometrically shrinking
         steps — never evaluating at `a` itself; the ulp guard halts each side when a
         step would round back onto the anchor. A real anchor has two sides (right, left),
-        a complex anchor four rays (±1, ±i). Each side must stabilize within
+        a complex anchor eight rays (±1, ±i and the four diagonals). Each side must stabilize within
         CONVERGENCE_TOLERANCE (same relatively-scaled plateau test as infinite folds)
         inside MAX_PROBES;
         sides stabilizing apart means the limit does not exist. Probes evaluate in the
@@ -2934,7 +2948,7 @@ class Engine:
             self._fail(f"`{display_name}` is protected", sid)
         body = self.definitions[sid]
         h = max(abs(anchor), 1.0) * 0.5**7  # start close enough that ~60 halvings pass any ulp floor
-        directions = (1.0, -1.0, 1j, -1j) if isinstance(anchor, complex) else (1.0, -1.0)
+        directions = _RAYS if isinstance(anchor, complex) else (1.0, -1.0)
         estimates: list[float | complex] = []
         for direction in directions:  # right side first, then left
             step = h
@@ -2965,7 +2979,7 @@ class Engine:
         total = estimates[0]
         for estimate in estimates[1:]:
             total = self._binop(nadd, estimate, total, sid)
-        return self._binop(ndiv, total, len(estimates), sid)
+        return _drop_stray_parts(self._binop(ndiv, total, len(estimates), sid))
 
     def tensor(self, items, row_length, sid):
         try:
