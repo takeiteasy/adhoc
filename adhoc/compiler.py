@@ -52,6 +52,7 @@ from .syntax import (
     CompareOperator,
     Fold,
     FuncDef,
+    Hole,
     IfExpr,
     Import,
     Index,
@@ -86,6 +87,7 @@ _BIN_METHODS = {
     BinOperator.UNION: "union",
     BinOperator.INTERSECT: "intersect",
     BinOperator.SETMINUS: "setminus",
+    BinOperator.COMPOSE: "compose",
 }
 
 # The fold operator each Fold node accumulates with; the runtime maps these back to
@@ -336,6 +338,24 @@ class _Lowerer:
                 arg_exprs = [self.expr(a) for a in args]
                 return _call("py", [*arg_exprs, pyast.Constant(sid),
                                      pyast.Constant(spelling)])
+            case Call(head=head, args=args, kwargs=kwargs, span=span) \
+                    if any(isinstance(a, Hole) for a in args):
+                # A hole makes the call a partial application: holes travel as
+                # `None` slots plus their positions.
+                sid = self._push(span)
+                slots = [pyast.Constant(None) if isinstance(a, Hole) else self.expr(a)
+                         for a in args]
+                holes = [pyast.Constant(i) for i, a in enumerate(args) if isinstance(a, Hole)]
+                kw_dict = pyast.Dict(
+                    keys=[pyast.Constant(kw.name) for kw in kwargs],
+                    values=[self.expr(kw.value) for kw in kwargs],
+                )
+                return _call(
+                    "partial",
+                    [self.expr(head), pyast.Tuple(elts=slots, ctx=pyast.Load()),
+                     pyast.Tuple(elts=holes, ctx=pyast.Load()), kw_dict,
+                     pyast.Constant(sid), pyast.Constant(_call_spelling(head))],
+                )
             case Call(head=head, args=args, kwargs=kwargs, span=span):
                 head_expr = self.expr(head)
                 arg_exprs = [self.expr(a) for a in args]

@@ -118,8 +118,8 @@ tree.
 - `\solve`, `\simplify`, `\expand`, `\factor` as AST rewriting over expression values.
   - Open: full semantics of what these can actually handle — currently syntax-level only in
     the design.
-- Function composition (`∘`), `\map`/`\fold`/`\filter` (generalizing the `Σ`/`Π` fold), partial
-  application (`f(a, ·)`).
+- Function composition (`∘`), `\map`/`\fold`/`\filter`, and partial application (`f(a, _)`)
+  are implemented; operators as function values are tracked separately.
 - Reflection: `\body(f)` is implemented for user-defined functions and lambdas.
 - Lambda term reduction: `\reduce(e)` beta-reduces expression quotes.
 - Custom infix operators: `\infix(N) ⊕(a, b) = ...` with declared precedence.

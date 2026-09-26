@@ -24,6 +24,7 @@ class BinOperator(Enum):
     UNION = auto()
     INTERSECT = auto()
     SETMINUS = auto()
+    COMPOSE = auto()
 
 
 class CompareOperator(Enum):
@@ -169,6 +170,12 @@ class Call(Node):
     head: Node
     args: tuple[Node, ...]
     kwargs: tuple[KwArg, ...] = ()
+
+
+@dataclass(frozen=True)
+class Hole(Node):
+    """The placeholder `_` standing for a whole call argument: a call containing one is
+    a partial application, awaiting a value for each hole (docs/grammar.md)."""
 
 
 @dataclass(frozen=True)

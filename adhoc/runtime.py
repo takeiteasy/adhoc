@@ -221,7 +221,7 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"let", "expr", "eval", "cdot", "arr", "cup", "cap", "setminus",
-                           "in", "subseteq"})
+                           "in", "subseteq", "circ"})
 
 
 class PreludeFn:
@@ -922,6 +922,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
             return rra.show(v, digits)
         except rra.DomainError as e:
             raise NumError(e.args[0])
+    if isinstance(v, Composed | Partial):
+        return f"<fn {_callable_label(v)}>"
     if isinstance(v, PreludeFn):
         return f"<fn \\{v.name}(x)>"
     if callable(v) and not isinstance(v, _NUMERIC_TYPES):
@@ -1285,7 +1287,8 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     branch results pass `preserve_bool=True`."""
     if value is None:
         raise NumError("the call returned nothing")
-    if isinstance(value, AdFunction | ExpressionValue | TensorValue | ArrayValue | SetValue):
+    if isinstance(value, AdFunction | Composed | Partial | ExpressionValue
+                      | TensorValue | ArrayValue | SetValue):
         return value
     if isinstance(value, RangeValue):
         return value
@@ -1374,6 +1377,171 @@ def _tensor_to_list(shape: tuple[int, ...], items: tuple) -> Any:
     stride = len(items) // shape[0]
     return [_tensor_to_list(shape[1:], items[k * stride:(k + 1) * stride])
             for k in range(shape[0])]
+
+
+_INTERNAL_CALLABLES: tuple = ()  # set below, once Composed and Partial exist
+
+
+def _invoke(fn: Any, args: tuple, kwargs: dict | None = None,
+            spelling: str | None = None) -> Any:
+    """Apply any callable to ad values and return an ad value. The one call path:
+    `app`, `\\map`/`\\fold`/`\\filter`, compositions, and partials all go through it, so
+    Python callables convert the same way everywhere. Failures are `NumError`s
+    (or already-spanned `EvalError`s from user code); the caller attaches the span."""
+    kwargs = kwargs or {}
+    if not callable(fn):
+        raise NumError(f"{nshow(fn)} is not a function")
+    internal = isinstance(fn, _INTERNAL_CALLABLES)
+    if kwargs and internal and not isinstance(fn, PreludeFn):
+        raise NumError("user-defined functions take positional arguments only")
+    if isinstance(fn, AdFunction) and len(args) != len(fn.params):
+        label = spelling or fn.display_name
+        raise NumError(f"{label} takes {len(fn.params)} arguments, got {len(args)}")
+    if not internal:
+        args = tuple(_to_py(a) for a in args)
+        kwargs = {k: _to_py(v) for k, v in kwargs.items()}
+    try:
+        result = fn(*args, **kwargs)
+    except (NumError, EvalError):
+        raise
+    except Exception as e:
+        name = spelling or getattr(fn, "__name__", None) or "<callable>"
+        raise NumError(f"{name}: {type(e).__name__}: {e}") from None
+    return _to_ad(result, preserve_bool=internal)
+
+
+class Composed:
+    """`f ∘ g`: applies `g`, then `f` to its result."""
+
+    def __init__(self, outer: Any, inner: Any):
+        self.outer, self.inner = outer, inner
+
+    def __call__(self, *args):
+        return _invoke(self.outer, (_invoke(self.inner, args),))
+
+
+class Partial:
+    """`f(a, _)`: `fn` with some argument slots fixed; calling it fills the holes, in
+    order, from its own arguments."""
+
+    def __init__(self, fn: Any, slots: tuple, holes: tuple[int, ...], kwargs: dict):
+        self.fn, self.slots, self.holes, self.kwargs = fn, slots, holes, kwargs
+
+    def __call__(self, *args):
+        if len(args) != len(self.holes):
+            raise NumError(f"{nshow(self)} takes {len(self.holes)} arguments, got {len(args)}")
+        full = list(self.slots)
+        for position, value in zip(self.holes, args):
+            full[position] = value
+        return _invoke(self.fn, tuple(full), self.kwargs)
+
+
+_INTERNAL_CALLABLES = (AdFunction, PreludeFn, Composed, Partial)
+
+
+def _callable_label(fn: Any) -> str:
+    if isinstance(fn, AdFunction):
+        return fn.display_name
+    if isinstance(fn, PreludeFn):
+        return f"\\{fn.name}"
+    if isinstance(fn, Composed):
+        return f"{_callable_label(fn.outer)} ∘ {_callable_label(fn.inner)}"
+    if isinstance(fn, Partial):
+        return _partial_text(fn)
+    return _show_callable(fn)[len("<py "):-1]
+
+
+def _partial_text(p: Partial) -> str:
+    holes = set(p.holes)
+    parts = ["_" if i in holes else nshow(v) for i, v in enumerate(p.slots)]
+    parts += [f"{k}={nshow(v)}" for k, v in p.kwargs.items()]
+    return f"{_callable_label(p.fn)}({', '.join(parts)})"
+
+
+def _elements(value: Any) -> Any:
+    """The elements a range or collection iterates (tensors by outer slice), or
+    None when the value is not iterable."""
+    if isinstance(value, RangeValue):
+        return value
+    if isinstance(value, TensorValue):
+        return tn.slices(value)
+    if isinstance(value, ArrayValue | SetValue):
+        return value.items
+    return None
+
+
+def _finite_elements(value: Any, label: str) -> list:
+    items = _elements(value)
+    if items is None:
+        raise NumError(f"{label} needs a range or collection, got {nshow(value)}")
+    if isinstance(value, RangeValue) and value.end is None:
+        raise NumError(f"{label} cannot iterate an infinite range")
+    return list(items)
+
+
+def _rebuild(source: Any, results: list, label: str) -> Any:
+    """Collect results in the kind of collection they came from."""
+    if isinstance(source, TensorValue):
+        if not results:
+            raise NumError(f"{label} left no slices; a tensor cannot be empty")
+        for r in results:
+            if not isinstance(r, TensorValue):
+                _reject_non_numeric(r)
+        try:
+            return tn.stack(results)
+        except TensorError as e:
+            raise NumError(f"{label}: {e.args[0]}") from None
+    if isinstance(source, SetValue):
+        return SetValue(_dedup(results))
+    return ArrayValue(tuple(results))
+
+
+def _takes(name: str, args: tuple, low: int, high: int, usage: str) -> None:
+    if not low <= len(args) <= high:
+        raise NumError(f"\\{name} takes {usage}")
+
+
+def _map_call(*args: Any) -> Any:
+    _takes("map", args, 2, 2, "a function and a collection")
+    f, xs = args
+    items = _finite_elements(xs, "\\map")
+    return _rebuild(xs, [_invoke(f, (x,)) for x in items], "\\map")
+
+
+def _filter_call(*args: Any) -> Any:
+    _takes("filter", args, 2, 2, "a predicate and a collection")
+    p, xs = args
+    kept = []
+    for x in _finite_elements(xs, "\\filter"):
+        keep = _invoke(p, (x,))
+        if not isinstance(keep, bool):
+            raise NumError(f"\\filter needs a boolean from its predicate, got {nshow(keep)}")
+        if keep:
+            kept.append(x)
+    return _rebuild(xs, kept, "\\filter")
+
+
+def _fold_call(*args: Any) -> Any:
+    _takes("fold", args, 2, 3, "a function, a collection, and an optional seed")
+    f, xs, *seed = args
+    items = _finite_elements(xs, "\\fold")
+    if seed:
+        acc = seed[0]
+    elif items:
+        acc, items = items[0], items[1:]
+    else:
+        raise NumError("\\fold of an empty collection needs a seed")
+    for x in items:
+        acc = _invoke(f, (acc, x))
+    return acc
+
+
+PRELUDE.update({
+    "map": PreludeFn("map", _map_call),
+    "filter": PreludeFn("filter", _filter_call),
+    "fold": PreludeFn("fold", _fold_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 
 class Engine:
@@ -1648,13 +1816,8 @@ class Engine:
         display_name = _display_name(name, var_spelling)
         if self._protected(name):
             self._fail(f"`{display_name}` is protected", sid)
-        if isinstance(value, RangeValue):
-            items = value
-        elif isinstance(value, TensorValue):
-            items = tn.slices(value)
-        elif isinstance(value, ArrayValue | SetValue):
-            items = value.items
-        else:
+        items = _elements(value)
+        if items is None:
             self._fail(f"{label} folds over a range or collection, got {nshow(value)}", sid)
         fn = nmul if op_name == "mul" else nadd
         unit = 1 if op_name == "mul" else 0
@@ -1817,6 +1980,24 @@ class Engine:
 
     def dot(self, a, b, sid):
         return self._binop(ndot, a, b, sid)
+
+    def compose(self, f, g, sid):
+        if not callable(f) or not callable(g):
+            self._fail(f"`∘` needs two functions, got {nshow(f)} and {nshow(g)}", sid)
+        return Composed(f, g)
+
+    def partial(self, fn, slots, holes, kwargs, sid, spelling=None):
+        """`f(a, _)`: fix some arguments now, take the rest later. The head must be a
+        function — a partial never falls back to the product reading."""
+        if not callable(fn):
+            self._fail(f"{nshow(fn)} is not a function", sid)
+        if isinstance(fn, AdFunction):
+            if kwargs:
+                self._fail("user-defined functions take positional arguments only", sid)
+            if len(slots) != len(fn.params):
+                self._fail(f"{spelling or fn.display_name} takes {len(fn.params)} "
+                           f"arguments, got {len(slots)}", sid)
+        return Partial(fn, tuple(slots), tuple(holes), kwargs)
 
     def if_expr(self, condition, then, otherwise, sid):
         """The ternary `c ? a : b` — the one conditional. Only the selected branch's
@@ -1990,34 +2171,13 @@ class Engine:
         (`\\py("math.isclose")(1, 2, \\rel_tol=0.5)`); user-defined functions reject
         them — their parameters are positional."""
         if callable(fn):
-            if kwargs and isinstance(fn, AdFunction):
-                self._fail("user-defined functions take positional arguments only", sid)
-            if isinstance(fn, AdFunction) and len(args) != len(fn.params):
-                label = spelling or fn.display_name
-                self._fail(f"{label} takes {len(fn.params)} arguments, "
-                           f"got {len(args)}", sid)
-            if not isinstance(fn, AdFunction | PreludeFn):
-                args = tuple(_to_py(a) for a in args)
-                kwargs = {k: _to_py(v) for k, v in kwargs.items()}
             try:
-                result = fn(*args, **kwargs)
+                return _invoke(fn, args, kwargs, spelling)
             except NumError as e:
                 message = e.args[0]
                 if isinstance(fn, PreludeFn):
                     message = _display_builtin_error(message, fn.name, spelling)
                 self._fail(message, sid)
-            except EvalError:
-                raise
-            except Exception as e:
-                name = spelling or getattr(fn, "__name__", None) or "<callable>"
-                self._fail(f"{name}: {type(e).__name__}: {e}", sid)
-            try:
-                return _to_ad(
-                    result,
-                    preserve_bool=isinstance(fn, (AdFunction, PreludeFn)),
-                )
-            except NumError as e:
-                self._fail(e.args[0], sid)
         if not kwargs and len(args) == 1:
             return self.mul(fn, args[0], sid)
         self._fail(f"{nshow(fn)} is not a function", sid)

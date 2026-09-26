@@ -1,0 +1,11 @@
+-- composition, partial application, and collection functions
+s(x) = x^2
+t(x) = x + 1
+(s ∘ t)(2)
+f(a, b) = a - b
+g = f(10, _)
+g(3)
+\map(s, [1, 2, 3])
+\filter(\fn(x) x > 1, {1, 2, 3})
+\fold(\fn(a, b) a + b, ⟨1, 2, 3⟩)
+\py("sorted")({3, 1, 2})

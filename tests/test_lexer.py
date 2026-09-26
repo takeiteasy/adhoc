@@ -1,6 +1,7 @@
 import pytest
 
 from adhoc.lexer import (
+    Underscore,
     Backslash,
     Caret,
     Colon,
@@ -93,10 +94,8 @@ def test_underscores_continue_backslash_names():
     assert toks[0].span == Span(0, 8)
 
 
-def test_bare_underscore_is_still_unexpected():
-    with pytest.raises(LexError) as e:
-        tokenize("_")
-    assert "unexpected character" in e.value.msg
+def test_bare_underscore_is_the_placeholder_token():
+    assert isinstance(tokenize("_")[0], Underscore)
 
 
 def test_bare_backslash_errors():

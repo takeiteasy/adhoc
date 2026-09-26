@@ -98,6 +98,7 @@ from .lexer import (
     Star,
     Str,
     Token,
+    Underscore,
     Greater,
     GreaterEq,
     HashBracket,
@@ -118,6 +119,7 @@ from .syntax import (
     CompareOperator,
     Fold,
     FuncDef,
+    Hole,
     IfExpr,
     Import,
     Index,
@@ -158,13 +160,16 @@ class IncompleteInput(ParseError):
 _ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, LBrace,
                   HashBracket, Str, Radical)
 
+_NO_HOLE_FORMS = frozenset({"py", "arr", "eval"})
+
 # Backslash names that are infix operators, never atoms: they end a juxtaposition run
 # and cannot be bound or used as values.
 _OPENERS = (LBracket, HashBracket, LBrace, LAngle)
 _CLOSERS = (RBracket, RBrace, RAngle)
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
-_MULTIPLICATIVE_INFIX = {"cdot": BinOperator.DOT, "cap": BinOperator.INTERSECT}
+_MULTIPLICATIVE_INFIX = {"cdot": BinOperator.DOT, "cap": BinOperator.INTERSECT,
+                         "circ": BinOperator.COMPOSE}
 _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ}
 _INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_COMPARE_INFIX)
 
@@ -684,7 +689,7 @@ class _Parser:
     def range_expr(self) -> Node:
         start = self.comparison()
         second = None
-        if isinstance(self.peek(), Comma):
+        if isinstance(self.peek(), Comma) and not isinstance(self.look(1), Underscore):
             saved = self.pos
             self.advance()
             self._skip_newlines()
@@ -811,6 +816,13 @@ class _Parser:
     _FOLD_HEADS = {("sum", None): BinOperator.ADD, ("prod", None): BinOperator.MUL}
     _LIMIT_LABEL = "\\lim"
 
+    # A `∘` node only reaches a trailer parenthesized (`(f ∘ g)(x)`); unparenthesized,
+    # the trailer already bound to its right operand.
+    @staticmethod
+    def _is_call_head(node: Node) -> bool:
+        return isinstance(node, _Parser._NAMEISH) or (
+            isinstance(node, BinOp) and node.op is BinOperator.COMPOSE)
+
     def postfix(self) -> Node:
         node = self.atom()
         fold_op = self._fold_head(node)
@@ -841,7 +853,7 @@ class _Parser:
                 tick = self.advance()
                 node = Transpose(operand=node, span=node.span.to(tick.span))
                 continue
-            if not (isinstance(node, _Parser._NAMEISH) and isinstance(self.peek(), LParen)):
+            if not (self._is_call_head(node) and isinstance(self.peek(), LParen)):
                 break
             self.advance()
             self._skip_newlines()  # arguments may start on the line after `(`
@@ -868,6 +880,10 @@ class _Parser:
             rparen = self.expect(RParen, "`)`")
             node = Call(head=node, args=args, kwargs=kwargs,
                         span=node.span.to(rparen.span))
+            if (isinstance(node.head, BackslashRef) and node.head.name in _NO_HOLE_FORMS
+                    and any(isinstance(a, Hole) for a in node.args)):
+                raise ParseError(
+                    f"`{self._form_label(node.head)}` cannot take a `_` placeholder", node.span)
             if isinstance(node.head, BackslashRef) and node.head.name == "eval":
                 if len(node.args) != 1:
                     raise ParseError("`\\eval` takes one expression value followed by bindings",
@@ -1097,6 +1113,11 @@ class _Parser:
     # (`\dpi=300`).
     def call_arg(self) -> Node:
         tok = self.peek()
+        if isinstance(tok, Underscore):
+            if not isinstance(self.look(1), (Comma, RParen)):
+                raise ParseError("`_` is a placeholder for a whole call argument", tok.span)
+            self.advance()
+            return Hole(span=tok.span)
         if isinstance(tok, (Ident, Backslash)) and isinstance(self.look(1), Eq):
             name_tok = self.advance()
             self.advance()  # `=`

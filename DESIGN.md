@@ -281,13 +281,12 @@ The language extends beyond pure numeric evaluation: expressions can exist as un
 
 ```
 > g = f ∘ h                  -- composition: g(x) = f(h(x))
-> g = \circ(f, h)            -- ASCII equivalent
+> g = f \circ h              -- ASCII equivalent (infix, like \cup)
 > \map(f, [1, 2, 3])
 < = [f(1), f(2), f(3)]
-> \fold(+, [1, 2, 3])         -- generalizes the Σ/Π fold mechanism to arbitrary arrays
+> \fold(\fn(a, b) a + b, [1, 2, 3])   -- left fold over any collection
 < = 6
-> square = f(a, ·)             -- partial application, fixes the first argument
-> square = f(a, _)             -- ASCII equivalent, `_` is the placeholder
+> g = f(a, _)                -- partial application: `_` is the placeholder
 > \body(f)                    -- reflection: returns f's underlying expression value
 < = a * b
 > \infix(7) ⊕(a, b) = a + b    -- user-defined infix operator, explicit precedence
@@ -295,7 +294,7 @@ The language extends beyond pure numeric evaluation: expressions can exist as un
 < = 7
 ```
 
-- Function composition (`∘`/`\circ(f, g)`), higher-order functions (`\map`/`\fold`/`\filter`), and partial application (`f(a, ·)`/`f(a, _)`) all follow directly from functions already being first-class values.
+- Function composition (`∘`/`\circ`, infix), higher-order functions (`\map`/`\fold`/`\filter`), and partial application (`f(a, _)`; `·` stays the contraction operator) all follow directly from functions already being first-class values.
 - Anonymous function literals are in the language today — `\λ(params) body` (ASCII `\fn(params) body`), with a parenthesized statement group as the explicit multi-statement body form; see docs/grammar.md, `## Lambdas`. They are the primitives composition, `\map`/`\fold`, and partial application build on.
 - `\body(f)` reflection returns a function's expression value (same type as `\expr(...)` produces) — a function is, under the hood, a bound parameter list plus an expression value.
 - Custom infix operators declare an explicit precedence per operator (`\infix(N) ⊕(a, b) = ...`) rather than sharing one fixed tier, trading a little more ceremony for Haskell-style fixity flexibility. The operator symbol itself (`⊕` here) is entirely the author's choice — nothing stops it from being ASCII (e.g. `\infix(7) <+>(a, b) = ...`); the `\`-sigil rule applies to *language-defined* operators/names, not user-defined ones. TODO: precedence numbering scheme (range, relation to built-in operators) not yet decided.
@@ -389,7 +388,7 @@ Found on a final pass through the doc — real contradictions/gaps, not just unf
 
 4. **RESOLVED — multi-char keyword vs. implicit-multiplication ambiguity.** The very first example (`c = ab`) establishes that multiplication is implicit juxtaposition of single-char variables. Every multi-char name — not just the ones with a unicode counterpart — now takes a `\` sigil (`\pi`, `\sum`, `\sin`, `\solve`, ...), so it can never collide with a product of single-char variables. See `## keywords and the \ sigil`.
 
-5. **RESOLVED — inconsistent ASCII-sugar calling convention.** Most ASCII alternatives are prefix-call form (`\sum(...)`, `\arr(...)`, `\circ(f, g)`); set operations stay infix (`a \cup b`, `2 \in s`) rather than being normalized to prefix — the `\` sigil already removes the ambiguity that would have motivated normalizing them, so the more readable infix form was kept deliberately.
+5. **RESOLVED — inconsistent ASCII-sugar calling convention.** Most ASCII alternatives are prefix-call form (`\sum(...)`, `\arr(...)`); set operations and composition stay infix (`a \cup b`, `2 \in s`, `f \circ g`) rather than being normalized to prefix — the `\` sigil already removes the ambiguity that would have motivated normalizing them, so the more readable infix form was kept deliberately.
 
 6. **RESOLVED — no operator precedence/associativity table.** Added as `## precedence`. Juxtaposition binds tighter than `*`/`/`, looser than `^`, matching handwritten math (`1/2x` = `1/(2x)`).
 

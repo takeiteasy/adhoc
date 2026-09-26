@@ -167,6 +167,15 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   order. `∪ ∩ ∖ ∈ ⊆` (ASCII `\cup \cap \setminus \in \subseteq`) are infix; `∈` and `⊆`
   give booleans. Folds iterate the elements (docs/grammar.md, `## Sets`).
 
+- Composition and partial application: `(s ∘ t)(2)` composes functions and
+  `f(10, _)` fixes arguments (`_` is the placeholder). `\map`, `\filter`, and `\fold`
+  apply functions over ranges and collections, keeping the collection's kind
+  (docs/grammar.md, `## Composition and partial application`).
+
+- Python interop converts collections both ways: lists, sets, and numpy arrays come back
+  as arrays, sets, and tensors, and tensors, arrays, and sets go in as lists and
+  frozensets (docs/numerics.md).
+
 ## Not yet implemented
 
 Logical operators, symbolic rewriting and solving
@@ -198,6 +207,10 @@ phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
 
+- Operators cannot be passed as functions (`\fold(+, xs)`); use a lambda —
+  [#67](https://todo.sr.ht/~takeiteasy/adhoc/67).
+- `\map`/`\filter`/`\fold` reject infinite ranges instead of iterating lazily —
+  [#68](https://todo.sr.ht/~takeiteasy/adhoc/68).
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).

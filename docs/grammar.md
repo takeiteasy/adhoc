@@ -37,8 +37,10 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / · ∪ ∩ ∖ ∈ ⊆ ^ < > <= >= = .. ( ) [ ] { } ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
+- Operators: `+ - * / · ∘ ∪ ∩ ∖ ∈ ⊆ ^ < > <= >= = .. ( ) [ ] { } ⟨ ⟩ #[ ' , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
+  A lone `_` is the partial-application placeholder (`## Composition and partial
+  application`); inside a `\`-name it is an ordinary name character.
   A backtick starts a quote: `` `(expression) `` or a statement-sequence quote.
   `=` is the one binding/check operator (see `## Assignment semantics`); there is no
   `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
@@ -78,7 +80,7 @@ range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? 
 comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "\\in" | "⊆" | "\\subseteq") additive)? ;
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
-           ::= juxtaposed (("*" | "/" | "·" | "\\cdot" | "∩" | "\\cap") juxtaposed)* ;
+           ::= juxtaposed (("*" | "/" | "·" | "\\cdot" | "∩" | "\\cap" | "∘" | "\\circ") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
@@ -86,7 +88,7 @@ power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
 trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" ;
 args       ::= arg ("," arg)* ;
-arg        ::= expr | string | kwarg ;
+arg        ::= expr | string | kwarg | "_" ;   (* "_" only as a whole argument *)
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
@@ -147,7 +149,7 @@ Loosest to tightest:
 | 3 | `..` (range) | non-associative |
 | 4 | `<` `>` `<=` `>=` `∈` `⊆` | non-associative |
 | 5 | `+` `-` (binary), `∪` `∖` | left |
-| 6 | `*` `/` `·`, `∩` | left |
+| 6 | `*` `/` `·`, `∩`, `∘` | left |
 | 7 | juxtaposition (implicit `*`) | left |
 | 8 | unary `-`, `√` | prefix |
 | 9 | `^` | right |
@@ -170,6 +172,9 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 2^√2     ->  2^(√2)         -- a radical can sit inside the exponent
 2√3      ->  2·√3           -- the radical is an atom starter: it juxtaposes
 ```
+
+A parenthesized composition is a call head: `(f ∘ g)(x)` applies. Unparenthesized,
+`f ∘ g(x)` composes `f` with the result of `g(x)`.
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
 `number`, `string`, `identifier`, `\`-name, `√`, `(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
@@ -413,6 +418,60 @@ elements pairwise.[^set-cost]
 
 [^set-cost]: Quadratic in the number of elements; see
     [Known limitations](language.md#known-limitations-not-bugs).
+
+## Composition and partial application
+
+`f ∘ g` (ASCII `f \circ g`) is the function that applies `g`, then `f` to the result. It is
+an infix operator at the `*` level, so `\circ` cannot stand alone, bind, or be aliased.
+A `_` as a whole call argument leaves a hole: the call becomes a function of its holes,
+filled left to right.
+
+```
+s(x) = x^2;  t(x) = x + 1;  f(a, b) = a - b
+(s ∘ t)(2)              ->  = 9              -- s(t(2))
+g = f(10, _)            ->  g = <fn f(10, _)>
+g(3)                    ->  = 7
+f(_, _)(10, 3)          ->  = 7
+\py("pow")(_, 2)(5)     ->  = 25
+(f(_, 1) ∘ f(_, 1))(5)  ->  = 3
+```
+
+| Rule | Detail |
+|---|---|
+| Composition operands | Both sides are callable (user, lambda, prelude, Python, composed, partial); otherwise a typed error |
+| Composition arity | `g` takes the arguments; `f` receives its single result |
+| Partial head | Must be callable — no product fallback; a user function's arity is checked when the partial is built |
+| Holes | Only as a whole positional argument; `f(_ + 1)` and `f(x=_)` are parse errors, as is `_` in `\py`, `\arr`, `\eval` |
+| Keyword arguments | Fixed at partial time for Python callables; user functions take none |
+
+Both forms are values: they bind, pass, display (`<fn s ∘ t>`, `<fn f(10, _)>`), and
+compare by identity. A range argument after a comma needs parentheses — `\map(f, (1..3))` —
+because `f, 1..3` reads as a stepped range (`## Ranges`).
+
+## Higher-order functions
+
+`\map`, `\filter`, and `\fold` are prelude functions over ranges and collections. Tensors
+iterate by outer slice, like folds.
+
+```
+\map(s, [1, 2, 3])                  ->  = [1, 4, 9]
+\map(s, {1, -1, 2})                 ->  = {1, 4}
+\filter(\fn(x) x > 1, ⟨1, 2, 3⟩)    ->  = ⟨2, 3⟩
+\fold(\fn(a, b) a + b, ⟨1, 2, 3⟩)   ->  = 6
+\fold(\fn(a, b) a + b, ⟨⟩, 10)      ->  = 10
+```
+
+| Call | Result |
+|---|---|
+| `\map(f, xs)` | `f` on each element, in the kind of `xs`: tensor → tensor (results must restack), array → array, set → set (deduplicated), finite range → array |
+| `\filter(p, xs)` | the elements where `p` returns a boolean `true`, in the kind of `xs`; a non-boolean is a typed error, and a tensor with nothing kept is an error (no empty tensor) |
+| `\fold(f, xs)` | left fold `f(f(x1, x2), x3)…`; an empty collection is an error |
+| `\fold(f, xs, init)` | left fold starting from `init`; an empty collection returns `init` |
+
+Infinite ranges are typed errors. Operators are not function values, so
+`\fold(+, xs)` is not available: write `\fold(\fn(a, b) a + b, xs)`.[^ho-operators]
+
+[^ho-operators]: See [Known limitations](language.md#known-limitations-not-bugs).
 
 ## Conditionals: the ternary
 
@@ -749,6 +808,7 @@ in a prelude scope protected by the same mechanism:
 | `\isnan` / `\isinf` / `\isfinite` | test the float tier's non-finite states; exact-tier values are finite, so `\isnan` and `\isinf` are false and `\isfinite` is true. Non-numeric arguments are typed errors. Display as `<fn \isnan(x)>`, `<fn \isinf(x)>`, and `<fn \isfinite(x)>` |
 | `\complex` | builds a complex value from two real components: `\complex(2, 3)` is `2+3i`, a vanishing imaginary part collapses to the real; float components read as their exact decimals |
 | `\re` / `\im` | project the real or imaginary side (`\re(2+3i)` is `2`, `\im(π·i)` is `π`); a float's imaginary side is `0.0` |
+| `\map` / `\filter` / `\fold` | higher-order functions over collections (`## Higher-order functions`). Display as `<fn \map(x)>` etc. |
 | `\len` / `\shape` / `\transpose` | collection length, tensor shape (a vector), and tensor transpose. Display as `<fn \len(x)>` etc. |
 | `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
 
@@ -790,7 +850,7 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators, symbolic algebra, graphing.
+Logical operators, symbolic algebra, graphing, operators as function values.
 An equality/inequality operator (`==`/`!=` as comparisons) is deferred — the binding
 rule's check is the only equality today, with tier-aware semantics: exact for
 the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)

@@ -279,6 +279,15 @@ class Middot(Token):
 
 
 @dataclass(frozen=True)
+class Underscore(Token):
+    """The partial-application placeholder `_` (a `_` inside a `\\name` is part of it)."""
+
+    @property
+    def describe(self) -> str:
+        return "`_`"
+
+
+@dataclass(frozen=True)
 class Semi(Token):
     @property
     def describe(self) -> str:
@@ -348,13 +357,15 @@ _SINGLE_CHAR_TOKENS = {
     "]": RBracket,
     "'": Prime,
     "·": Middot,
+    "_": Underscore,
     "⟨": LAngle,
     "⟩": RAngle,
     "{": LBrace,
     "}": RBrace,
 }
 
-_SET_OPERATORS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq"}
+_SET_OPERATORS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
+                  "∘": "circ"}
 _SET_SYMBOLS = {name: symbol for symbol, name in _SET_OPERATORS.items()}
 
 _STRING_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t"}

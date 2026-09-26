@@ -4,7 +4,7 @@ from dataclasses import dataclass, fields
 
 from .syntax import (
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
-    Assign, ArrayLit, Fold, FuncDef, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit,
+    Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit,
     PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnOp, Var,
 )
 
@@ -35,6 +35,7 @@ _BIN = {
     BinOperator.ADD: "+", BinOperator.SUB: "-", BinOperator.MUL: "*",
     BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "·",
     BinOperator.UNION: "∪", BinOperator.INTERSECT: "∩", BinOperator.SETMINUS: "∖",
+    BinOperator.COMPOSE: "∘",
 }
 _CMP = {
     CompareOperator.LT: "<", CompareOperator.LE: "<=",
@@ -70,6 +71,8 @@ def show(node: Node) -> str:
             return f"\\pyimport({show(StrLit(text=path, span=node.span))}: {', '.join(names)})"
         case NumLit(text=text):
             return text
+        case Hole():
+            return "_"
         case StrLit(text=text):
             return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t") + '"'
         case Var(ch=name, spelling=spelling) | BackslashRef(name=name, spelling=spelling):
