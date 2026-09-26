@@ -92,3 +92,10 @@ def test_the_result_is_an_ordinary_string():
 def test_unrenderable_values_are_typed_errors():
     with pytest.raises(EvalError):
         run_source('\\tex(\\py("math.sqrt"))', {})
+
+
+def test_inverse_call_renders_as_inverse_function():
+    assert tex(r"\tex(\expr((x ↦ 2x)⁻¹(6)))") == r"\left(x \mapsto 2 x\right)^{-1}\left(6\right)"
+    assert tex(r"\tex(\expr(f⁻¹(y)))") == r"f^{-1}\left(y\right)"
+    assert tex(r"\tex(\expr(\sin⁻¹(y)))") == r"\sin^{-1}\left(y\right)"
+    assert tex(r"\tex(\expr(f²(y)))") == r"\left(f\left(y\right)\right)^{2}"

@@ -115,9 +115,8 @@ AST enum directly (`match`-and-rebuild), the same way any other Rust code manipu
 tree.
 
 - `\expr(...)` / `` `(...) `` quoting and `\eval(e, binding...)` are implemented.
-- `\solve`, `\simplify`, `\expand`, `\factor` as AST rewriting over expression values.
-  - Open: full semantics of what these can actually handle — currently syntax-level only in
-    the design.
+- `\solve`, `\simplify`, `\expand`, `\factor` are implemented over expression quotes and
+  single-expression functions, backed by sympy (docs/symbolic.md).
 - Function composition (`∘`), `\map`/`\fold`/`\filter`, and partial application (`f(a, _)`)
   and operators as function values (`\fold(+, xs)`, `(+)`) are implemented.
 - Reflection: `\body(f)` is implemented for user-defined functions and lambdas.

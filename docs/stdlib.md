@@ -53,6 +53,7 @@ the other aggregates need finite input.
 | `\isprime(n)` | boolean | `\isprime(97)` -> `true` |
 | `\factor(q)` | positive rational as `⟨p, exponent⟩` pairs, denominator primes negative; numerator and denominator up to 10¹⁸ | `\factor(12/5)` -> `⟨⟨2, 2⟩, ⟨3, 1⟩, ⟨5, -1⟩⟩` |
 | `\factor(z)` | nonzero Gaussian rational, numerator norm and denominator up to 10¹⁸: first-quadrant primes sorted by norm, denominator primes negative, led by `⟨unit, 1⟩` when the unit is not 1 | `\factor(2+2i)` -> `⟨⟨-i, 1⟩, ⟨1+i, 3⟩⟩`, `\factor((1+i)/2)` -> `⟨⟨i, 1⟩, ⟨1+i, -1⟩⟩` |
+| `\factor(e)` | expression quote or function: the factored expression quote (docs/symbolic.md) | `\factor(\expr(x^2 - 1))` -> `\expr(((x + 1) * (x - 1)))` |
 | `\choose(n, k)` `\perm(n, k)` | binomial and falling factorial, `n ≤ 100000` | `\choose(5, 2)` -> `10` |
 | `\fib(n)` | Fibonacci number, `n ≤ 1000000` | `\fib(10)` -> `55` |
 

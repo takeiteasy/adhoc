@@ -111,8 +111,8 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 
 - `|A|` on a square matrix is an error, not the determinant — [#100](https://todo.sr.ht/~takeiteasy/adhoc/100).
 - Bars in set-builder notation `{x ∈ s | p}` are not read yet — [#79](https://todo.sr.ht/~takeiteasy/adhoc/79).
-- `f⁻¹` on a user function is numeric and single-branch — [#108](https://todo.sr.ht/~takeiteasy/adhoc/108).
-- `\tex` of an inverse call such as `(x ↦ 2x)⁻¹(6)` renders a power of the call — [#111](https://todo.sr.ht/~takeiteasy/adhoc/111).
+- `f⁻¹` gives one branch — [#117](https://todo.sr.ht/~takeiteasy/adhoc/117).
+- `\tex` of function powers: `\sin²(x)` and non-callable heads render as a power of the call — [#116](https://todo.sr.ht/~takeiteasy/adhoc/116).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
     spelling: `x⁻¹⁰` is `x^-10`, `2ⁿᵏ` is `2^(n k)`. Glyphs exist for every letter but `q`

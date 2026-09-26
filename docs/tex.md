@@ -32,6 +32,7 @@ composes (`"$" + \tex(e) + "$"`) and passes to `\py` for writing to a file.
 | ternary, piecewise | `cases` |
 | set-builder | `\{ x \in S \mid p \}` |
 | `↦` | `\mapsto` |
+| `f⁻¹(y)`, `\sin⁻¹(y)` | `f^{-1}\left(y\right)`, `\sin^{-1}\left(y\right)` |
 | `Aᵀ`, `A'` | `A^{\mathsf{T}}`, `A'` |
 
 Names map to their LaTeX spelling: Greek letters (`α` is `\alpha`), subscripts (`x₁` is

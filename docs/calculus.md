@@ -18,8 +18,8 @@ not converge.
 ∫(x=0..) e^(-x)             ->  = 1.0
 f(x) = x^3
 f'(2)                       ->  = 11.999999999999986
-f⁻¹(8)                      ->  = 2.0
-(x ↦ 2x)⁻¹(6)               ->  = 3.0
+f⁻¹(8)                      ->  = 2
+(x ↦ 2x)⁻¹(6)               ->  = 3
 ```
 
 ## Binders
@@ -52,10 +52,16 @@ integrand on `a..` ends in `did not converge`.
 ## Inverses
 
 `f⁻¹` on a function without a paired inverse (anything but `\sin`, `\exp` and the other
-prelude pairs, which give `\asin`, `\ln`, …) is a function whose value at `y` is the float
-root of `f(x) = y` nearest `y`[^inverse]. When `f` is not one-to-one the nearest root wins
-(`f(x) = x^2` gives `f⁻¹(4)` as `2.0`). A `y` with no preimage (`f⁻¹(-1)` for `x^2`) or a
-jump (`\floor⁻¹(2.5)`) is a `no value maps to` error. `(f⁻¹)⁻¹` is `f`.
+prelude pairs, which give `\asin`, `\ln`, …) is a function whose value at `y` is the root of
+`f(x) = y` nearest `y`. When `f` is not one-to-one the nearest root wins, the larger real part
+on a tie (`f(x) = x^2` gives `f⁻¹(4)` as `2`; `\solve` gives both, docs/symbolic.md). A `y` with no
+preimage (`f⁻¹(-1)` for `x^2`) or a jump (`\floor⁻¹(2.5)`) is a `no value maps to` error.
+`(f⁻¹)⁻¹` is `f`.
+
+| Case | Result |
+|---|---|
+| user function with a body that solves exactly, exact `y` | exact root, `y` may be complex: `(x ↦ 2x)⁻¹(6)` is `3`, `f⁻¹(3+4i)` is `2+i` for `x^2` |
+| any other function, or a float `y` | float root nearest `y`[^inverse], real `y` only |
 
 ## Limitations
 
@@ -63,10 +69,10 @@ jump (`\floor⁻¹(2.5)`) is a `no value maps to` error. `(f⁻¹)⁻¹` is `f`.
 |---|---|
 | Only finite bounds and `a..`; no `-\inf` or whole-line bounds | [#101](https://todo.sr.ht/~takeiteasy/adhoc/101) |
 | Derivatives above the second order are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
-| `f⁻¹` is float-only and returns one branch; no exact or set-valued inverse | [#108](https://todo.sr.ht/~takeiteasy/adhoc/108) |
+| `f⁻¹` returns one branch; no set-valued inverse | [#117](https://todo.sr.ht/~takeiteasy/adhoc/117) |
 | `\diff` at a kink reads as the mean slope (`\diff(x=0) \|x\|` is `0.0`) | [#103](https://todo.sr.ht/~takeiteasy/adhoc/103) |
 
-Symbolic derivatives and integrals belong to the phase-4 `\solve`/`\simplify` family.
+Symbolic derivatives and integrals are not built; `\simplify` and friends are in docs/symbolic.md.
 
 [^ridders]: Ridders' method: central differences with a step shrinking by 1.4 per row,
     combined by Richardson extrapolation, keeping the entry with the smallest error

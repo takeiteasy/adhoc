@@ -166,6 +166,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   parameters (docs/grammar.md, `## Lambdas`).
 - Piecewise definitions `{x < 0: -x; x}` and set-builder `{x ∈ 1..10 | x^2 < 50}`
   (docs/grammar.md, `## Sets`, `## Conditionals`).
+- Symbolic rewriting: `\simplify(q)`, `\expand(q)`, `\factor(q)` and `\solve(q)` take a quote or
+  a function and return a quote (`\solve`: a set of solutions), e.g. `\solve(\expr(x^2 - 4))` is
+  `{-2, 2}` (docs/symbolic.md).
 - `\tex(e)` returns LaTeX for a quote, function or value (docs/tex.md).
 
 - Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors order 1, matrices order 2,
@@ -196,8 +199,7 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
 
 ## Not yet implemented
 
-Symbolic rewriting and solving (`\solve`/`\simplify`/...) and graphing. See `ROADMAP.md` and the tracker for
-status.
+Graphing. See `ROADMAP.md` and the tracker for status.
 
 ## The `\` sigil, briefly
 
@@ -228,7 +230,7 @@ phases add bindings without touching the lexer.
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
 - Numeric calculus stops at finite bounds and order 2 — see docs/calculus.md, `## Limitations`.
-- `f⁻¹` on a user function is numeric and single-branch — see docs/calculus.md, `## Limitations`.
+- `f⁻¹` on a user function gives one branch — see docs/calculus.md, `## Limitations`.
 - `/` is elementwise on tensors; matrix division is `\inv` or `\linsolve` (docs/stdlib.md).
 - `{1..}` is a parse error: an open range does not end at a closing brace —
   [#107](https://todo.sr.ht/~takeiteasy/adhoc/107).

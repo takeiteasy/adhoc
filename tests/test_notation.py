@@ -421,7 +421,7 @@ def test_function_power_on_a_number_is_still_a_product():
     assert ev("x = 3; x²(2)") == "= 18"
 
 
-def test_user_function_inverse_is_numeric():
+def test_user_function_inverse_is_exact_or_numeric():
     assert value("f(x) = x + 1\nf⁻¹(2)") == pytest.approx(1.0)
     assert value("f(x) = x^3\nf⁻¹(8)") == pytest.approx(2.0)
     assert value("g = x ↦ 2x\ng⁻¹(6)") == pytest.approx(3.0)

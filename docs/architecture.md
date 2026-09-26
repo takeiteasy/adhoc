@@ -14,6 +14,8 @@ adhoc/
 ├── parser      — precedence climbing over docs/grammar.md
 ├── expression  — frozen expression values and parseable display
 ├── reduction   — beta reduction over quoted expression ASTs
+├── rewrite     — expression quotes and function bodies ↔ sympy, behind `\simplify`,
+│                 `\expand`, `\factor`, `\solve` and exact `f⁻¹`
 ├── tex         — LaTeX rendering of quoted ASTs and values behind `\tex` (formatting only)
 ├── tensor      — tensor values (shape, indexing, transpose, contraction; scalar
 │                 operations are passed in by runtime.py), array values, and set values

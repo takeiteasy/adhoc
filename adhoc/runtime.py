@@ -467,6 +467,24 @@ def _reduce_call(value: Any) -> ExpressionValue:
         raise NumError(str(error)) from error
 
 
+def _rewrite_call(name: str, operation: Callable[[sympy.Expr], sympy.Expr]) -> PreludeFn:
+    def call(value: Any) -> ExpressionValue:
+        from . import rewrite
+        try:
+            return rewrite.rewrite(value, operation)
+        except rewrite.RewriteError as error:
+            raise NumError(f"\\{name} {error}") from None
+    return PreludeFn(name, call)
+
+
+def _solve_call(value: Any, unknown: Any = None) -> SetValue:
+    from . import rewrite
+    try:
+        return rewrite.solve(value, unknown)
+    except rewrite.RewriteError as error:
+        raise NumError(f"\\solve {error}") from None
+
+
 def _transpose_call(value: Any) -> AdValue:
     return ntranspose(value)
 
@@ -1690,6 +1708,18 @@ def _sympy_to_ad(expr: Any, type_name: str) -> AdValue:
             f"cannot convert a returned {type_name} to an ad value") from None
 
 
+def value_to_sympy(value: AdValue) -> sympy.Expr:
+    """An ad number as a sympy expression, for the rewrite bridge (`adhoc/rewrite.py`)."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Number | Fraction | Gaussian
+                                                  | Symbolic | Algebraic | RRA):
+        raise NumError(f"cannot rewrite {nshow(value)}")
+    if isinstance(value, complex):
+        return sympy.Float(value.real) + sympy.I * sympy.Float(value.imag)
+    if isinstance(value, float):
+        return sympy.Float(value)
+    return symbolic._to_expr(value)
+
+
 def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
     """The Python→ad half of the interop conversion matrix (see module docstring).
     Raises NumError with a matrix-specific message on everything without an ad
@@ -2073,8 +2103,8 @@ class Derivative:
 
 
 class Inverse:
-    """`f⁻¹` of a function with no paired inverse: `f⁻¹(y)` is the float root of `f(x) = y`
-    nearest `y`. A bracket grows outward from `y` and bisects; a root with no sign change
+    """`f⁻¹` of a function with no paired inverse: `f⁻¹(y)` is the exact root of `f(x) = y`
+    nearest `y` when sympy solves the body, else the float root nearest `y`. A bracket grows outward from `y` and bisects; a root with no sign change
     (a tangent one) falls to a secant walk. The residual is checked, so a jump or a
     value outside the range is an error rather than a wrong answer."""
 
@@ -2082,12 +2112,57 @@ class Inverse:
 
     def __init__(self, fn: Any):
         self.fn = fn
+        self._solved: tuple[sympy.Dummy, list[sympy.Expr]] | None = None
+
+    def _solutions(self) -> tuple[sympy.Dummy, list[sympy.Expr]]:
+        """The roots of `f(x) = Y` for a symbolic `Y`, solved once; empty when `f` is not a
+        one-parameter user function whose body bridges to sympy."""
+        if self._solved is None:
+            target = sympy.Dummy("y")
+            self._solved = (target, [])
+            if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1:
+                from . import rewrite
+                try:
+                    origin = rewrite.bridge_function(self.fn)
+                    self._solved = (target, sympy.solve(origin.expr - target, origin.params[0]))
+                except (rewrite.RewriteError, NotImplementedError, NumError):
+                    pass
+        return self._solved
+
+    def _exact(self, y: AdValue) -> AdValue | None:
+        """The exact root of `f(x) = y` nearest `y` (the larger real part on a tie), or None
+        when there is none the exact tiers can hold. A real `y` takes real roots only."""
+        if isinstance(y, float | complex):
+            return None
+        target, roots = self._solutions()
+        if not roots:
+            return None
+        point = value_to_sympy(y)
+        found = []
+        for root in roots:
+            value = root.subs(target, point)
+            if value.free_symbols:
+                continue
+            approx = sympy.N(value, 30)
+            if not isinstance(y, Gaussian) and abs(sympy.im(approx)) > 1e-20:
+                continue
+            found.append((float(abs(approx - sympy.N(point, 30))),
+                          -float(sympy.re(approx)), value))
+        for *_, value in sorted(found, key=lambda item: item[:2]):
+            try:
+                return _sympy_to_ad(value, "sympy expression")
+            except NumError:
+                continue
+        return None
 
     def __call__(self, *args):
         label = _callable_label(self)
         if len(args) != 1:
             raise NumError(f"{label} takes 1 argument, got {len(args)}")
         _reject_non_numeric(args[0])
+        exact = self._exact(args[0])
+        if exact is not None:
+            return exact
         target = _as_inexact(args[0])
         if isinstance(target, complex) or not math.isfinite(target):
             raise NumError(f"{label} needs a finite real value")
@@ -2587,7 +2662,9 @@ def _factor_gaussian(n: Gaussian) -> ArrayValue:
     return ArrayValue(tuple(ArrayValue((p, k)) for p, k in gauss.factor_q(*q)))
 
 
-def _factor_call(n: AdValue) -> ArrayValue:
+def _factor_call(n: AdValue) -> ArrayValue | ExpressionValue:
+    if isinstance(n, ExpressionValue | AdFunction):
+        return _symbolic_factor(n)
     if isinstance(n, Gaussian):
         return _factor_gaussian(n)
     q = _exact_rational(n, "\\factor")
@@ -2621,7 +2698,13 @@ def _fib_call(n: AdValue) -> int:
     return int(sympy.fibonacci(n))
 
 
+_symbolic_factor = _rewrite_call("factor", sympy.factor).fn
+
+
 PRELUDE.update({
+    "simplify": _rewrite_call("simplify", sympy.simplify),
+    "expand": _rewrite_call("expand", sympy.expand),
+    "solve": PreludeFn("solve", _solve_call),
     "gcd": PreludeFn("gcd", _gcd_call),
     "lcm": PreludeFn("lcm", _lcm_call),
     "divmod": PreludeFn("divmod", _divmod_call),

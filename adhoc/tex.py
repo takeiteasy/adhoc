@@ -118,6 +118,14 @@ def _chain(node: IfExpr) -> tuple[list[tuple[str, str]], str | None]:
     return clauses, node_tex(node)
 
 
+def _head(head: Node) -> str:
+    if isinstance(head, BackslashRef) and (head.name in _KNOWN or head.name in _FUNCTIONS):
+        return rf"\{_FUNCTIONS.get(head.name, head.name)}"
+    if isinstance(head, BackslashRef) and head.name not in _GREEK_NAMES:
+        return rf"\operatorname{{{head.name.replace('_', r'\_')}}}"
+    return node_tex(head, _ATOM)
+
+
 def node_tex(node: Node, prec: int = 0) -> str:
     """The LaTeX for an expression node, parenthesized where `prec` (the surrounding
     operator's binding strength) requires it."""
@@ -181,11 +189,11 @@ def node_tex(node: Node, prec: int = 0) -> str:
             return rf"\{_FUNCTIONS.get(name, name)}\left({', '.join(values)}\right)"
         case Call(head=head, args=args, kwargs=kwargs):
             values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
-            if isinstance(head, BackslashRef) and head.name not in _GREEK_NAMES:
-                label = rf"\operatorname{{{head.name.replace('_', r'\_')}}}"
-            else:
-                label = node_tex(head, _ATOM)
-            return rf"{label}\left({', '.join(values)}\right)"
+            return rf"{_head(head)}\left({', '.join(values)}\right)"
+        case PowCall(head=head, exponent=UnOp(op=UnaryOperator.NEG, operand=NumLit(text="1")),
+                     args=args, kwargs=kwargs):
+            values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
+            return rf"{_head(head)}^{{-1}}\left({', '.join(values)}\right)"
         case PowCall(head=head, exponent=exponent, args=args, kwargs=kwargs):
             call = Call(head=head, args=args, kwargs=kwargs, span=node.span)
             return rf"\left({node_tex(call)}\right)^{{{node_tex(exponent)}}}"
