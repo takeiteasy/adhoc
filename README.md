@@ -55,7 +55,7 @@ Richardson–Fitch equality). Unevaluated expressions can be quoted with `\expr(
 function's body; `\reduce` beta-reduces quoted lambda terms
 ([language guide](docs/language.md)). Tensors (`[1, 2; 3, 4]`, `m'`, `m @ m`) arrays (`⟨1, "a", [2]⟩`), and sets (`{1, 2} ∪ {3}`) are built, as are composition (`f ∘ g`), partial application (`f(1, ·)`),
 and `\map`/`\filter`/`\fold`;
-logical operators, symbolic rewriting, and graphing are on the roadmap, not
+symbolic rewriting and graphing are on the roadmap, not
 yet built. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it

@@ -34,7 +34,7 @@ they don't replace it. The interaction-net engine and parallel rewriting recorde
 - Conditionals: the ternary `c ? a : b` — the one lazy conditional, right-associative,
   loosest expression precedence. A parenthesized statement group is the multi-statement
   branch form.
-- Comparisons: `<`, `>`, `<=`, `>=`; logical operators remain future work.
+- Comparisons: `<`, `>`, `<=`, `>=`; the logical operators are built (docs/notation.md, `## Logic`).
 - Ranges: `a..b`, `a..` (lazy infinite), `a,c..b` / `a,c..` (step-inferred).
 - `Σ`/`\sum`, `Π`/`\prod`, `\lim` — fold over a range; infinite-range `Σ`/`Π` as limit of partial
   sums.

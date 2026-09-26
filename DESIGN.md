@@ -37,7 +37,7 @@ ADhoc Higher Order Calculator — a cli based calculator and language like `bc` 
 - The names are chosen to match their LaTeX command where one exists (`\sum`, `\prod`, `\sqrt`, `\cup`, `\cap`, `\in`, `\setminus`, `\circ`, `\lim`, `\sin`, `\ln`, ...) — `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX. This is a naming convention, not a compatibility claim: `ad` is not a TeX parser and has no layout/document commands.
 - Bracket syntax (`[...]`, `{...}`, `⟨...⟩`) is unaffected by this rule — `\arr(...)` and `#[...]` are the ASCII *spellings* of `⟨...⟩`, forms rather than names.
 - User-defined infix operators (`⊕` via `\infix(N) ⊕(a, b) = ...`) are exempt — the sigil rule is about language-defined names, not names an author invents.
-- Comparisons `<`, `>`, `<=`, `>=` produce real booleans, displayed as `true`/`false`: valid conditions and bindable values, rejected as numeric operands. The literal spellings are `\true`/`\false`, bound in the prelude. Logical operators remain future work.
+- Comparisons `<`, `>`, `<=`, `>=` produce real booleans, displayed as `true`/`false`: valid conditions and bindable values, rejected as numeric operands. The literal spellings are `\true`/`\false`, bound in the prelude. The logical operators `∧ ∨ ¬ → ↔` are built (docs/notation.md, `## Logic`).
 
 ## precedence
 
@@ -125,8 +125,8 @@ statement group gives a branch an explicit multi-statement extent:
 < = 5
 ```
 
-- Comparisons `<`, `>`, `<=`, and `>=` produce booleans; logical operators remain future
-  work.
+- Comparisons `<`, `>`, `<=`, and `>=` produce booleans; the logical operators `∧ ∨ ¬ → ↔` are
+  built (docs/notation.md, `## Logic`).
 - Parenthesized groups are statements, not scopes: bindings use the enclosing frame.
 - The former line-structured `\if` and `\begin` block forms are not part of the current
   grammar.
