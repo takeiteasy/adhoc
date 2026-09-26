@@ -77,6 +77,7 @@ name        ::= identifier | "\"-name ;
 expr       ::= ternary ;
 ternary    ::= range ("?" ternary ":" ternary)? ;   (* right-associative *)
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
+                                           (* the "," form is not read inside lists *)
 comparison ::= additive (("<" | ">" | "<=" | ">=" | "∈" | "\\in" | "⊆" | "\\subseteq") additive)? ;
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
@@ -445,9 +446,7 @@ f(_, _)(10, 3)          ->  = 7
 | Keyword arguments | Fixed at partial time for Python callables; user functions take none |
 
 Both forms are values: they bind, pass, display (`<fn s ∘ t>`, `<fn f(10, _)>`), and
-compare by identity. A range argument after a comma needs parentheses — `\map(f, (1..3))` —
-because `f, 1..3` reads as a stepped range (`## Ranges`; see
-[Known limitations](language.md#known-limitations-not-bugs)).
+compare by identity. A range is an ordinary argument: `\map(f, 1..3)`.
 
 ## Higher-order functions
 
@@ -841,6 +840,12 @@ contents. The two-element form infers the step as `c - a`, and a zero step is an
 1,3..10    -> <range 1,3..10>       -- 1, 3, 5, 7, 9
 10,8..1    -> <range 10,8..1>       -- 10, 8, 6, 4, 2
 ```
+
+**In lists, `,` separates items.** Inside call arguments, tensor, array, and set literals,
+and index brackets, a comma never starts a stepped range: `⟨1, 3..9⟩` has two items and
+`\map(f, 1..3)` passes `f` and the range. Parenthesize a stepped range there:
+`\map(f, (1,3..9))`. Everywhere else — top level, groups, quotes, and fold binders
+(`Σ(k=1,3..7) k`, also inside a list) — `a,b..c` is stepped.
 
 Ranges can be assigned and passed through the runtime; folds bind them directly
 (`\sum(i=1..10) …`, `Σ(i=1..) …` — see `## Special forms`).

@@ -64,6 +64,8 @@ call: the `(expr)` branch of atoms returns the inner node unchanged, and tagging
 would clobber that inner node's own (narrower) span with the paren-inclusive one.
 """
 
+from contextlib import contextmanager
+
 from .lexer import (
     Backtick,
     Backslash,
@@ -214,6 +216,18 @@ class _Parser:
         # Set by `_skip_newlines`, reset by statement lists around each
         # statement: "a line break was consumed since the last statement ended".
         self._nl = False
+        # True while parsing the items of a comma-separated list (call arguments,
+        # tensor/array/set literals, index brackets): there `,` always separates
+        # items, so `a, b..c` is never a stepped range (docs/grammar.md, `## Ranges`).
+        self._in_list = False
+
+    @contextmanager
+    def _list_context(self, in_list: bool):
+        saved, self._in_list = self._in_list, in_list
+        try:
+            yield
+        finally:
+            self._in_list = saved
 
     def peek(self) -> Token:
         return self.tokens[self.pos]
@@ -681,15 +695,15 @@ class _Parser:
         return IfExpr(condition=cond, then_branch=then_branch, otherwise=otherwise,
                       span=cond.span.to(otherwise.span))
 
-    # Range commas are only consumed when they introduce a following `..`, preserving
-    # ordinary call argument commas such as `f(1, 2)`. Once a range delimiter is
+    # The stepped form's comma is only consumed outside a list, and only when it
+    # introduces a following `..`. Once a range delimiter is
     # committed (`..`, or the `,` of a stepped form) the expression continues across
     # line breaks — `1..` NL `5` is one range — but a bare newline before any range
     # delimiter is a statement boundary, never a continuation.
     def range_expr(self) -> Node:
         start = self.comparison()
         second = None
-        if isinstance(self.peek(), Comma) and not isinstance(self.look(1), Underscore):
+        if isinstance(self.peek(), Comma) and not self._in_list:
             saved = self.pos
             self.advance()
             self._skip_newlines()
@@ -860,11 +874,12 @@ class _Parser:
             args: tuple[Node, ...] = ()
             kwargs: tuple[KwArg, ...] = ()
             if not isinstance(self.peek(), RParen):  # `f()` — zero-arg calls are legal
-                items: list[Node] = [self.call_arg()]
-                while isinstance(self.peek(), Comma):
-                    self.advance()
-                    self._skip_newlines()  # an argument may start on the line after `,`
-                    items.append(self.call_arg())
+                with self._list_context(True):
+                    items: list[Node] = [self.call_arg()]
+                    while isinstance(self.peek(), Comma):
+                        self.advance()
+                        self._skip_newlines()  # an argument may start on the line after `,`
+                        items.append(self.call_arg())
                 # Positionals and kwargs collect separately (their relative source
                 # order carries no meaning); duplicate kwarg names are a parse error
                 # rather than Python's silent last-one-wins.
@@ -908,13 +923,14 @@ class _Parser:
     def _index(self, head: Node) -> Index:
         self.advance()  # `[`
         self._skip_newlines()
-        items = [self.expr()]
-        self._skip_newlines()
-        while isinstance(self.peek(), Comma):
-            self.advance()
+        with self._list_context(True):
+            items = [self.expr()]
             self._skip_newlines()
-            items.append(self.expr())
-            self._skip_newlines()
+            while isinstance(self.peek(), Comma):
+                self.advance()
+                self._skip_newlines()
+                items.append(self.expr())
+                self._skip_newlines()
         close = self.expect(RBracket, "`]`")
         self._nl = False
         return Index(head=head, items=tuple(items), span=head.span.to(close.span))
@@ -931,7 +947,8 @@ class _Parser:
         row_lengths: list[int] = []
         current = 0
         while True:
-            items.append(self.expr())
+            with self._list_context(True):
+                items.append(self.expr())
             current += 1
             self._skip_newlines()
             if isinstance(self.peek(), Comma):
@@ -963,13 +980,14 @@ class _Parser:
         self._skip_newlines()
         items: list[Node] = []
         if not isinstance(self.peek(), RBrace):
-            items.append(self.expr())
-            self._skip_newlines()
-            while isinstance(self.peek(), Comma):
-                self.advance()
-                self._skip_newlines()
+            with self._list_context(True):
                 items.append(self.expr())
                 self._skip_newlines()
+                while isinstance(self.peek(), Comma):
+                    self.advance()
+                    self._skip_newlines()
+                    items.append(self.expr())
+                    self._skip_newlines()
         close = self.expect(RBrace, "`}`")
         self._nl = False
         return SetLit(items=tuple(items), span=opener.span.to(close.span))
@@ -980,18 +998,23 @@ class _Parser:
         self._skip_newlines()
         items: list[Node] = []
         if not isinstance(self.peek(), closer):
-            items.append(self.expr())
-            self._skip_newlines()
-            while isinstance(self.peek(), Comma):
-                self.advance()
-                self._skip_newlines()
+            with self._list_context(True):
                 items.append(self.expr())
                 self._skip_newlines()
+                while isinstance(self.peek(), Comma):
+                    self.advance()
+                    self._skip_newlines()
+                    items.append(self.expr())
+                    self._skip_newlines()
         close = self.expect(closer, closer_text)
         self._nl = False
         return ArrayLit(items=tuple(items), span=opener.span.to(close.span))
 
     def _quote(self, head: Token) -> Quote:
+        with self._list_context(False):
+            return self._quote_body(head)
+
+    def _quote_body(self, head: Token) -> Quote:
         self.expect(LParen, "`(`")
         group_end = None
         has_separator = False
@@ -1086,7 +1109,8 @@ class _Parser:
         var_tok = self.advance()
         var = self._canonical(var_tok.ch)
         self.expect(Eq, "`=`")
-        bound = self.expr()
+        with self._list_context(False):
+            bound = self.expr()
         self.expect(RParen, "`)`")
         body = self.expr()
         span = head.span.to(body.span)
@@ -1191,9 +1215,10 @@ class _Parser:
                 self.advance()
                 self.depth += 1
                 try:
-                    items = self._group_stmts(
-                        allow_let_function=group_top_level
-                    )
+                    with self._list_context(False):
+                        items = self._group_stmts(
+                            allow_let_function=group_top_level
+                        )
                 finally:
                     self.depth -= 1
                 # Imports bind names and produce no output — they have no value, so

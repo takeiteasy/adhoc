@@ -137,6 +137,35 @@ def test_hole_after_comma_is_not_a_stepped_range():
     assert ev(DEFS + "f(10, _)(2)") == "= 8"
 
 
+# --- commas in lists separate items (no stepped range) ---
+
+
+def test_range_after_a_comma_in_a_call_is_its_own_argument():
+    assert ev(DEFS + r"\map(s, 1..3)") == "= ⟨1, 4, 9⟩"
+    assert ev(r"\map(\fn(x) x^2, 1..3)") == "= ⟨1, 4, 9⟩"
+    assert ev(DEFS + r"\fold(f, 1..3, 10)") == "= 4"
+
+
+def test_stepped_range_in_a_list_needs_parentheses():
+    assert ev(DEFS + r"\map(s, (1,3..7))") == "= ⟨1, 9, 25, 49⟩"
+
+
+def test_comma_separates_items_in_literals_and_indexes():
+    assert ev(r"\len(⟨1, 3..9⟩)") == "= 2"
+    assert ev(r"\len({1, 3..9})") == "= 2"
+    assert ev(r"\len(⟨1, (3,5..9)⟩)") == "= 2"
+    assert ev("m = [1, 2; 3, 4]\nm[1, 2]") == "= 2"
+
+
+def test_stepped_range_outside_lists_is_unchanged():
+    assert ev("r = 1,3..10") == "r = <range 1,3..10>"
+    assert ev(r"\sum(k=1,3..7) k") == "= 16"
+
+
+def test_fold_binder_inside_a_list_keeps_its_stepped_range():
+    assert ev(r"\map(\fn(x) x, ⟨\sum(k=1,3..7) k⟩)") == "= ⟨16⟩"
+
+
 def test_quote_round_trips_compose_and_hole():
     env = {}
     assert ev(r"q = \expr(f ∘ g)", env) == r"q = \expr((f ∘ g))"

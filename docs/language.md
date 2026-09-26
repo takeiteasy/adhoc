@@ -211,8 +211,6 @@ phases add bindings without touching the lexer.
   [#67](https://todo.sr.ht/~takeiteasy/adhoc/67).
 - `\map`/`\filter`/`\fold` reject infinite ranges instead of iterating lazily —
   [#68](https://todo.sr.ht/~takeiteasy/adhoc/68).
-- A range argument after a comma needs parentheses (`\map(f, (1..3))`), since `f, 1..3`
-  reads as a stepped range — [#69](https://todo.sr.ht/~takeiteasy/adhoc/69).
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
