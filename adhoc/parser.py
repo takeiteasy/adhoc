@@ -75,7 +75,9 @@ from .lexer import (
     Backslash,
     Colon,
     Comma,
+    Bang,
     Caret,
+    DoubleBang,
     Superscript,
     Eq,
     Eof,
@@ -178,7 +180,7 @@ _CLOSERS = (RBracket, RBrace, RAngle)
 
 # Operators that can stand as function values, by token (`(+)`, or a whole call
 # argument like `\\fold(+, xs)`); infix-only spellings go through `_infix_name`.
-_SYMBOL_OPERATORS = {Plus: "add", Minus: "sub", Star: "mul", Slash: "div", Caret: "pow",
+_SYMBOL_OPERATORS = {Bang: "fact", DoubleBang: "dfact", Plus: "add", Minus: "sub", Star: "mul", Slash: "div", Caret: "pow",
                      Less: "lt", LessEq: "le", Greater: "gt", GreaterEq: "ge"}
 _INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
@@ -955,6 +957,11 @@ class _Parser:
             if isinstance(self.peek(), Superscript):
                 node = self._superscript(node)
                 continue
+            if isinstance(self.peek(), (Bang, DoubleBang)):
+                bang = self.advance()
+                op = UnaryOperator.FACT if isinstance(bang, Bang) else UnaryOperator.DFACT
+                node = UnOp(op=op, operand=node, span=node.span.to(bang.span))
+                continue
             if isinstance(self.peek(), Prime):
                 tick = self.advance()
                 node = Transpose(operand=node, span=node.span.to(tick.span))
@@ -1323,7 +1330,7 @@ class _Parser:
                 close = self.advance()
                 return replace(operator, span=tok.span.to(close.span))
             case LParen() if (self._operator_value(1) is not None
-                              and not isinstance(self.look(1), (Minus, Radical))):
+                              and not isinstance(self.look(1), (Minus, Radical, Bang, DoubleBang))):
                 return self._right_section(tok)
             case LParen():
                 group_top_level = (

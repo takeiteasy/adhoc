@@ -94,3 +94,64 @@ def test_caret_after_multibyte_glyph_points_at_the_error():
     with pytest.raises(ParseError) as e:
         parse_program("x² +")
     assert e.value.span.start == len("x² +".encode())
+
+
+# --- factorial ---
+
+
+def test_factorial_values():
+    assert ev("5!") == "= 120"
+    assert ev("0!") == "= 1"
+    assert ev("4!") == "= 24"
+    assert ev("(3!)!") == "= 720"
+    assert ev("7‼") == "= 105"
+    assert ev("8‼") == "= 384"
+    assert ev("0‼") == "= 1"
+    assert ev("7!!") == "= 105"
+    assert ev("3!!") == "= 3"
+
+
+def test_factorial_precedence():
+    assert ev("2^3!") == "= 64"
+    assert ev("3!^2") == "= 36"
+    assert ev("-3!") == "= -6"
+    assert ev("2 3!") == "= 12"
+    assert ev("n = 3; 2n!") == "= 12"
+    assert ev("(1+2)!") == "= 6"
+    assert ev("f(x) = x + 1\nf(2)!") == "= 6"
+    assert ev("3²!") == "= 362880"
+
+
+def test_factorial_errors():
+    fails(r"(-1)!", "non-negative integer")
+    fails(r"2.5!", "non-negative integer")
+    fails(r"1.!", "non-negative integer")
+    fails(r"(1/2)!", "non-negative integer")
+    fails(r'"a"!', "not numbers")
+    fails(r"\true!", "booleans")
+    fails(r"200000!", "limited to")
+
+
+def test_bang_equals_gets_a_hint():
+    with pytest.raises(Exception, match="not an operator"):
+        tokenize("a != b")
+
+
+def test_factorial_operator_values():
+    assert ev(r"\map((!), ⟨1, 2, 3, 4⟩)") == "= ⟨1, 2, 6, 24⟩"
+    assert ev(r"\map(‼, ⟨1, 2, 3, 4⟩)") == "= ⟨1, 2, 3, 8⟩"
+    assert ev("(!)(4)") == "= 24"
+    fails(r"(!)(1, 2)", "takes 1")
+
+
+def test_factorial_roundtrip():
+    assert roundtrip("(a+b)!") == "((a + b)!)"
+    assert roundtrip("n‼") == "(n‼)"
+    assert roundtrip("2^n!") == "(2 ^ (n!))"
+    assert ev(r"\eval(\expr(n!), n=4)") == "= 24"
+
+
+def test_factorial_error_span_is_the_postfix_node():
+    with pytest.raises(EvalError) as e:
+        run_source("x = 2.5\nx!", {})
+    assert (e.value.span.start, e.value.span.end) == (8, 10)

@@ -98,6 +98,10 @@ _FOLD_METHODS = {
     BinOperator.MUL: "mul",
 }
 
+_UN_METHODS = {
+    UnaryOperator.NEG: "neg", UnaryOperator.FACT: "fact", UnaryOperator.DFACT: "dfact",
+}
+
 _CMP_METHODS = {
     CompareOperator.LT: "lt", CompareOperator.LE: "le",
     CompareOperator.GT: "gt", CompareOperator.GE: "ge",
@@ -242,10 +246,10 @@ class _Lowerer:
                 sid = self._push(span)
                 return _call("bref", [pyast.Constant(name), pyast.Constant(sid),
                     pyast.Constant(spelling)])
-            case UnOp(op=UnaryOperator.NEG, operand=operand, span=span):
+            case UnOp(op=op, operand=operand, span=span):
                 inner = self.expr(operand)
                 sid = self._push(span)
-                return _call("neg", [inner, pyast.Constant(sid)])
+                return _call(_UN_METHODS[op], [inner, pyast.Constant(sid)])
             case BinOp(op=op, lhs=lhs, rhs=rhs, span=span):
                 left = self.expr(lhs)
                 right = self.expr(rhs)

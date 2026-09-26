@@ -6,7 +6,7 @@ from .syntax import (
     is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
     Assign, ArrayLit, Fold, FuncDef, Hole, IfExpr, Import, Index, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef,
-    PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnOp, Var,
+    PyImport, Quote, Range, Seq, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var,
 )
 
 
@@ -38,6 +38,7 @@ _BIN = {
     BinOperator.UNION: "∪", BinOperator.INTERSECT: "∩", BinOperator.SETMINUS: "∖",
     BinOperator.COMPOSE: "∘",
 }
+_POSTFIX = {UnaryOperator.FACT: "!", UnaryOperator.DFACT: "‼"}
 _CMP = {
     CompareOperator.LT: "<", CompareOperator.LE: "<=",
     CompareOperator.GT: ">", CompareOperator.GE: ">=",
@@ -80,8 +81,10 @@ def show(node: Node) -> str:
             return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t") + '"'
         case Var(ch=name, spelling=spelling) | BackslashRef(name=name, spelling=spelling):
             return spelling or (name if is_short_name(name) else f"\\{name}")
-        case UnOp(operand=operand):
+        case UnOp(op=UnaryOperator.NEG, operand=operand):
             return f"(-{show(operand)})"
+        case UnOp(op=op, operand=operand):
+            return f"({show(operand)}{_POSTFIX[op]})"
         case BinOp(op=op, lhs=left, rhs=right):
             return f"({show(left)} {_BIN[op]} {show(right)})"
         case Compare(op=op, lhs=left, rhs=right):

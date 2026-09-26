@@ -109,6 +109,24 @@ class Superscript(Token):
 
 
 @dataclass(frozen=True)
+class Bang(Token):
+    """Postfix factorial `!`."""
+
+    @property
+    def describe(self) -> str:
+        return "`!`"
+
+
+@dataclass(frozen=True)
+class DoubleBang(Token):
+    """Postfix double factorial: `‼`, or `!!` in ASCII."""
+
+    @property
+    def describe(self) -> str:
+        return "`‼`"
+
+
+@dataclass(frozen=True)
 class Plus(Token):
     @property
     def describe(self) -> str:
@@ -542,6 +560,23 @@ def tokenize(src: str) -> list[Token]:
             end = entries[j][0] if j < n else eof_off
             tokens.append(Ident(ch=src[i:j], span=Span(pos, end)))
             i = j
+            continue
+
+        if c == "!":
+            if i + 1 < n and entries[i + 1][1] == "=":
+                raise LexError("`!=` is not an operator; use `≠` or `\\neq`",
+                               Span(pos, entries[i + 1][0] + 1))
+            if i + 1 < n and entries[i + 1][1] == "!":
+                tokens.append(DoubleBang(span=Span(pos, entries[i + 1][0] + 1)))
+                i += 2
+            else:
+                tokens.append(Bang(span=Span(pos, pos + 1)))
+                i += 1
+            continue
+
+        if c == "‼":
+            tokens.append(DoubleBang(span=Span(pos, pos + len(c.encode("utf-8")))))
+            i += 1
             continue
 
         if c == "√":

@@ -46,6 +46,8 @@ class CompareOperator(Enum):
 
 class UnaryOperator(Enum):
     NEG = auto()
+    FACT = auto()
+    DFACT = auto()
 
 
 @dataclass(frozen=True)
@@ -189,7 +191,7 @@ class Hole(Node):
 # Engine key -> written symbol of every operator that can be a function value.
 OP_SYMBOLS = {
     "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "@",
-    "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
+    "fact": "!", "dfact": "‼", "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
     "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆",
 }
 

@@ -791,6 +791,27 @@ def nneg(a: AdValue) -> AdValue:
     return -a
 
 
+MAX_FACTORIAL = 100_000
+
+
+def _factorial_arg(a: AdValue, symbol: str) -> int:
+    _reject_non_numeric(a)
+    n = _integer_exponent(a)
+    if n is None or n < 0:
+        raise NumError(f"`{symbol}` needs an exact non-negative integer, got {nshow(a)}")
+    if n > MAX_FACTORIAL:
+        raise NumError(f"`{symbol}` is limited to arguments up to {MAX_FACTORIAL}")
+    return n
+
+
+def nfact(a: AdValue) -> AdValue:
+    return math.factorial(_factorial_arg(a, "!"))
+
+
+def ndfact(a: AdValue) -> AdValue:
+    return math.prod(range(_factorial_arg(a, "‼"), 1, -2))
+
+
 def ndot(a: AdValue, b: AdValue) -> AdValue:
     """`a @ b`: contract the last axis of `a` with the first of `b`; a scalar operand scales."""
     if isinstance(a, TensorValue) and isinstance(b, TensorValue):
@@ -1526,6 +1547,7 @@ def _cmp(op: str) -> Callable:
 
 
 _OPERATOR_IMPLS = {
+    "fact": (nfact, (1,)), "dfact": (ndfact, (1,)),
     "add": (nadd, (2,)), "sub": (_minus, (1, 2)), "mul": (nmul, (2,)),
     "div": (ndiv, (2,)), "pow": (npow, (2,)), "dot": (ndot, (2,)),
     "compose": (ncompose, (2,)), "union": (nunion, (2,)),
@@ -2395,6 +2417,18 @@ class Engine:
         # though: a seam NumError becomes a spanned EvalError at this node's span.
         try:
             return nneg(a)
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def fact(self, a: AdValue, sid: int) -> AdValue:
+        try:
+            return nfact(a)
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def dfact(self, a: AdValue, sid: int) -> AdValue:
+        try:
+            return ndfact(a)
         except NumError as e:
             self._fail(e.args[0], sid)
 
