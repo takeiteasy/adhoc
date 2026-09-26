@@ -1045,7 +1045,7 @@ class _Parser:
 
     # postfix ::= atom ("(" args ")")* ;
     # Static application: a trailer attaches only to name-ish heads (Var/BackslashRef/
-    # Call/Lambda), so `f(x)` applies while `2(x+1)` falls through to juxtaposition.
+    # Call/Lambda) and parenthesized `f ∘ g` / `f⁻¹`, so `f(x)` applies while `2(x+1)` falls through to juxtaposition.
     # A parenthesized lambda in head position applies: `(\fn(x) x)(5)`. Unparenthesized,
     # the greedy body has already consumed any trailer (`\fn(x) x(5)` is a lambda whose
     # body is the call/product `x(5)`).
@@ -1065,8 +1065,19 @@ class _Parser:
     # the trailer already bound to its right operand.
     @staticmethod
     def _is_call_head(node: Node) -> bool:
-        return isinstance(node, _Parser._NAMEISH + (Transpose,)) or (
-            isinstance(node, BinOp) and node.op is BinOperator.COMPOSE)
+        return isinstance(node, _Parser._NAMEISH + (Transpose,)) or _Parser._is_function_value(node)
+
+    # A parenthesized `f ∘ g` or `f⁻¹` head is a function value; other powers are numbers.
+    @staticmethod
+    def _is_function_value(node: Node) -> bool:
+        if not isinstance(node, BinOp):
+            return False
+        if node.op is BinOperator.COMPOSE:
+            return True
+        return (node.op is BinOperator.POW and isinstance(node.rhs, UnOp)
+                and node.rhs.op is UnaryOperator.NEG and isinstance(node.rhs.operand, NumLit)
+                and node.rhs.operand.text == "1"
+                and _Parser._is_call_head(node.lhs))
 
     def postfix(self) -> Node:
         node = self.atom()
@@ -1094,7 +1105,8 @@ class _Parser:
                 node = self._index(node)
                 continue
             if isinstance(self.peek(), Superscript):
-                if isinstance(node, (Var, BackslashRef)) and isinstance(self.look(1), LParen):
+                if (isinstance(node, (Var, BackslashRef, Lambda)) or self._is_function_value(node)) \
+                        and isinstance(self.look(1), LParen):
                     tok = self.advance()
                     exponent = self._exponent(tok)
                     args, kwargs, rparen = self._call_arguments()

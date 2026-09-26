@@ -112,7 +112,7 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 - `|A|` on a square matrix is an error, not the determinant — [#100](https://todo.sr.ht/~takeiteasy/adhoc/100).
 - Bars in set-builder notation `{x ∈ s | p}` are not read yet — [#79](https://todo.sr.ht/~takeiteasy/adhoc/79).
 - `f⁻¹` on a user function is numeric and single-branch — [#108](https://todo.sr.ht/~takeiteasy/adhoc/108).
-- `(x ↦ 2x)⁻¹(6)` with a parenthesised non-name head is an error — [#109](https://todo.sr.ht/~takeiteasy/adhoc/109).
+- `\tex` of an inverse call such as `(x ↦ 2x)⁻¹(6)` renders a power of the call — [#111](https://todo.sr.ht/~takeiteasy/adhoc/111).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
     spelling: `x⁻¹⁰` is `x^-10`, `2ⁿᵏ` is `2^(n k)`. Glyphs exist for every letter but `q`
@@ -125,7 +125,8 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
     letter is the same name and echoes as typed; a bare subscript glyph is a lex error.
     Unicode has no subscript for `b c d f g q w y z` or capitals, so `x_b`, `x_A` and `x_ib`
     are names in their ASCII form (`x_ij` is still `xᵢⱼ`); `\x_b` names the same variable.
-[^funcpow]: Only after a name. A callable head gives `f(x)^n`; any other head gives
+[^funcpow]: After a name or a parenthesised head: a lambda, `f ∘ g` or `f⁻¹` (`(x ↦ 2x)⁻¹(6)`,
+    `(f⁻¹)(6)`). A callable head gives `f(x)^n`; any other head gives
     `(f^n)(x)`, so `x²(2)` on a number is `18` when `x = 3`. A negative exponent on a
     callable is a typed error unless it is exactly `⁻¹` on `\sin \cos \tan \exp \sinh \cosh \tanh` or
     their inverses, which give the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other

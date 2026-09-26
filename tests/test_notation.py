@@ -437,6 +437,28 @@ def test_user_inverse_is_a_function_value():
     assert ev("f(x) = x + 1\nh = (f⁻¹)⁻¹\nh(2)") == "= 3"
 
 
+def test_inverse_applies_on_parenthesised_heads():
+    assert value("(x ↦ 2x)⁻¹(6)") == pytest.approx(3.0)
+    assert value("((x ↦ 2x)⁻¹)(6)") == pytest.approx(3.0)
+    assert value("f(x) = x + 1\n(f⁻¹)(5)") == pytest.approx(4.0)
+    assert value("f(x) = x + 1\n(f^-1)(5)") == pytest.approx(4.0)
+    assert ev("f(x) = x + 1\n(f⁻¹)⁻¹(2)") == "= 3"
+    assert value("h = x ↦ 2x\n(h ∘ h)⁻¹(8)") == pytest.approx(2.0)
+    assert ev("(\\sin)⁻¹(1/2)") == ev("\\asin(1/2)")
+
+
+def test_powers_of_parenthesised_numbers_stay_products():
+    assert ev("x = 3\n(x²)(2)") == "= 18"
+    assert ev("x = 3\n(x+1)²(2)") == "= 32"
+    assert ev("x = 3\n\\tex(\\expr((x²)(2)))") == '= "x^{2} \\\\cdot 2"'
+
+
+def test_inverse_on_parenthesised_head_round_trips():
+    roundtrip("(x ↦ 2x)⁻¹(6)")
+    roundtrip("(f⁻¹)(6)")
+    roundtrip("(f⁻¹)⁻¹(2)")
+
+
 def test_user_inverse_without_a_preimage_is_an_error():
     fails("f(x) = x^2\nf⁻¹(-1)", "no value maps")
     fails("\\floor⁻¹(2.5)", "no value maps")

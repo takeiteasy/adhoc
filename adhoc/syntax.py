@@ -254,8 +254,8 @@ class Call(Node):
 
 @dataclass(frozen=True)
 class PowCall(Node):
-    """Function-power notation `f²(x)`: a superscript between a name and its argument
-    list. A callable head means `f(x)^n`; anything else falls back to `(f^n)(x)`, so
+    """Function-power notation `f²(x)`: a superscript between a call head (a name, a
+    parenthesized lambda, `f ∘ g` or `f⁻¹`) and its argument list. A callable head means `f(x)^n`; anything else falls back to `(f^n)(x)`, so
     `x²(2)` on a number is still a product."""
 
     head: Node

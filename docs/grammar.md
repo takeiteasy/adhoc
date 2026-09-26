@@ -273,7 +273,8 @@ mismatched one ``expected `⌋`, found `⌉` ``, and an unclosed form is incompl
 ## Application: dynamic name-headed parens
 
 A `(…)` trailer attaches **only** to name-ish heads — a single-character identifier, a
-`\`-name, another call, or a parenthesized lambda (see `## Lambdas`). Number-headed
+`\`-name, another call, a parenthesized lambda (see `## Lambdas`), or a parenthesized
+`f ∘ g` or `f⁻¹`. Number-headed
 parens never even parse as a call (`2(x+1)` is juxtaposition, always). What a call *does* is decided at evaluation by what the head holds:
 
 ```
