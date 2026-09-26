@@ -92,6 +92,7 @@ _BIN_METHODS = {
     BinOperator.COMPOSE: "compose",
     BinOperator.MOD: "mod",
     BinOperator.ANGLE: "angle",
+    BinOperator.IFF: "iff",
 }
 
 # The fold operator each Fold node accumulates with; the runtime maps these back to
@@ -99,10 +100,16 @@ _BIN_METHODS = {
 _FOLD_METHODS = {
     BinOperator.ADD: "add",
     BinOperator.MUL: "mul",
+    BinOperator.AND: "and",
+    BinOperator.OR: "or",
 }
+
+# Connectives that skip their right operand: lowered with a thunk, like the ternary.
+_LOGIC_METHODS = {BinOperator.AND: "and", BinOperator.OR: "or", BinOperator.IMPLIES: "implies"}
 
 _UN_METHODS = {
     UnaryOperator.NEG: "neg", UnaryOperator.FACT: "fact", UnaryOperator.DFACT: "dfact",
+    UnaryOperator.NOT: "lnot",
 }
 
 _CMP_METHODS = {
@@ -256,6 +263,11 @@ class _Lowerer:
                 inner = self.expr(operand)
                 sid = self._push(span)
                 return _call(_UN_METHODS[op], [inner, pyast.Constant(sid)])
+            case BinOp(op=BinOperator.AND | BinOperator.OR | BinOperator.IMPLIES as op,
+                       lhs=lhs, rhs=rhs):
+                return _call("logic", [pyast.Constant(_LOGIC_METHODS[op]), self.expr(lhs),
+                    self._thunk(rhs), pyast.Constant(self._push(lhs.span)),
+                    pyast.Constant(self._push(rhs.span))])
             case BinOp(op=op, lhs=lhs, rhs=rhs, span=span):
                 left = self.expr(lhs)
                 right = self.expr(rhs)

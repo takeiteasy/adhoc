@@ -37,9 +37,13 @@ _BIN = {
     BinOperator.ADD: "+", BinOperator.SUB: "-", BinOperator.MUL: "*",
     BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "@",
     BinOperator.UNION: "∪", BinOperator.INTERSECT: "∩", BinOperator.SETMINUS: "∖",
-    BinOperator.COMPOSE: "∘", BinOperator.MOD: "%", BinOperator.ANGLE: "∠",
+    BinOperator.COMPOSE: "∘", BinOperator.MOD: "%", BinOperator.ANGLE: "∠", BinOperator.AND: "∧", BinOperator.OR: "∨",
+    BinOperator.IMPLIES: "→", BinOperator.IFF: "↔",
 }
 _POSTFIX = {UnaryOperator.FACT: "!", UnaryOperator.DFACT: "‼"}
+_FOLD_HEADS = {BinOperator.ADD: "\\sum", BinOperator.MUL: "\\prod",
+               BinOperator.AND: "\\forall", BinOperator.OR: "\\exists"}
+
 _CMP = {
     CompareOperator.LT: "<", CompareOperator.LE: "<=",
     CompareOperator.GT: ">", CompareOperator.GE: ">=",
@@ -87,6 +91,8 @@ def show(node: Node) -> str:
             return spelling or (name if is_short_name(name) else f"\\{name}")
         case UnOp(op=UnaryOperator.NEG, operand=operand):
             return f"(-{show(operand)})"
+        case UnOp(op=UnaryOperator.NOT, operand=operand):
+            return f"(¬{show(operand)})"
         case UnOp(op=op, operand=operand):
             return f"({show(operand)}{_POSTFIX[op]})"
         case BinOp(op=op, lhs=left, rhs=right):
@@ -113,7 +119,7 @@ def show(node: Node) -> str:
             return f"{show(head)}{script}({', '.join(values)})"
         case Fold(op=op, var=var, bound=bound, body=body, spelling=spelling,
                   var_spelling=var_spelling):
-            head = spelling or ("\\sum" if op is BinOperator.ADD else "\\prod")
+            head = spelling or _FOLD_HEADS[op]
             return f"({head}({var_spelling or var}={show(bound)}) {show(body)})"
         case Limit(var=var, point=point, body=body, spelling=spelling,
                    var_spelling=var_spelling):

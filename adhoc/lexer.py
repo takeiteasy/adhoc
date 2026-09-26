@@ -417,7 +417,8 @@ _SINGLE_CHAR_TOKENS = {
 
 _INFIX_GLYPHS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
                   "∘": "circ", "≠": "neq", "≈": "approx", "∉": "notin", "⊂": "subset",
-                  "⊇": "supseteq", "⊃": "supset", "%": "mod", "∠": "angle"}
+                  "⊇": "supseteq", "⊃": "supset", "%": "mod", "∠": "angle",
+                  "∧": "and", "∨": "or", "→": "implies", "↔": "iff", "¬": "not"}
 _GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
 
 # `\\`-names that end in a digit; every other digit after a name is a number.
@@ -610,7 +611,7 @@ def tokenize(src: str) -> list[Token]:
             i += 1
             continue
 
-        if c == "∅":
+        if c in "∅∀∃":
             tokens.append(Ident(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
             i += 1
             continue

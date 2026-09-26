@@ -87,7 +87,12 @@ single-char ::= identifier ;                (* aliases are one-character letters
 name        ::= identifier | "\"-name ;
 
 expr       ::= ternary ;
-ternary    ::= range ("?" ternary ":" ternary)? ;   (* right-associative *)
+ternary    ::= iff ("?" ternary ":" ternary)? ;   (* right-associative *)
+iff        ::= implies (("↔" | "\\iff") implies)? ;      (* non-associative *)
+implies    ::= or (("→" | "\\implies") implies)? ;       (* right-associative *)
+or         ::= and (("∨" | "\\or") and)* ;
+and        ::= not (("∧" | "\\and") not)* ;
+not        ::= ("¬" | "\\not") not | range ;
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
                                            (* the "," form is not read inside lists *)
 comparison ::= angle (cmp-op angle)? | angle ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
@@ -162,6 +167,7 @@ argument is a binding, not a general expression (see `## Special forms`):
 
 ```
 fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident "=" expr ")" expr ;
+quantifier ::= ("\forall" | "∀" | "\exists" | "∃") "(" ident "=" expr ")" expr ;
 limit      ::= "\lim" "(" ident "=" expr ")" expr ;
 ```
 
@@ -173,15 +179,20 @@ Loosest to tightest:
 |---|---|---|
 | 1 | `? :` (ternary) | right |
 | 2 | `=` (binding/check) | statement level only, non-associative |
-| 3 | `..` (range) | non-associative |
-| 4 | `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
-| 5 | `∠` (polar form) | non-associative |
-| 6 | `+` `-` (binary), `∪` `∖` | left |
-| 7 | `*` `/` `@` `%`, `∩`, `∘` | left |
-| 8 | juxtaposition (implicit `*`) | left |
-| 9 | unary `-`, `√` `∛` `∜` | prefix |
-| 10 | `^` | right |
-| 11 | postfix `(…)` application, `[…]` index, `'` transpose, `!` `‼` factorial, superscript `²` | left |
+| 3 | `↔` | non-associative |
+| 4 | `→` | right |
+| 5 | `∨` | left |
+| 6 | `∧` | left |
+| 7 | `¬` | prefix |
+| 8 | `..` (range) | non-associative |
+| 9 | `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
+| 10 | `∠` (polar form) | non-associative |
+| 11 | `+` `-` (binary), `∪` `∖` | left |
+| 12 | `*` `/` `@` `%`, `∩`, `∘` | left |
+| 13 | juxtaposition (implicit `*`) | left |
+| 14 | unary `-`, `√` `∛` `∜` | prefix |
+| 15 | `^` | right |
+| 16 | postfix `(…)` application, `[…]` index, `'` transpose, `!` `‼` factorial, superscript `²` | left |
 
 Juxtaposition binds tighter than `*`/`/` but looser than `^`, matching how the expression
 reads on paper:
@@ -556,6 +567,8 @@ g(1, 2)                        ->  = 3
 | `+ * / ^` | 2 | arithmetic |
 | `%` `\mod` | 2 | floored modulo: the result takes the divisor's sign |
 | `∠` `\angle` | 2 | `r∠θ`: the complex number of modulus `r` and angle `θ` |
+| `∧ ∨ → ↔` `\and \or \implies \iff` | 2 | connectives on booleans; as values they evaluate both operands |
+| `¬` `\not` | 1 | boolean negation |
 | `-` | 1 or 2 | negate, or subtract |
 | `@` `\contract` | 2 | contraction — the same as infix `@` |
 | `∘` `\circ` | 2 | composition |
@@ -680,7 +693,7 @@ not `=` — name it with `f(x) = body`).
 
 ## Special forms: folds and limits
 
-`\sum`, `\prod`, and `\lim` are
+`\sum`, `\prod`, `\lim`, `\forall` and `\exists` are
 **special forms**, not functions: their first parenthesized argument is a binding — an
 identifier, `=`, then the bound expression — which general expressions cannot contain.
 The parser recognizes the `(ident =` shape after one of these heads; any other
@@ -695,7 +708,14 @@ and a user `\alias` onto those names gets the same treatment for free.
 \prod(j=1..5) j              ->  = 120          -- fold *
 Σ(k=1,3..7) k                ->  = 16           -- stepped ranges bind too
 \lim(x=0) x/x                ->  = 1.0          -- numeric limit; anchor never evaluated
+∀(x=1..5) x > 0              ->  = true         -- quantifiers bind like \sum
+∃(n=1..) n^2 > 1000          ->  = true         -- searches an infinite range
 ```
+
+`∀` and `∃` (`\forall`, `\exists`) take a boolean body and return a boolean: `∀` stops at the
+first `false`, `∃` at the first `true`, and an empty domain gives `true` and `false`. An
+infinite domain with no deciding element is a typed "undecided" error after 2,000,000
+elements. Unlike a sum, the bound stays exact.
 
 **Body extent**: the body extends greedily over the rest of the current expression, up to
 the enclosing delimiter (`,` `)` `;` or end of input). Parenthesize to end it earlier:
@@ -826,6 +846,8 @@ everywhere a name is consumed, seeded with:
 | `Σ` | `\sum` |
 | `Π` | `\prod` |
 | `π` | `\pi` |
+| `∀` | `\forall` |
+| `∃` | `\exists` |
 
 `\alias` extends the map for the rest of the session:
 
@@ -984,7 +1006,7 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Logical operators ([#80](https://todo.sr.ht/~takeiteasy/adhoc/80)), symbolic algebra, graphing.
+Symbolic algebra, graphing.
 `==` and `!=` do not exist: `≠` / `\neq` is the inequality operator, and the binding
 rule's check is the only equality, with tier-aware semantics: exact for
 the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)

@@ -213,7 +213,7 @@ EXACT_CONVERGENCE_TOLERANCE = Fraction(1, 10**12)
 MAX_TERMS = 2_000_000
 MAX_PROBES = 200
 
-FOLD_LABELS = {"add": "\\sum", "mul": "\\prod"}
+FOLD_LABELS = {"add": "\\sum", "mul": "\\prod", "and": "\\forall", "or": "\\exists"}
 
 _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 
@@ -223,7 +223,8 @@ _NUMERIC_TYPES = (int, float, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "arr", "cup", "cap", "setminus",
-                           "in", "subseteq", "circ", "mod", "angle", "neq", "approx", "notin", "subset",
+                           "in", "subseteq", "circ", "mod", "angle", "and", "or", "not", "implies",
+                           "iff", "neq", "approx", "notin", "subset",
                            "supseteq", "supset"})
 
 
@@ -1634,10 +1635,45 @@ def nnotequal(a: AdValue, b: AdValue) -> bool:
     return not neq(a, b)
 
 
+def _booleans(symbol: str, *vals: AdValue) -> None:
+    for v in vals:
+        if not isinstance(v, bool):
+            raise NumError(f"`{symbol}` needs boolean operands, got {nshow(v)}")
+
+
+def nand(a: AdValue, b: AdValue) -> bool:
+    _booleans("∧", a, b)
+    return a and b
+
+
+def nor(a: AdValue, b: AdValue) -> bool:
+    _booleans("∨", a, b)
+    return a or b
+
+
+def nimplies(a: AdValue, b: AdValue) -> bool:
+    _booleans("→", a, b)
+    return not a or b
+
+
+def niff(a: AdValue, b: AdValue) -> bool:
+    _booleans("↔", a, b)
+    return a == b
+
+
+def nnot(a: AdValue) -> bool:
+    _booleans("¬", a)
+    return not a
+
+
 def ncompose(f: Any, g: Any) -> Any:
     if not callable(f) or not callable(g):
         raise NumError(f"`∘` needs two functions, got {nshow(f)} and {nshow(g)}")
     return Composed(f, g)
+
+
+# Connective -> (left value that decides the result, that result).
+_SHORT_CIRCUIT = {"and": (False, False), "or": (True, True), "implies": (False, True)}
 
 
 class OperatorFn:
@@ -1671,6 +1707,8 @@ _OPERATOR_IMPLS = {
     "div": (ndiv, (2,)), "pow": (npow, (2,)), "dot": (ndot, (2,)),
     "compose": (ncompose, (2,)), "mod": (nmod, (2,)), "angle": (npolar, (2,)), "union": (nunion, (2,)),
     "intersect": (nintersect, (2,)), "setminus": (nsetminus, (2,)),
+    "and": (nand, (2,)), "or": (nor, (2,)), "implies": (nimplies, (2,)), "iff": (niff, (2,)),
+    "not": (nnot, (1,)),
     "lt": (_cmp("lt"), (2,)), "le": (_cmp("le"), (2,)),
     "gt": (_cmp("gt"), (2,)), "ge": (_cmp("ge"), (2,)),
     "member": (nmember, (2,)), "subseteq": (nsubseteq, (2,)),
@@ -2561,6 +2599,8 @@ class Engine:
         items = _elements(value)
         if items is None:
             self._fail(f"{label} folds over a range or collection, got {nshow(value)}", sid)
+        if op_name in ("and", "or"):
+            return self._quantify(op_name == "or", name, items, _is_infinite(value), label, sid)
         fn = nmul if op_name == "mul" else nadd
         unit = 1 if op_name == "mul" else 0
         body = self.definitions[sid]
@@ -2590,6 +2630,29 @@ class Engine:
                 if limit is not None:
                     return limit
         return acc
+
+    def _quantify(self, witness: bool, name: str, items: Any, infinite: bool, label: str,
+                  sid: int) -> bool:
+        """`∀`/`∃`: stop at the first body value equal to `witness` (`true` for `∃`, `false`
+        for `∀`); an infinite domain with none is undecided after MAX_TERMS elements."""
+        body = self.definitions[sid]
+        iterator = iter(items)
+        seen = 0
+        while True:
+            try:
+                item = next(iterator)
+            except StopIteration:
+                return not witness
+            except NumError as e:
+                self._fail(e.args[0], sid)
+            term = self._eval_bound(body, {name: item}, label, sid)
+            if not isinstance(term, bool):
+                self._fail(f"{label} needs a boolean body, got {nshow(term)}", sid)
+            if term is witness:
+                return witness
+            seen += 1
+            if infinite and seen >= MAX_TERMS:
+                self._fail(f"{label} undecided within {MAX_TERMS} terms", sid)
 
     def limit(self, name: str, point_value: AdValue, sid: int,
               spelling: str | None = None, var_spelling: str | None = None) -> float:
@@ -2956,6 +3019,28 @@ class Engine:
 
     def angle(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         return self._binop(npolar, a, b, sid)
+
+    def iff(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
+        return self._binop(niff, a, b, sid)
+
+    def lnot(self, a: AdValue, sid: int) -> AdValue:
+        try:
+            return nnot(a)
+        except NumError as e:
+            self._fail(e.args[0], sid)
+
+    def logic(self, kind: str, left: AdValue, right: Callable, lsid: int, rsid: int) -> bool:
+        """`∧ ∨ →`: the right operand's thunk runs only when the left does not decide."""
+        symbol = OP_SYMBOLS[kind]
+        if not isinstance(left, bool):
+            self._fail(f"`{symbol}` needs boolean operands, got {nshow(left)}", lsid)
+        decisive, result = _SHORT_CIRCUIT[kind]
+        if left is decisive:
+            return result
+        value = right()
+        if not isinstance(value, bool):
+            self._fail(f"`{symbol}` needs boolean operands, got {nshow(value)}", rsid)
+        return value
 
     def pow(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         if callable(a) and isinstance(b, (int, Fraction, float)) and not isinstance(b, bool) \

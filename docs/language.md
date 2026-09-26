@@ -91,6 +91,9 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   bind locally and return their callable when they are the last body statement. Parameters
   may use single-character or `\`-sigiled names.
 - Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
+- Logic: `∧ ∨ ¬ → ↔` (`\and \or \not \implies \iff`) combine booleans and short-circuit;
+  `∀(x=s) body` and `∃(x=s) body` quantify over a range or collection
+  (docs/notation.md, `## Logic`).
 - Booleans are real values: comparisons produce them, arithmetic rejects them, the
   ternary consumes them, and `\true`/`\false` are bound constants. There
   is no numeric truthiness — a number is never a condition (`0 ? 1 : 2` is a typed
@@ -213,7 +216,6 @@ phases add bindings without touching the lexer.
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
-- Logical operators (`∧ ∨ ¬ → ↔ ∀ ∃`) are not built — [#80](https://todo.sr.ht/~takeiteasy/adhoc/80).
 - `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
 - `/` is elementwise on tensors, and there is no determinant, inverse, or linear solve —
   [#76](https://todo.sr.ht/~takeiteasy/adhoc/76).

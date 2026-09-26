@@ -20,6 +20,11 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 | `∉` | `\notin` | not a member | comparison |
 | `⊂` `⊇` `⊃` | `\subset` `\supseteq` `\supset` | proper subset, superset, proper superset | comparison |
 | `∅` | `\emptyset` | the empty set (prelude constant) | name |
+| `∧` `∨` `→` `↔` | `\and` `\or` `\implies` `\iff` | connectives[^logic] | see `## Logic` |
+| `¬` | `\not` | negation | prefix |
+| `∀` `∃` | `\forall` `\exists` | quantifiers over a range or collection | special form |
+| `r∠θ` | `\angle` `\polar(r, θ)` | polar form: modulus and angle | above `+`, below comparison |
+| `%` | `\mod` | floored modulo | with `*` |
 
 ```
 2x²            ->  2 * (x^2)
@@ -53,6 +58,26 @@ and unary minus, and chain with `(…)`, `[…]` and `'`.
 | `\sin²(x)` | `(\sin(x))²` |
 | `2ⁿᵏ` | `2^(n·k)` |
 
+## Logic
+
+Connectives take booleans only; a number is never a condition (`1 ∧ \true` is a typed error).
+Loosest to tightest: `↔`, `→`, `∨`, `∧`, `¬`, then ranges and comparisons, so
+`x > 0 ∧ x < 5 → y ≠ 0` needs no parentheses.
+
+```
+1 < 2 ∧ 2 < 3          ->  = true
+x = 0; x ≠ 0 ∧ 1/x > 2  ->  = false      -- the right side never runs
+\true → \false          ->  = false
+¬(1 < 2)               ->  = false
+\false → \false → \false  ->  = true       -- → nests to the right
+∀(x=1..5) x > 0        ->  = true
+∃(x={1, 2}) x > 4      ->  = false
+∀(x=1..3) ∃(y=1..3) x + y > 3  ->  = true
+```
+
+`(∧)` and the other connectives are function values that evaluate both operands
+(`\fold(∧, ⟨\true, \false⟩)` is `false`). `↔` does not chain: parenthesize one side.
+
 ## Membership
 
 `∈` and `∉` take a set, an array, or a range on the right. Array membership uses the
@@ -69,15 +94,13 @@ keep `..` looser, so `3 < 1..5` is `(3 < 1)..5`:
 
 ## Operator values
 
-`(!)`, `(‼)`, `(∛)`, `(∜)`, `(≠)`, `(≈)`, `(∉)`, `(⊂)`, `(⊇)`, `(⊃)` are function values
+`(!)`, `(‼)`, `(∛)`, `(∜)`, `(≠)`, `(≈)`, `(∉)`, `(⊂)`, `(⊇)`, `(⊃)`, `(%)`, `(∠)`, `(∧)`, `(∨)`, `(→)`, `(↔)`, `(¬)` are function values
 like the other operators (`docs/grammar.md`, `## Operator values`). Postfix operators and
 radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 
 ## Limitations
 
 - `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
-- Logical operators `∧ ∨ ¬ → ↔ ∀ ∃` are not built —
-  [#80](https://todo.sr.ht/~takeiteasy/adhoc/80).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
     spelling: `x⁻¹⁰` is `x^-10`, `2ⁿᵏ` is `2^(n k)`. Glyphs exist for every letter but `q`
@@ -95,6 +118,10 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
     callable is a typed error unless it is exactly `⁻¹` on `\sin \cos \tan \exp \sinh \cosh \tanh` or
     their inverses, which give the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other
     function has no inverse, and `\sin⁻²(x)` is an error.
+[^logic]: `∧` `∨` and `→` skip their right operand once the left decides (`false ∧ …`,
+    `true ∨ …`, `false → …`); a non-boolean operand is a typed error at that operand. `∀` and
+    `∃` are special forms like `\sum` (docs/grammar.md, `## Special forms`) and use the same
+    `(x=domain) body` binder.
 [^factorial]: An exact non-negative integer up to 100,000 gives the exact product. Any other
     real is `\gamma(x + 1)` (`(1/2)!` is `√π/2`); negative integers and complex values are
     typed errors. `‼` takes exact non-negative integers only. `3!!` is the double factorial `3‼ = 3`, not `(3!)!`. `!=` is a lex error that

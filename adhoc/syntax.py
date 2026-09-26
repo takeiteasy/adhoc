@@ -45,6 +45,10 @@ class BinOperator(Enum):
     COMPOSE = auto()
     MOD = auto()
     ANGLE = auto()
+    AND = auto()
+    OR = auto()
+    IMPLIES = auto()
+    IFF = auto()
 
 
 class CompareOperator(Enum):
@@ -66,6 +70,7 @@ class UnaryOperator(Enum):
     NEG = auto()
     FACT = auto()
     DFACT = auto()
+    NOT = auto()
 
 
 @dataclass(frozen=True)
@@ -223,6 +228,7 @@ OP_SYMBOLS = {
     "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "@",
     "fact": "!", "dfact": "‼", "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
     "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆", "ne": "≠", "approx": "≈", "mod": "%", "angle": "∠",
+    "and": "∧", "or": "∨", "implies": "→", "iff": "↔", "not": "¬",
     "notmember": "∉", "subset": "⊂", "supseteq": "⊇", "supset": "⊃",
 }
 

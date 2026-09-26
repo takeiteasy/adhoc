@@ -394,7 +394,7 @@ def test_as_float_widens_and_rejects():
 def test_fold_labels_map_ops_to_spellings():
     from adhoc.runtime import FOLD_LABELS
 
-    assert FOLD_LABELS == {"add": "\\sum", "mul": "\\prod"}
+    assert FOLD_LABELS == {"add": "\\sum", "mul": "\\prod", "and": "\\forall", "or": "\\exists"}
 
 
 # --- the symbolic closed-form tier (adhoc/symbolic.py) ---

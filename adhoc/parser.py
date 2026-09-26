@@ -188,7 +188,8 @@ _INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
                     "subseteq": "subseteq", "neq": "ne", "approx": "approx", "notin": "notmember",
                     "subset": "subset", "supseteq": "supseteq", "supset": "supset", "mod": "mod",
-                    "angle": "angle"}
+                    "angle": "angle", "and": "and", "or": "or", "implies": "implies",
+                    "iff": "iff", "not": "not"}
 
 # Operator key -> the parser level that reads its right-hand side, which is the extent of
 # a section's operand: `(+ 1*2)` fixes `1*2`, `(* 1 + 2)` is a parse error.
@@ -202,11 +203,14 @@ _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
 _MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE, "mod": BinOperator.MOD}
 _ANGLE_INFIX = {"angle": BinOperator.ANGLE}
+_LOGIC_INFIX = {"and": BinOperator.AND, "or": BinOperator.OR,
+               "implies": BinOperator.IMPLIES, "iff": BinOperator.IFF}
 _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ,
                   "neq": CompareOperator.NE, "approx": CompareOperator.APPROX,
                   "notin": CompareOperator.NOTIN, "subset": CompareOperator.SUBSET,
                   "supseteq": CompareOperator.SUPSETEQ, "supset": CompareOperator.SUPSET}
-_INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_ANGLE_INFIX) | frozenset(_COMPARE_INFIX)
+_INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_ANGLE_INFIX) | frozenset(_LOGIC_INFIX) | {"not"} \
+    | frozenset(_COMPARE_INFIX)
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
 # a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
@@ -216,7 +220,8 @@ _LAMBDA_HEADS = ("λ", "fn")
 # Seed of the session alias map (short spelling → canonical name): the unicode
 # fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
 # hardcoded parser/prelude special cases (docs/grammar.md, `## Name aliases`).
-ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi", "∅": "emptyset"}
+ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi", "∅": "emptyset",
+                              "∀": "forall", "∃": "exists"}
 
 
 def _spelling(tok: Ident | Backslash) -> str:
@@ -721,7 +726,7 @@ class _Parser:
     # IncompleteInput (REPL continuation) via expect(); anywhere else it is a plain
     # parse error. `?`/`:` are not atom starters, so juxtaposition never eats them.
     def ternary(self) -> Node:
-        cond = self.range_expr()
+        cond = self.iff()
         if not isinstance(self.peek(), Question):
             return cond
         self.advance()  # `?`
@@ -730,6 +735,55 @@ class _Parser:
         otherwise = self.ternary()
         return IfExpr(condition=cond, then_branch=then_branch, otherwise=otherwise,
                       span=cond.span.to(otherwise.span))
+
+    # iff ::= implies ("↔" implies)? ; non-associative.
+    def iff(self) -> Node:
+        lhs = self.implies()
+        if self._section(lhs, frozenset({"iff"})) or self._infix_name() != "iff":
+            return lhs
+        self.advance()
+        rhs = self.implies()
+        if self._infix_name() == "iff":
+            raise ParseError("`↔` does not chain; parenthesize one side", self.peek().span)
+        return BinOp(op=BinOperator.IFF, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+
+    # implies ::= or ("→" implies)? ; right-associative.
+    def implies(self) -> Node:
+        lhs = self.disjunction()
+        if self._section(lhs, frozenset({"implies"})) or self._infix_name() != "implies":
+            return lhs
+        self.advance()
+        rhs = self.implies()
+        return BinOp(op=BinOperator.IMPLIES, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+
+    # or ::= and ("∨" and)* ;
+    def disjunction(self) -> Node:
+        return self._logic_chain("or", self.conjunction)
+
+    # and ::= not ("∧" not)* ;
+    def conjunction(self) -> Node:
+        return self._logic_chain("and", self.negation)
+
+    def _logic_chain(self, name: str, operand) -> Node:
+        lhs = operand()
+        while not self._section(lhs, frozenset({name})) and self._infix_name() == name:
+            self.advance()
+            rhs = operand()
+            lhs = BinOp(op=_LOGIC_INFIX[name], lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+        return lhs
+
+    # not ::= "¬" not | range ;
+    def negation(self) -> Node:
+        if not self._is_not(self.peek()):
+            return self.range_expr()
+        tok = self.advance()
+        operand = self.negation()
+        return UnOp(op=UnaryOperator.NOT, operand=operand, span=tok.span.to(operand.span))
+
+    @staticmethod
+    def _is_not(tok: Token) -> bool:
+        return (isinstance(tok, InfixOp) and tok.name == "not") or (
+            isinstance(tok, Backslash) and tok.name == "not")
 
     # The stepped form's comma is only consumed outside a list, and only when it
     # introduces a following `..`. Once a range delimiter is
@@ -814,7 +868,10 @@ class _Parser:
     def _right_section(self, open_paren: Token) -> Node:
         self.advance()
         operator = self._operator_value()
-        operand_level = (self.multiplicative if operator.name in _ADDITIVE_KEYS
+        operand_level = (self.negation if operator.name == "and"
+                         else self.conjunction if operator.name == "or"
+                         else self.implies if operator.name in ("implies", "iff")
+                         else self.multiplicative if operator.name in _ADDITIVE_KEYS
                          else self.juxtaposed if operator.name in _MULTIPLICATIVE_KEYS
                          else self.unary if operator.name == "pow" else self.additive)
         self.advance()
@@ -953,7 +1010,8 @@ class _Parser:
     # equality expression. The unicode spellings `Σ`/`Π` are not listed: the alias
     # map normalizes them to `\sum`/`\prod` before this table is consulted (and a
     # user `\alias` onto those names gets the same treatment for free).
-    _FOLD_HEADS = {("sum", None): BinOperator.ADD, ("prod", None): BinOperator.MUL}
+    _FOLD_HEADS = {("sum", None): BinOperator.ADD, ("prod", None): BinOperator.MUL,
+                   ("forall", None): BinOperator.AND, ("exists", None): BinOperator.OR}
     _LIMIT_LABEL = "\\lim"
 
     # A `∘` node only reaches a trailer parenthesized (`(f ∘ g)(x)`); unparenthesized,
@@ -1348,7 +1406,9 @@ class _Parser:
                 return self._array_literal(RBracket, "`]`")
             case Backslash():
                 if tok.name in _INFIX_NAMES:
-                    raise ParseError(f"`\\{tok.name}` is an infix operator", tok.span)
+                    kind = "prefix" if tok.name == "not" else "infix"
+                    raise ParseError(f"`\\{tok.name}` is a{'n' if kind == 'infix' else ''} {kind} operator",
+                                     tok.span)
                 if tok.name == "expr" and isinstance(self.peek2(), LParen):
                     self.advance()
                     return self._quote(tok)
@@ -1387,7 +1447,8 @@ class _Parser:
                 close = self.advance()
                 return replace(operator, span=tok.span.to(close.span))
             case LParen() if (self._operator_value(1) is not None
-                              and not isinstance(self.look(1), (Minus, Radical, NthRoot, Bang, DoubleBang))):
+                              and not isinstance(self.look(1), (Minus, Radical, NthRoot, Bang, DoubleBang))
+                              and not self._is_not(self.look(1))):
                 return self._right_section(tok)
             case LParen():
                 group_top_level = (
