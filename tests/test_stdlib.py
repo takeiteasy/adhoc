@@ -106,3 +106,47 @@ def test_number_theory(src, out):
 ])
 def test_number_theory_errors(src, message):
     fails(src, message)
+
+
+# --- elementary and special functions ---
+
+
+@pytest.mark.parametrize("src, out", [
+    (r"\exp(0)", "= 1"), (r"\ln(\exp(3))", "= 3"), (r"\exp⁻¹(\e)", "= 1"),
+    (r"\sinh(0)", "= 0"), (r"\cosh(0)", "= 1"), (r"\asinh(0)", "= 0"),
+    (r"\acosh(1)", "= 0"), (r"\atanh(0)", "= 0"), (r"\sinh⁻¹(0)", "= 0"),
+    (r"\gamma(5)", "= 24"), (r"\erf(0)", "= 0"),
+    (r"\log(2, 8)", "= 3"), (r"\log(1/2, 8)", "= -3"), (r"\log(8, 1/2)", "= -1/3"),
+    (r"\log(4, 8)", "= 3/2"), (r"\log(6, 36)", "= 2"),
+    (r"\log(1)", "= 0"), (r"\atan2(0, -1) - \pi", "= 0"), (r"\atan2(1, 1) * 4 - \pi", "= 0"),
+])
+def test_exact_functions(src, out):
+    assert ev(src) == out
+
+
+def test_functions_without_a_closed_form_are_held_precisely():
+    assert ev(r"\tanh(1)").startswith("= 0.7615941559557")
+    assert ev(r"\erf(1)").startswith("= 0.8427007929497")
+    assert ev(r"\log(2, 6)").startswith("= 2.5849625007211")
+
+
+@pytest.mark.parametrize("src, message", [
+    (r"\atanh(1)", "not defined"), (r"\gamma(0)", "not defined"), (r"\gamma(-1)", "not defined"),
+    (r"\atan2(0, 0)", "origin"), (r"\log(1, 5)", "base other than 1"),
+    (r"\log(0)", "positive"), (r"\atan2(1)", "takes"), (r"\atan2(1+i, 1)", "real arguments"),
+    (r"\log(1, 2, 3)", "takes"),
+])
+def test_function_errors(src, message):
+    fails(src, message)
+
+
+def test_atan2_lexes_as_one_name_only_before_a_call_or_space():
+    assert ev(r"\atan(1) 2 - \pi/2") == "= 0"
+    assert ev(r"\atan2 (1, 1) * 4 - \pi") == "= 0"
+
+
+def test_factorial_of_a_non_integer_is_gamma():
+    assert ev(r"(1/2)! * 2 - \sqrt(\pi)") == "= 0"
+    assert ev(r"(-1/2)! - \sqrt(\pi)") == "= 0"
+    assert ev(r"(1/2)!") == ev(r"\gamma(3/2)")
+    fails(r"(-2)!", "non-negative integer")

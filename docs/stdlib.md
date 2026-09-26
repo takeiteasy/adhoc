@@ -18,6 +18,24 @@ the float tier. Every name is protected: it cannot be rebound or shadowed.
 `%` sits at the multiplicative level; `\mod` is the same operator, and `(%)` and `(\mod)`
 are its function value. `%` by zero is `division by zero`; a float modulo by `0.0` is `NaN`.
 
+## Functions
+
+| Function | Result | Example |
+|---|---|---|
+| `\exp(x)` | eˣ | `\exp(0)` → `1` |
+| `\log(b, x)` | logarithm of `x` in base `b`; `\log(x)` is `\ln(x)` | `\log(2, 8)` → `3` |
+| `\sinh \cosh \tanh` | hyperbolics | `\cosh(0)` → `1` |
+| `\asinh \acosh \atanh` | inverse hyperbolics | `\atanh(0)` → `0` |
+| `\atan2(y, x)` | angle of the point `(x, y)` | `\atan2(1, 1)` → `π/4` |
+| `\gamma(x)` | Γ; `x!` is `\gamma(x + 1)` | `\gamma(5)` → `24` |
+| `\erf(x)` | error function | `\erf(0)` → `0` |
+
+Exact arguments stay exact where a closed form exists (`\log(1/2, 8)` is `-3`,
+`\gamma(1/2)` is `√π`); otherwise the value is held to arbitrary precision, like `\sin(1)`.
+`\exp`, `\sin` and the other paired functions have `⁻¹` inverses (`\exp⁻¹` is `\ln`,
+`\sinh⁻¹` is `\asinh`). Poles and other undefined points are typed errors.
+`\atan2` is the one `\`-name that ends in a digit.
+
 ## Rounding
 
 | Function | Result | Example |

@@ -125,9 +125,8 @@ def test_factorial_precedence():
 
 def test_factorial_errors():
     fails(r"(-1)!", "non-negative integer")
-    fails(r"2.5!", "non-negative integer")
-    fails(r"1.!", "non-negative integer")
-    fails(r"(1/2)!", "non-negative integer")
+    fails(r"(1+i)!", "non-negative integer")
+    fails(r"(-3)!", "non-negative integer")
     fails(r'"a"!', "not numbers")
     fails(r"\true!", "booleans")
     fails(r"200000!", "limited to")
@@ -154,8 +153,8 @@ def test_factorial_roundtrip():
 
 def test_factorial_error_span_is_the_postfix_node():
     with pytest.raises(EvalError) as e:
-        run_source("x = 2.5\nx!", {})
-    assert (e.value.span.start, e.value.span.end) == (8, 10)
+        run_source("x = -3\nx!", {})
+    assert (e.value.span.start, e.value.span.end) == (7, 9)
 
 
 # --- roots ---

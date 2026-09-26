@@ -420,6 +420,9 @@ _INFIX_GLYPHS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "�
                   "⊇": "supseteq", "⊃": "supset", "%": "mod"}
 _GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
 
+# `\\`-names that end in a digit; every other digit after a name is a number.
+_DIGIT_NAMES = frozenset({"atan"})
+
 _ROOT_INDEX = {"∛": 3, "∜": 4}
 
 SUPERSCRIPTS = dict(zip(
@@ -572,8 +575,12 @@ def tokenize(src: str) -> list[Token]:
             # unexpected character.
             while j < n and (entries[j][1].isalpha() or entries[j][1] == "_"):
                 j += 1
-            end = entries[j][0] if j < n else eof_off
             name = src[i + 1 : j]
+            if name in _DIGIT_NAMES and j < n and entries[j][1] == "2" \
+                    and not (j + 1 < n and entries[j + 1][1].isalnum()):
+                name += "2"
+                j += 1
+            end = entries[j][0] if j < n else eof_off
             span = Span(pos, end)
             if not name:
                 raise LexError("bare `\\` with no name following", span)

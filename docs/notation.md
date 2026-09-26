@@ -76,8 +76,6 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 ## Limitations
 
 - `f⁻¹` on a user function is a typed error — [#87](https://todo.sr.ht/~takeiteasy/adhoc/87).
-- `!` takes non-negative integers only; non-integers wait for `\gamma` —
-  [#77](https://todo.sr.ht/~takeiteasy/adhoc/77).
 - Logical operators `∧ ∨ ¬ → ↔ ∀ ∃` are not built —
   [#80](https://todo.sr.ht/~takeiteasy/adhoc/80).
 
@@ -94,11 +92,12 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
     are names in their ASCII form (`x_ij` is still `xᵢⱼ`); `\x_b` names the same variable.
 [^funcpow]: Only after a name. A callable head gives `f(x)^n`; any other head gives
     `(f^n)(x)`, so `x²(2)` on a number is `18` when `x = 3`. A negative exponent on a
-    callable is a typed error unless it is exactly `⁻¹` on `\sin \cos \tan \asin \acos \atan`,
-    which give the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other
+    callable is a typed error unless it is exactly `⁻¹` on `\sin \cos \tan \exp \sinh \cosh \tanh` or
+    their inverses, which give the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other
     function has no inverse, and `\sin⁻²(x)` is an error.
-[^factorial]: Exact non-negative integers only, up to 100,000; anything else is a typed
-    error. `3!!` is the double factorial `3‼ = 3`, not `(3!)!`. `!=` is a lex error that
+[^factorial]: An exact non-negative integer up to 100,000 gives the exact product. Any other
+    real is `\gamma(x + 1)` (`(1/2)!` is `√π/2`); negative integers and complex values are
+    typed errors. `‼` takes exact non-negative integers only. `3!!` is the double factorial `3‼ = 3`, not `(3!)!`. `!=` is a lex error that
     points at `≠`.
 [^root]: `∛x` is the call `\root(x, 3)`. `\root(x, n)` takes an exact positive integer `n`
     and evaluates `x^(1/n)` on the numeric seam, so `∛-8` is `-2`.

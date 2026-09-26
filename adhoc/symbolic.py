@@ -261,15 +261,30 @@ _DOMAIN_MESSAGES = {
     "asin": "asin is not defined here",
     "acos": "acos is not defined here",
     "atan": "atan is not defined here",
+    "exp": "exp is not defined here",
+    "sinh": "sinh is not defined here",
+    "cosh": "cosh is not defined here",
+    "tanh": "tanh is not defined here",
+    "asinh": "asinh is not defined here",
+    "acosh": "acosh is not defined here",
+    "atanh": "atanh is not defined here (it is infinite at ±1)",
+    "gamma": "gamma is not defined at zero or the negative integers",
+    "erf": "erf is not defined here",
+    "atan2": "atan2 is not defined at the origin",
+    "log": "log needs a positive base other than 1 and a positive argument",
 }
 _APPLY_FUNCS = {
     "sqrt": sympy.sqrt, "ln": sympy.log,
     "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan,
     "asin": sympy.asin, "acos": sympy.acos, "atan": sympy.atan,
+    "exp": sympy.exp, "sinh": sympy.sinh, "cosh": sympy.cosh, "tanh": sympy.tanh,
+    "asinh": sympy.asinh, "acosh": sympy.acosh, "atanh": sympy.atanh,
+    "gamma": sympy.gamma, "erf": sympy.erf,
+    "atan2": sympy.atan2, "log": lambda b, x: sympy.log(x, b),
 }
 
 
-def apply(name: str, arg: int | Fraction | Gaussian | Symbolic) -> Fraction | Gaussian | Symbolic:
+def apply(name: str, *args: int | Fraction | Gaussian | Symbolic) -> Fraction | Gaussian | Symbolic:
     """One prelude function over an exact, Gaussian or symbolic argument
     (`\\sqrt(2)`, `\\sin(π/3)`, `\\ln(2)`, `\\sqrt(-2)`): sympy evaluates exact
     closed forms (`sin(π/3)` is `√3/2`, `tan(π/4)` collapses to `1`,
@@ -278,7 +293,7 @@ def apply(name: str, arg: int | Fraction | Gaussian | Symbolic) -> Fraction | Ga
     wrapper falls through to the upper tiers, then the float tier. Domain
     failures carry the function's own message."""
     try:
-        return classify(_APPLY_FUNCS[name](_to_expr(arg)))
+        return classify(_APPLY_FUNCS[name](*map(_to_expr, args)))
     except DomainError:
         raise DomainError(_DOMAIN_MESSAGES[name]) from None
 

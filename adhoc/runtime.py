@@ -479,9 +479,6 @@ PRELUDE: dict[str, Any] = {
 
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
-_INVERSE_PAIRS = (("sin", "asin"), ("cos", "acos"), ("tan", "atan"))
-_INVERSES = {id(PRELUDE[f]): PRELUDE[g] for f, g in _INVERSE_PAIRS} | \
-            {id(PRELUDE[g]): PRELUDE[f] for f, g in _INVERSE_PAIRS}
 
 
 @dataclass(frozen=True)
@@ -846,7 +843,11 @@ def _factorial_arg(a: AdValue, symbol: str) -> int:
 
 
 def nfact(a: AdValue) -> AdValue:
-    return math.factorial(_factorial_arg(a, "!"))
+    _reject_non_numeric(a)
+    n = _integer_exponent(a)
+    if n is not None or _is_complex(a):
+        return math.factorial(_factorial_arg(a, "!"))
+    return PRELUDE["gamma"](nadd(a, 1))
 
 
 def ndfact(a: AdValue) -> AdValue:
@@ -2065,6 +2066,84 @@ PRELUDE.update({
     "fib": PreludeFn("fib", _fib_call),
 })
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+
+def _binary_fn(name: str, float_fn: Callable, usage: str) -> Callable:
+    """A two-argument exact function (`\\atan2`, `\\log`): exact and symbolic arguments
+    go through the symbolic tier, anything it cannot hold through the RRA tier, and
+    the float tier only when the value is not an established real."""
+    def call(*args: AdValue) -> AdValue:
+        _takes(name, args, 2, 2, usage)
+        _reject_non_numeric(*args)
+        if any(_is_complex(v) for v in args):
+            raise NumError(f"\\{name} needs real arguments")
+        if any(isinstance(v, float) for v in args):
+            return float_fn(*(_to_float(v) for v in args))
+        try:
+            if not any(isinstance(v, (Algebraic, RRA)) for v in args):
+                try:
+                    return symbolic.apply(name, *args)
+                except Unrepresentable:
+                    pass
+            return rra.apply(name, *args)
+        except (DomainError, rra.DomainError) as e:
+            raise NumError(e.args[0])
+        except rra.Unrepresentable:
+            return float_fn(*(_to_float(v) for v in args))
+    return call
+
+
+def _rational_log(b: AdValue, x: AdValue) -> Fraction | None:
+    """`log_b x` when both are positive rationals whose prime factorizations are
+    proportional (`\\log(1/2, 8)` is `-3`), else None."""
+    if not all(isinstance(v, (int, Fraction)) and v > 0 for v in (b, x)) or b == 1:
+        return None
+    if max(Fraction(v).numerator * Fraction(v).denominator for v in (b, x)) > MAX_FACTOR:
+        return None
+
+    def exponents(v: int | Fraction) -> dict[int, int]:
+        v = Fraction(v)
+        top, bottom = sympy.factorint(v.numerator), sympy.factorint(v.denominator)
+        return {p: top.get(p, 0) - bottom.get(p, 0) for p in top.keys() | bottom.keys()}
+
+    eb, ex = exponents(b), exponents(x)
+    pivot = next(p for p, e in eb.items() if e)
+    ratio = Fraction(ex.get(pivot, 0), eb[pivot])
+    if all(ex.get(p, 0) == ratio * eb.get(p, 0) for p in eb.keys() | ex.keys()):
+        return ratio
+    return None
+
+
+_ln = _prelude_fn("ln", math.log)
+_log_pair = _binary_fn("log", lambda b, x: math.log(x, b), "a base and a value: \\log(b, x)")
+
+
+def _log_call(*args: AdValue) -> AdValue:
+    if len(args) == 1:
+        return _ln(*args)
+    ratio = _rational_log(*args) if len(args) == 2 else None
+    return _normalize(ratio) if ratio is not None else _log_pair(*args)
+
+
+PRELUDE.update({
+    "exp": _prelude_fn("exp", math.exp),
+    "sinh": _prelude_fn("sinh", math.sinh),
+    "cosh": _prelude_fn("cosh", math.cosh),
+    "tanh": _prelude_fn("tanh", math.tanh),
+    "asinh": _prelude_fn("asinh", math.asinh),
+    "acosh": _prelude_fn("acosh", math.acosh),
+    "atanh": _prelude_fn("atanh", math.atanh),
+    "gamma": _prelude_fn("gamma", math.gamma),
+    "erf": _prelude_fn("erf", math.erf),
+    "atan2": PreludeFn("atan2", _binary_fn("atan2", math.atan2, "y and x: \\atan2(y, x)")),
+    "log": PreludeFn("log", _log_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+_INVERSE_PAIRS = (("sin", "asin"), ("cos", "acos"), ("tan", "atan"), ("exp", "ln"),
+                  ("sinh", "asinh"), ("cosh", "acosh"), ("tanh", "atanh"))
+_INVERSES = {id(PRELUDE[f]): PRELUDE[g] for f, g in _INVERSE_PAIRS} | \
+            {id(PRELUDE[g]): PRELUDE[f] for f, g in _INVERSE_PAIRS}
 
 
 class Engine:
