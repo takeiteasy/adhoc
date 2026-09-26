@@ -2,6 +2,8 @@
 float marker, the exact complex tower, and the odd-root real branch — at the
 driver level, the way the language presents them."""
 
+import math
+
 import pytest
 from fractions import Fraction
 
@@ -278,3 +280,61 @@ def test_polar_modulus_and_argument_are_exact(src, out):
 
 def test_abs_of_an_unsimplifiable_complex_stays_approximate():
     assert last(r"\abs(π+e i)") == "= 4.15435440231331..."
+
+
+
+# --- complex values in infinite folds, \lim and \log ---
+
+
+def _value(src: str) -> complex:
+    return complex(last(src).removeprefix("= ").replace("i", "j").replace("...", ""))
+
+
+@pytest.mark.parametrize("src, expected", [
+    (r"\sum(n=1..) i/n^2", 1j * math.pi ** 2 / 6),
+    (r"\sum(n=1..) (i/2)^n", (-1 + 2j) / 5),
+    (r"\sum(n=1..) (1/2)^n + i/n^2", 1 + 1j * math.pi ** 2 / 6),
+    (r"\prod(n=1..) (1 + i/2^n)", 0.6698396443906053 + 0.952483346135851j),
+    (r"\fold((+), \map(\λ(n) i/2^n, 1..), 0)", 1j),
+    (r"\sum(n=1..) i/2^5 * 0^n", 0),
+])
+def test_infinite_folds_take_complex_terms(src, expected):
+    assert abs(_value(src) - expected) <= 1e-8
+
+
+def test_a_diverging_complex_sum_is_a_typed_error():
+    with pytest.raises(EvalError, match="did not converge|diverged"):
+        last(r"\sum(n=1..) i")
+
+
+@pytest.mark.parametrize("src, expected", [
+    (r"\lim(x=0) \sin(x)/x + i", 1 + 1j),
+    (r"\lim(x=0) i*x", 0),
+    (r"\lim(x=i) x^2", -1),
+    (r"\lim(x=1+i) x", 1 + 1j),
+])
+def test_lim_takes_complex_bodies_and_anchors(src, expected):
+    assert abs(_value(src) - expected) <= 1e-8
+
+
+def test_lim_complex_anchor_rays_that_disagree_have_no_limit():
+    with pytest.raises(EvalError, match="does not exist"):
+        last(r"\lim(x=i) \re(x - i)/\abs(x - i)")
+
+
+@pytest.mark.parametrize("src, expected", [
+    (r"\log(2, i)", "= 2.2661800709136...i"), (r"\log(i, 2)", "= -0.441271200305303...i"),
+    (r"\log(i, i)", "= 1"), (r"\log(2., i)", "= 2.266180070913597i"),
+])
+def test_log_takes_complex_arguments(src, expected):
+    assert last(src) == expected
+
+
+def test_log_of_a_complex_value_with_base_one_is_division_by_zero():
+    with pytest.raises(EvalError, match="division by zero"):
+        last(r"\log(1, i)")
+
+
+def test_atan2_stays_real_only():
+    with pytest.raises(EvalError, match="real arguments"):
+        last(r"\atan2(1, i)")

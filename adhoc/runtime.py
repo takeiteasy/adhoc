@@ -1202,12 +1202,28 @@ def _as_float(value: AdValue) -> float:
     folds and `\\lim` probes). Non-numerics and complex values are rejected with the
     seam's typed error so the caller can attach a span."""
     _reject_non_numeric(value)
-    if _is_complex(value):  # TODO: complex convergence (ticket #95)
+    if _is_complex(value):
         raise NumError("a complex value cannot widen to float")
     try:
         return float(value)
     except OverflowError:
         raise NumError("value too large to widen to float")
+
+
+def _as_inexact(value: AdValue) -> float | complex:
+    """`_as_float`, except a complex value widens to a complex float — the widening for
+    approximate iteration that may leave the reals (`\\fold` partials, `\\lim` probes)."""
+    _reject_non_numeric(value)
+    if _is_complex(value):
+        try:
+            return _inexact(_to_complex(value))
+        except OverflowError:
+            raise NumError("value too large to widen to float")
+    return _as_float(value)
+
+
+def _finite(value: AdValue) -> bool:
+    return cmath.isfinite(_to_complex(value)) if _is_complex(value) else math.isfinite(value)
 
 
 def _settled(previous: AdValue, current: AdValue) -> bool:
@@ -1217,7 +1233,12 @@ def _settled(previous: AdValue, current: AdValue) -> bool:
     floor keeps the absolute 1e-12 behavior for O(1) and near-zero values — only
     large-magnitude iteration (where float64 ulps dwarf an absolute tolerance and
     the old test could never fire) settles relatively. A non-finite float delta
-    never settles."""
+    never settles. A complex pair is compared by modulus."""
+    if _is_complex(previous) or _is_complex(current):
+        delta = abs(_to_complex(previous) - _to_complex(current))
+        scale = max(1.0, abs(_to_complex(previous)), abs(_to_complex(current)))
+        return (math.isfinite(delta) and math.isfinite(scale)
+                and delta <= CONVERGENCE_TOLERANCE * scale)
     if isinstance(previous, float) or isinstance(current, float):
         delta = float(previous) - float(current)
         scale = max(1.0, abs(float(previous)), abs(float(current)))
@@ -1227,8 +1248,8 @@ def _settled(previous: AdValue, current: AdValue) -> bool:
     return -EXACT_CONVERGENCE_TOLERANCE <= Fraction(delta) <= EXACT_CONVERGENCE_TOLERANCE
 
 
-def _agree(left: float, right: float) -> bool:
-    """The `\\lim` two-sided agreement test, sized off the same (relatively scaled)
+def _agree(left: float | complex, right: float | complex) -> bool:
+    """The `\\lim` agreement test between sides (complex estimates by modulus), sized off the same (relatively scaled)
     tolerance as the plateau test: each side stops within `tol · scale` of its own
     plateau — up to that far from the true limit even for a perfectly smooth body —
     so legitimate estimates may sit as much as 2× the tolerance apart. Anything wider
@@ -1290,6 +1311,7 @@ class _FoldTailEstimator:
         self._stable = 0
         self._armed: tuple[float, float, str] | None = None
         self._confirm = 0
+        self.abstained = True  # the last term gave no shape to estimate from
 
     def _disarm(self) -> None:
         self._stable = 0
@@ -1299,6 +1321,7 @@ class _FoldTailEstimator:
     def observe(self, term: AdValue, acc: AdValue) -> float | None:
         """Offer one evaluated term and running partial; return a corrected
         limit when the confirmation window completes, else None."""
+        self.abstained = True
         if not isinstance(term, float) or not isinstance(acc, float):
             self._recent.clear()
             self._disarm()
@@ -1322,6 +1345,7 @@ class _FoldTailEstimator:
             self._disarm()
             return None
         value, error = estimate
+        self.abstained = False
         if self._armed is None:
             budget = _FOLD_TAIL_ERROR_BUDGET * CONVERGENCE_TOLERANCE * max(1.0, abs(value))
             if error <= budget:
@@ -1384,6 +1408,41 @@ class _FoldTailEstimator:
             tail = -tail
         error = _FOLD_TAIL_SAFETY * abs(tail) * max(ordered[-1] - ordered[0], 1 / self._k)
         return total + tail, error
+
+
+class _ComplexTailEstimator:
+    """`_FoldTailEstimator` for an infinite sum of complex terms: one estimator per
+    component, returning a limit once both components have confirmed. A component whose
+    terms are all exactly zero is settled at its partial (`i/k²` has a constant real
+    part)."""
+
+    def __init__(self):
+        self._parts = (_FoldTailEstimator(), _FoldTailEstimator())
+        self._seen_nonzero = [False, False]
+        self._limits: list[float | None] = [None, None]
+        self._recent: list[list[float]] = [[], []]
+
+    def observe(self, term: complex, acc: complex) -> complex | None:
+        terms, accs = (term.real, term.imag), (acc.real, acc.imag)
+        for c, (t, a) in enumerate(zip(terms, accs)):
+            if t == 0.0 and not self._seen_nonzero[c]:
+                self._limits[c] = a
+                continue
+            if not self._seen_nonzero[c]:
+                self._seen_nonzero[c] = True
+                self._limits[c] = None
+            limit = self._parts[c].observe(t, a)
+            self._recent[c] = (self._recent[c] + [abs(t)])[-_FOLD_TAIL_WINDOW:]
+            if limit is not None:
+                self._limits[c] = limit
+            elif (self._parts[c].abstained and len(self._recent[c]) == _FOLD_TAIL_WINDOW
+                  and max(self._recent[c]) <= CONVERGENCE_TOLERANCE * max(1.0, abs(a))):
+                self._limits[c] = a  # a shapeless component whose recent terms all vanish (a fast tail)
+        if None in self._limits:
+            return None
+        result = complex(*self._limits)
+        self._limits = [None, None]
+        return result
 
 
 class EvalError(Exception):
@@ -1862,23 +1921,33 @@ class _InfiniteFold:
     def __init__(self, label: str, estimate: bool):
         self.label = label
         self.estimator = _FoldTailEstimator() if estimate else None
+        self.complex_estimator = _ComplexTailEstimator() if estimate else None
         self.previous: AdValue | None = None
         self.count = 0
 
     def observe(self, term: AdValue, acc: AdValue) -> AdValue | None:
         self.count += 1
-        if not math.isfinite(acc):
+        if not _finite(acc):
             raise NumError(f"{self.label} diverged: partial value is not finite")
         if self.previous is not None and _settled(self.previous, acc):
             return acc
         if self.estimator is not None:
-            early = self.estimator.observe(term, acc)
+            early = self._estimate(term, acc)
             if early is not None:
                 return early
         self.previous = acc
         if self.count >= MAX_TERMS:
             raise NumError(f"{self.label} did not converge within {MAX_TERMS} terms")
         return None
+
+
+    def _estimate(self, term: AdValue, acc: AdValue) -> AdValue | None:
+        if isinstance(term, complex) or isinstance(acc, complex):
+            if isinstance(term, float | complex) and isinstance(acc, float | complex):
+                limit = self.complex_estimator.observe(complex(term), complex(acc))
+                return None if limit is None else _inexact(limit)
+            return None
+        return self.estimator.observe(term, acc)
 
 
 class LazySeq:
@@ -2029,10 +2098,10 @@ def _fold_infinite(f: Any, xs: Any, seed: list) -> Any:
     rule (`_InfiniteFold`); only `+` gets the sum tail estimate."""
     progress = _InfiniteFold("\\fold", estimate=f is OPERATORS["add"])
     items = iter(xs)
-    acc = _as_float(seed[0]) if seed else _as_float(next(items))
+    acc = _as_inexact(seed[0]) if seed else _as_inexact(next(items))
     for x in items:
-        x = _as_float(x)
-        acc = _as_float(_invoke(f, (acc, x)))
+        x = _as_inexact(x)
+        acc = _as_inexact(_invoke(f, (acc, x)))
         limit = progress.observe(x, acc)
         if limit is not None:
             return limit
@@ -2299,7 +2368,7 @@ def _binary_fn(name: str, float_fn: Callable, usage: str) -> Callable:
     def call(*args: AdValue) -> AdValue:
         _takes(name, args, 2, 2, usage)
         _reject_non_numeric(*args)
-        if any(_is_complex(v) for v in args):  # TODO: complex arguments (ticket #95)
+        if any(_is_complex(v) for v in args):
             raise NumError(f"\\{name} needs real arguments")
         if any(isinstance(v, float) for v in args):
             return float_fn(*(_to_float(v) for v in args))
@@ -2345,6 +2414,9 @@ _log_pair = _binary_fn("log", lambda b, x: math.log(x, b), "a base and a value: 
 def _log_call(*args: AdValue) -> AdValue:
     if len(args) == 1:
         return _ln(*args)
+    if len(args) == 2 and any(_is_complex(v) for v in args):
+        _reject_non_numeric(*args)
+        return ndiv(_ln(args[1]), _ln(args[0]))
     ratio = _rational_log(*args) if len(args) == 2 else None
     return _normalize(ratio) if ratio is not None else _log_pair(*args)
 
@@ -2839,58 +2911,61 @@ class Engine:
                 self._fail(f"{label} undecided within {MAX_TERMS} terms", sid)
 
     def limit(self, name: str, point_value: AdValue, sid: int,
-              spelling: str | None = None, var_spelling: str | None = None) -> float:
-        """`\\lim(x=a) body`, numeric only: probe both sides with geometrically shrinking
+              spelling: str | None = None, var_spelling: str | None = None) -> float | complex:
+        """`\\lim(x=a) body`, numeric only: probe each side with geometrically shrinking
         steps — never evaluating at `a` itself; the ulp guard halts each side when a
-        step would round back onto the anchor. Each side must stabilize within
+        step would round back onto the anchor. A real anchor has two sides (right, left),
+        a complex anchor four rays (±1, ±i). Each side must stabilize within
         CONVERGENCE_TOLERANCE (same relatively-scaled plateau test as infinite folds)
         inside MAX_PROBES;
         sides stabilizing apart means the limit does not exist. Probes evaluate in the
-        float tier like infinite-range folds (docs/numerics.md)."""
+        float tier like infinite-range folds (docs/numerics.md), a complex body value
+        as a complex float."""
         label = spelling or "\\lim"
         display_name = _display_name(name, var_spelling)
         try:
             _reject_non_numeric(point_value)
-            if _is_complex(point_value):
-                raise NumError(f"{label} approaches a real point")
-            anchor = _as_float(point_value)
+            anchor = _as_inexact(point_value)
         except NumError as e:
             self._fail(e.args[0], sid)
-        if not math.isfinite(anchor):
+        if not _finite(anchor):
             self._fail(f"{label} approaches a finite point", sid)
         if self._protected(name):
             self._fail(f"`{display_name}` is protected", sid)
         body = self.definitions[sid]
         h = max(abs(anchor), 1.0) * 0.5**7  # start close enough that ~60 halvings pass any ulp floor
-        estimates: list[float] = []
-        for sign in (1.0, -1.0):  # right side first, then left
-            previous: float | None = None
-            estimate: float | None = None
+        directions = (1.0, -1.0, 1j, -1j) if isinstance(anchor, complex) else (1.0, -1.0)
+        estimates: list[float | complex] = []
+        for direction in directions:  # right side first, then left
+            step = h
+            previous: float | complex | None = None
+            estimate: float | complex | None = None
             converged = False
             for _ in range(MAX_PROBES):
-                probe = anchor + sign * h
+                probe = anchor + direction * step
                 if probe == anchor:
                     break  # step underflowed onto the anchor itself — never evaluate there
                 raw = self._eval_bound(body, {name: probe}, label, sid)
                 try:
-                    estimate = _as_float(raw)
+                    estimate = _as_inexact(raw)
                 except NumError as e:
                     self._fail(e.args[0], sid)
                 if previous is not None and _settled(previous, estimate):
                     converged = True
                     break
                 previous = estimate
-                h *= 0.5
+                step *= 0.5
             if not converged:
                 self._fail(f"{label} did not converge within {MAX_PROBES} probes", sid)
             estimates.append(estimate)
-        left, right = estimates[1], estimates[0]
-        if not _agree(left, right):
+        if any(not _agree(estimates[0], other) for other in estimates[1:]):
             display_label = "limit" if label == "\\lim" else label
             self._fail(
                 f"{display_label} does not exist: left and right estimates disagree", sid)
-        mid = self._binop(nadd, left, right, sid)
-        return self._binop(ndiv, mid, 2, sid)
+        total = estimates[0]
+        for estimate in estimates[1:]:
+            total = self._binop(nadd, estimate, total, sid)
+        return self._binop(ndiv, total, len(estimates), sid)
 
     def tensor(self, items, row_length, sid):
         try:

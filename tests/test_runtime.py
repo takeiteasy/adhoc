@@ -4,6 +4,7 @@ import numbers
 import pytest
 from fractions import Fraction
 
+from adhoc.gauss import Gaussian
 from adhoc.runtime import (
     AdValue,
     EvalError,
@@ -24,6 +25,7 @@ from adhoc.runtime import (
     RangeValue,
     _agree,
     _as_float,
+    _as_inexact,
     _settled,
     _FoldTailEstimator,
 )
@@ -379,6 +381,23 @@ def test_tail_estimator_ignores_non_float_terms():
     est = _FoldTailEstimator()
     assert est.observe(1, 1) is None
     assert est.observe("x", "x") is None
+
+
+def test_settled_and_agree_compare_complex_values_by_modulus():
+    assert _settled(1 + 1j, 1 + 1j + 5e-13j)
+    assert not _settled(1 + 1j, 1 + 1j + 5e-12j)
+    assert not _settled(complex("nan"), 1j)
+    assert _settled(Gaussian(1, 1), Gaussian(1, 1))
+    assert _agree(1j, 1j + 1.5e-12)
+    assert not _agree(1j, 1j + 3e-12)
+    assert not _agree(1 + 0j, 1j)
+
+
+def test_as_inexact_widens_complex_values():
+    assert _as_inexact(Gaussian(1, 2)) == 1 + 2j
+    assert _as_inexact(Fraction(1, 4)) == 0.25
+    with pytest.raises(NumError):
+        _as_inexact(RangeValue(1, 1, None))
 
 
 def test_as_float_widens_and_rejects():

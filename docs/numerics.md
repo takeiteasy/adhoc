@@ -52,7 +52,7 @@ Values are Python natives plus four tier types:
   zero: a zero part collapses to `float`, so `(1.+i)(1.-i)` is `2.0`. Functions of a
   real float with a non-real principal value (`\sqrt(-2.)`, `\asin(2.)`) and of a
   complex float use `cmath` (`\gamma`, `\erf` use `mpmath`). Complex values are not
-  ordered, and infinite `\sum`/`\lim` do not take them.
+  ordered. Infinite `\sum`/`\prod`, `\fold` and `\lim` take them (see Convergence).
 
 Arithmetic stays at the lowest tier that remains exact: any `float` operand demotes the
 result to `float`, or to a complex float when the other operand is complex
@@ -233,7 +233,7 @@ The two riders:
 
 - **Infinite-range folds** (`\sum(i=1..) 1/i^2`, and `\fold` over an infinite range or lazy
   sequence) accumulate partial sums/products in the
-  **float tier**. Exact tiers are wrong for this job twice over: rationals with
+  **float tier** (a complex value as a complex float, compared by modulus). Exact tiers are wrong for this job twice over: rationals with
   exponentially growing denominators stall plateau detection long before the tolerance is
   meaningful, and the tail remaining when a plateau triggers (~tolerance-sized) only makes
   sense compared in floating point. Consequences, pinned: results print as floats.
@@ -251,13 +251,19 @@ The two riders:
   local check — so slow-tail products like `\prod(i=1..) (1 + 1/i^2)` stay slow (~1e-6
   grade) rather than risk a misleading partial; the two heavyweight tests carry the
   `slow` pytest mark so the default suite stays fast.
-- **`\lim(x=a)`** coerces its anchor to float, probes at `a ± h` with `h` halving from
+  Complex infinite sums run one estimator per component (`_ComplexTailEstimator`): a
+  component whose terms are all exactly zero is settled at its partial, and a shapeless
+  component whose last eight terms have vanished is settled too, so `\sum(n=1..) i/n^2`
+  and `\sum(n=1..) (1/2)^n + i/n^2` both get the tail-estimated exit.
+- **`\lim(x=a)`** coerces its anchor to float (or complex float), probes at `a ± h` with `h` halving from
   ~0.8% of `max(|a|, 1)`, and never evaluates at `a` itself — a step that would round back
   onto the anchor ends the side first. Each side stops on the same plateau test; sides
   further apart than *twice* the (relatively scaled) tolerance report `` limit does not
   exist `` (each side legitimately plateaus up to one tolerance-radius away, so two
   matching estimates may sit
-  2× apart).
+  2× apart). A complex anchor probes four rays (`a ± h`, `a ± h·i`) that must all agree;
+  a body value may be complex either way. Four rays are a heuristic, not a proof of the
+  two-dimensional limit (see [Limitations](stdlib.md#limitations)).
 
 Known sharp edges (not bugs): series whose terms change sign irregularly have no
 boundable tail shape, so they keep the plateau's best effort — near zero that stays
@@ -295,6 +301,8 @@ Exactness of the standard library ([`stdlib.md`](stdlib.md)):
 - `\log(b, x)` is exact when both are positive rationals with proportional prime
   factorizations (`\log(1/2, 8)` is `-3`); otherwise it is the symbolic or RRA value.
   Negative or complex-valued cases give the complex principal value, like `\ln(-1)`.
+  Complex arguments compute `\ln(x)/\ln(b)` (`\log(2, i)` stays exact);
+  `\atan2` takes real arguments only — `\arg` is the angle of a complex value.
 - `\gamma(x)` and `x!` of a half-integer are `√π` multiples; other non-integers are held
   to arbitrary precision (RRA).
 - `r∠θ` of a non-special angle is RRA; `\abs` and `\arg` simplify their result, so

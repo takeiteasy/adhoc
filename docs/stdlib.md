@@ -64,10 +64,10 @@ are its function value. `%` by zero is `division by zero`; a float modulo by `0.
 | Function | Result | Example |
 |---|---|---|
 | `\exp(x)` | eˣ | `\exp(0)` -> `1` |
-| `\log(b, x)` | logarithm of `x` in base `b`; `\log(x)` is `\ln(x)` | `\log(2, 8)` -> `3` |
+| `\log(b, x)` | logarithm of `x` in base `b`, complex arguments included (`\ln(x)/\ln(b)`); `\log(x)` is `\ln(x)` | `\log(2, 8)` -> `3` |
 | `\sinh \cosh \tanh` | hyperbolics | `\cosh(0)` -> `1` |
 | `\asinh \acosh \atanh` | inverse hyperbolics | `\atanh(0)` -> `0` |
-| `\atan2(y, x)` | angle of the point `(x, y)` | `\atan2(1, 1)` -> `π/4` |
+| `\atan2(y, x)` | angle of the real point `(x, y)`; use `\arg` for a complex value | `\atan2(1, 1)` -> `π/4` |
 | `\gamma(x)` | Γ; `x!` is `\gamma(x + 1)` | `\gamma(5)` -> `24` |
 | `\erf(x)` | error function | `\erf(0)` -> `0` |
 
@@ -94,4 +94,4 @@ Complex arguments are a typed error, except for `\abs`.
 
 ## Limitations
 
-- Infinite `\sum`/`\prod`, `\lim`, `\atan2` and `\log` reject complex values — [#95](https://todo.sr.ht/~takeiteasy/adhoc/95).
+- `\lim` with a complex anchor probes four rays, not every direction — [#96](https://todo.sr.ht/~takeiteasy/adhoc/96).
