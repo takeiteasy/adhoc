@@ -418,7 +418,7 @@ _SINGLE_CHAR_TOKENS = {
 _INFIX_GLYPHS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
                   "∘": "circ", "≠": "neq", "≈": "approx", "∉": "notin", "⊂": "subset",
                   "⊇": "supseteq", "⊃": "supset", "%": "mod", "∠": "angle",
-                  "∧": "and", "∨": "or", "→": "implies", "↔": "iff", "¬": "not"}
+                  "∧": "and", "∨": "or", "×": "times", "⊗": "otimes", "→": "implies", "↔": "iff", "¬": "not"}
 _GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
 
 # `\\`-names that end in a digit; every other digit after a name is a number.

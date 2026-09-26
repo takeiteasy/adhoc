@@ -22,7 +22,7 @@ class TensorValue:
     items: tuple[Any, ...]
 
     @property
-    def rank(self) -> int:
+    def order(self) -> int:
         return len(self.shape)
 
 
@@ -63,14 +63,14 @@ def stack(parts: list) -> TensorValue:
 def from_rows(items: list, row_length: int) -> TensorValue:
     """`[a, b; c, d]`: scalar rows of one length make a matrix."""
     if any(isinstance(item, TensorValue) for item in items):
-        raise TensorError("`;` rows hold numbers; nest `[...]` for higher ranks")
+        raise TensorError("`;` rows hold numbers; nest `[...]` for higher orders")
     return TensorValue((len(items) // row_length, row_length), tuple(items))
 
 
 def index(t: TensorValue, indices: tuple[int, ...]) -> Any:
     """1-based index into the leading axes; fewer indices than axes gives a sub-tensor."""
-    if len(indices) > t.rank:
-        raise TensorError(f"{len(indices)} indices for a rank-{t.rank} tensor")
+    if len(indices) > t.order:
+        raise TensorError(f"{len(indices)} indices for an order-{t.order} tensor")
     offset = 0
     for axis, (i, stride) in enumerate(zip(indices, _strides(t.shape))):
         if not 1 <= i <= t.shape[axis]:
@@ -89,7 +89,7 @@ def slices(t: TensorValue) -> list:
 
 def transpose(t: TensorValue) -> TensorValue:
     """Reverse the axes; a vector is unchanged."""
-    if t.rank < 2:
+    if t.order < 2:
         return t
     shape = t.shape[::-1]
     strides = _strides(t.shape)[::-1]
@@ -109,7 +109,7 @@ def map2(f: Callable, a: Any, b: Any) -> TensorValue:
     if not isinstance(a, TensorValue):
         return TensorValue(b.shape, tuple(f(a, item) for item in b.items))
     if a.shape != b.shape:
-        raise TensorError(f"shape mismatch {_show_shape(a.shape)} vs {_show_shape(b.shape)}")
+        raise TensorError(f"shape mismatch {show_shape(a.shape)} vs {show_shape(b.shape)}")
     return TensorValue(a.shape, tuple(f(x, y) for x, y in zip(a.items, b.items)))
 
 
@@ -117,8 +117,8 @@ def contract(mul: Callable, add: Callable, a: TensorValue, b: TensorValue) -> An
     """Contract the last axis of `a` with the first axis of `b`."""
     k = a.shape[-1]
     if b.shape[0] != k:
-        raise TensorError(f"cannot contract shape {_show_shape(a.shape)} "
-                          f"with {_show_shape(b.shape)}")
+        raise TensorError(f"cannot contract shape {show_shape(a.shape)} "
+                          f"with {show_shape(b.shape)}")
     rows = prod(a.shape[:-1])
     cols = prod(b.shape[1:])
     items = []
@@ -132,5 +132,5 @@ def contract(mul: Callable, add: Callable, a: TensorValue, b: TensorValue) -> An
     return TensorValue(shape, tuple(items)) if shape else items[0]
 
 
-def _show_shape(shape: tuple[int, ...]) -> str:
+def show_shape(shape: tuple[int, ...]) -> str:
     return "x".join(str(n) for n in shape)

@@ -39,6 +39,8 @@ class BinOperator(Enum):
     DIV = auto()
     POW = auto()
     DOT = auto()
+    TIMES = auto()
+    OTIMES = auto()
     UNION = auto()
     INTERSECT = auto()
     SETMINUS = auto()
@@ -226,7 +228,7 @@ class Hole(Node):
 
 # Engine key -> written symbol of every operator that can be a function value.
 OP_SYMBOLS = {
-    "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "@",
+    "add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "^", "dot": "@", "times": "×", "otimes": "⊗",
     "fact": "!", "dfact": "‼", "compose": "∘", "union": "∪", "intersect": "∩", "setminus": "∖",
     "lt": "<", "le": "<=", "gt": ">", "ge": ">=", "member": "∈", "subseteq": "⊆", "ne": "≠", "approx": "≈", "mod": "%", "angle": "∠",
     "and": "∧", "or": "∨", "implies": "→", "iff": "↔", "not": "¬",

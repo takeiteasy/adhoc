@@ -16,6 +16,8 @@ adhoc/
 ├── reduction   — beta reduction over quoted expression ASTs
 ├── tensor      — tensor values (shape, indexing, transpose, contraction; scalar
 │                 operations are passed in by runtime.py), array values, and set values
+├── linalg      — elimination (det, inverse, solve, rank, rref), constructors, and
+│                 cross/outer/Kronecker products; scalar operations passed in by runtime.py
 ├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
 │                 plus the \py boundary and its conversion matrix
 ├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,

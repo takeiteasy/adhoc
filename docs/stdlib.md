@@ -92,6 +92,39 @@ Exact arguments stay exact where a closed form exists (`\log(1/2, 8)` is `-3`,
 Exact and symbolic arguments give exact integers; non-finite floats pass through.
 Complex arguments are a typed error, except for `\abs`.
 
+## Linear algebra
+
+Matrices are order-2 tensors. Elimination is exact on the rational, Gaussian and symbolic
+tiers; a float or complex-float matrix is pivoted by size.[^pivot]
+
+| Function | Result | Example |
+|---|---|---|
+| `\det(A)` `\tr(A)` | determinant, trace of a square matrix | `\det([1, 2; 3, 4])` -> `-2` |
+| `\inv(A)` | inverse; a singular matrix is an error | `\inv([1, 2; 3, 4])` -> `[-2, 1; 3/2, -1/2]` |
+| `\linsolve(A, b)` | `x` with `A x = b`; `b` is a vector or a matrix of right-hand sides | `\linsolve([2, 1; 1, 3], [3, 5])` -> `[4/5, 7/5]` |
+| `\rank(A)` `\rref(A)` | matrix rank, reduced row echelon form | `\rank([1, 2; 2, 4])` -> `1` |
+| `\eye(n)` | identity | `\eye(2)` -> `[1, 0; 0, 1]` |
+| `\zeros(n, …)` `\ones(n, …)` | filled tensor of the given dimensions | `\zeros(2, 3)` -> `[0, 0, 0; 0, 0, 0]` |
+| `\diag(v)` `\diag(A)` | a vector gives a diagonal matrix, a matrix gives its diagonal | `\diag([1, 2])` -> `[1, 0; 0, 2]` |
+| `\norm(x)` | 2-norm of a vector, Frobenius norm of a matrix, `\abs` of a number | `\norm([3, 4])` -> `5` |
+| `a × b` `\cross(a, b)` | cross product of two length-3 vectors | `[1, 0, 0] × [0, 1, 0]` -> `[0, 0, 1]` |
+| `a ⊗ b` `\outer(a, b)` | tensor product, shapes concatenate | `[1, 2] ⊗ [3, 4]` -> `[3, 4; 6, 8]` |
+| `\kron(a, b)` | Kronecker product of two vectors or two matrices | `\kron([1, 2], [3, 4])` -> `[3, 4, 6, 8]` |
+| `\reshape(t, n, …)` | same entries, new dimensions | `\reshape([1, 2, 3, 4], 2, 2)` -> `[1, 2; 3, 4]` |
+| `\concat(a, b, …)` | join along the first axis; tensors of one trailing shape, or arrays | `\concat([1, 2], [3])` -> `[1, 2, 3]` |
+| `\stack(a, b, …)` | numbers make a vector, equal-shape tensors gain an axis | `\stack([1, 2], [3, 4])` -> `[1, 2; 3, 4]` |
+
+`×` and `⊗` sit at the `*` level and fall back to `*` when an operand is a scalar
+(`2 × [1, 2]` is `[2, 4]`). `A⁻¹` is elementwise like every `^` on a tensor; use `\inv`.
+Tensors are limited to 1,000,000 entries when built by `\eye`, `\zeros`, `\ones`, `\diag`,
+`\outer` and `\kron`.
+
+[^pivot]: Exact entries pivot on the first nonzero. If any entry is a float, each pivot is the
+    largest magnitude in its column, so `\inv([1e-20, 1; 1, 1])` stays accurate.
+
 ## Limitations
 
+- Float elimination tests pivots against exact zero, so a nearly singular float matrix
+  inverts to huge values and `\rank` counts round-off — [#98](https://todo.sr.ht/~takeiteasy/adhoc/98).
+- No `\eig` — [#99](https://todo.sr.ht/~takeiteasy/adhoc/99).
 - `\lim` with a complex anchor probes eight rays, so a body that vanishes on all of them (`\im((x - a)^4)/\abs(x - a)^4`) reads as a limit — [#97](https://todo.sr.ht/~takeiteasy/adhoc/97).

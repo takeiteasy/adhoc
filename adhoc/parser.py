@@ -184,7 +184,7 @@ _CLOSERS = (RBracket, RBrace, RAngle)
 # argument like `\\fold(+, xs)`); infix-only spellings go through `_infix_name`.
 _SYMBOL_OPERATORS = {Bang: "fact", DoubleBang: "dfact", Plus: "add", Minus: "sub", Star: "mul", Slash: "div", Caret: "pow",
                      Less: "lt", LessEq: "le", Greater: "gt", GreaterEq: "ge"}
-_INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
+_INFIX_OPERATORS = {"contract": "dot", "times": "times", "otimes": "otimes", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
                     "subseteq": "subseteq", "neq": "ne", "approx": "approx", "notin": "notmember",
                     "subset": "subset", "supseteq": "supseteq", "supset": "supset", "mod": "mod",
@@ -194,13 +194,14 @@ _INFIX_OPERATORS = {"contract": "dot", "cup": "union", "cap": "intersect",
 # Operator key -> the parser level that reads its right-hand side, which is the extent of
 # a section's operand: `(+ 1*2)` fixes `1*2`, `(* 1 + 2)` is a parse error.
 _ADDITIVE_KEYS = frozenset({"add", "sub", "union", "setminus"})
-_MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "intersect", "compose", "mod"})
+_MULTIPLICATIVE_KEYS = frozenset({"mul", "div", "dot", "times", "otimes", "intersect", "compose", "mod"})
 _ANGLE_KEYS = frozenset({"angle"})
 _COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq", "ne", "approx",
                           "notmember", "subset", "supseteq", "supset"})
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
-_MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "cap": BinOperator.INTERSECT,
+_MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "times": BinOperator.TIMES,
+                         "otimes": BinOperator.OTIMES, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE, "mod": BinOperator.MOD}
 _ANGLE_INFIX = {"angle": BinOperator.ANGLE}
 _LOGIC_INFIX = {"and": BinOperator.AND, "or": BinOperator.OR,

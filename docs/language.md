@@ -160,11 +160,13 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   without evaluating arithmetic or expanding named functions. Free names remain free;
   `\eval` can bind them later. Statement quotes are not reducible.
 
-- Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors rank 1, matrices rank 2,
-  higher ranks nest). Indexing is 1-based (`m[2, 1]`), `'` transposes, `+ - * / ^` are
+- Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors order 1, matrices order 2,
+  higher orders nest). Indexing is 1-based (`m[2, 1]`), `'` transposes, `+ - * / ^` are
   elementwise with scalar broadcast, and `@` / `\contract` contracts (dot and matrix
-  products). Folds bind over a tensor's outer slices; `\len`, `\shape`, and
-  `\transpose` are prelude functions (docs/grammar.md, `## Tensors`).
+  products), `×` crosses 3-vectors and `⊗` takes the tensor product. Folds bind over a
+  tensor's outer slices; `\len`, `\shape`, `\transpose` and the linear algebra functions
+  (`\det`, `\inv`, `\linsolve`, ...) are prelude functions (docs/grammar.md, `## Tensors`;
+  docs/stdlib.md, `## Linear algebra`).
 
 - Arrays: `⟨1, [1, 2], "a"⟩`, `#[...]`, and `\arr(...)` build an ordered container of
   any values, possibly ragged. They index (`a[2]`, chain `a[i][j]`), fold, and report

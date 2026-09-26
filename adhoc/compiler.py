@@ -86,6 +86,8 @@ _BIN_METHODS = {
     BinOperator.DIV: "div",
     BinOperator.POW: "pow",
     BinOperator.DOT: "dot",
+    BinOperator.TIMES: "times",
+    BinOperator.OTIMES: "otimes",
     BinOperator.UNION: "union",
     BinOperator.INTERSECT: "intersect",
     BinOperator.SETMINUS: "setminus",

@@ -190,7 +190,7 @@ import sympy
 import types
 from typing import Any, Callable, NoReturn
 
-from . import algebraic, gauss, rra, symbolic
+from . import algebraic, gauss, linalg, rra, symbolic
 from . import tensor as tn
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
@@ -227,7 +227,7 @@ _NUMERIC_TYPES = (int, float, complex, Fraction, Gaussian, Symbolic, Algebraic, 
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "arr", "cup", "cap", "setminus",
+RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "times", "otimes", "arr", "cup", "cap", "setminus",
                            "in", "subseteq", "circ", "mod", "angle", "and", "or", "not", "implies",
                            "iff", "neq", "approx", "notin", "subset",
                            "supseteq", "supset"})
@@ -477,7 +477,7 @@ def _len_call(value: Any) -> int:
 def _shape_call(value: Any) -> TensorValue:
     if not isinstance(value, TensorValue):
         raise NumError("\\shape needs a tensor")
-    return TensorValue((value.rank,), value.shape)
+    return TensorValue((value.order,), value.shape)
 
 
 def _root_call(*args: AdValue) -> AdValue:
@@ -981,6 +981,20 @@ def ndot(a: AdValue, b: AdValue) -> AdValue:
     return nmul(a, b)
 
 
+def ntimes(a: AdValue, b: AdValue) -> AdValue:
+    """`a × b`: the cross product of two 3-vectors; a scalar operand scales."""
+    if isinstance(a, TensorValue) and isinstance(b, TensorValue):
+        return _linalg(linalg.cross, _SCALARS, a, b)
+    return nmul(a, b)
+
+
+def notimes(a: AdValue, b: AdValue) -> AdValue:
+    """`a ⊗ b`: the tensor product, whose shape concatenates the operands'; a scalar operand scales."""
+    if isinstance(a, TensorValue) and isinstance(b, TensorValue):
+        return _linalg(linalg.outer, _SCALARS, a, b)
+    return nmul(a, b)
+
+
 def ntranspose(a: AdValue) -> AdValue:
     if not isinstance(a, TensorValue):
         raise NumError("transpose needs a tensor")
@@ -1058,9 +1072,9 @@ def neq(a: AdValue, b: AdValue) -> bool:
 
 
 def _show_tensor(t: TensorValue, digits: int | None) -> str:
-    if t.rank == 1:
+    if t.order == 1:
         return "[" + ", ".join(nshow(x, digits) for x in t.items) + "]"
-    if t.rank == 2:
+    if t.order == 2:
         rows, cols = t.shape
         body = "; ".join(", ".join(nshow(t.items[r * cols + c], digits) for c in range(cols))
                          for r in range(rows))
@@ -1885,6 +1899,7 @@ _OPERATOR_IMPLS = {
     "fact": (nfact, (1,)), "dfact": (ndfact, (1,)),
     "add": (nadd, (2,)), "sub": (_minus, (1, 2)), "mul": (nmul, (2,)),
     "div": (ndiv, (2,)), "pow": (npow, (2,)), "dot": (ndot, (2,)),
+    "times": (ntimes, (2,)), "otimes": (notimes, (2,)),
     "compose": (ncompose, (2,)), "mod": (nmod, (2,)), "angle": (npolar, (2,)), "union": (nunion, (2,)),
     "intersect": (nintersect, (2,)), "setminus": (nsetminus, (2,)),
     "and": (nand, (2,)), "or": (nor, (2,)), "implies": (nimplies, (2,)), "iff": (niff, (2,)),
@@ -2617,6 +2632,83 @@ PRELUDE.update({
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 
+def _linalg(f: Callable, *args: Any) -> Any:
+    try:
+        return f(*args)
+    except TensorError as e:
+        raise NumError(e.args[0]) from e
+
+
+def _larger(a: AdValue, b: AdValue) -> bool:
+    return ncompare("gt", _abs_call(a), _abs_call(b))
+
+
+_SCALARS = linalg.Scalars(nadd, nsub, nmul, ndiv, lambda v: neq(v, 0), _larger, _is_inexact)
+
+
+def _norm_call(v: AdValue) -> AdValue:
+    if not isinstance(v, TensorValue):
+        return _abs_call(v)
+    total = 0
+    for item in v.items:
+        total = nadd(total, nmul(item, _conj_call(item)))
+    return npow(total, Fraction(1, 2))
+
+
+def _dims(args: tuple, label: str) -> list[int]:
+    return [_exact_int(d, label) for d in args]
+
+
+def _reshape_call(t: AdValue, *dims: AdValue) -> AdValue:
+    return _linalg(linalg.reshape, t, _dims(dims, "\\reshape"))
+
+
+def _concat_call(*parts: AdValue) -> AdValue:
+    _takes("concat", parts, 2, math.inf, "two or more tensors or arrays")
+    return _linalg(linalg.concat, list(parts))
+
+
+def _stack_call(*parts: AdValue) -> AdValue:
+    _takes("stack", parts, 1, math.inf, "one or more numbers or equal-shape tensors")
+    for part in parts:
+        if not isinstance(part, TensorValue):
+            _reject_non_numeric(part)
+    return _linalg(tn.stack, list(parts))
+
+
+def _fill_call(name: str, value: int) -> PreludeFn:
+    return PreludeFn(name, lambda *dims: _linalg(linalg.filled, value, _dims(dims, f"\\{name}")))
+
+
+def _matrix_fn(name: str, f: Callable, arity: int, scalars: bool = True) -> PreludeFn:
+    def call(*args: AdValue) -> AdValue:
+        _takes(name, args, arity, arity, f"{arity} argument{'s' * (arity > 1)}")
+        return _linalg(f, _SCALARS, *args) if scalars else _linalg(f, *args)
+    return PreludeFn(name, call)
+
+
+PRELUDE.update({
+    "det": _matrix_fn("det", linalg.det, 1),
+    "inv": _matrix_fn("inv", linalg.inv, 1),
+    "tr": _matrix_fn("tr", linalg.trace, 1),
+    "rank": _matrix_fn("rank", linalg.rank, 1),
+    "rref": _matrix_fn("rref", linalg.rref, 1),
+    "linsolve": _matrix_fn("linsolve", linalg.linsolve, 2),
+    "kron": _matrix_fn("kron", linalg.kron, 2),
+    "outer": _matrix_fn("outer", linalg.outer, 2),
+    "cross": _matrix_fn("cross", linalg.cross, 2),
+    "eye": PreludeFn("eye", lambda n: _linalg(linalg.eye, _exact_int(n, "\\eye"))),
+    "zeros": _fill_call("zeros", 0),
+    "ones": _fill_call("ones", 1),
+    "diag": _matrix_fn("diag", linalg.diag, 1, scalars=False),
+    "norm": PreludeFn("norm", _norm_call),
+    "reshape": PreludeFn("reshape", _reshape_call),
+    "concat": PreludeFn("concat", _concat_call),
+    "stack": PreludeFn("stack", _stack_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+
 class Engine:
     """Everything lowered code calls into. Holds the user environment (a plain dict) and
     the compiled unit's span table; every method takes the span id of the node that
@@ -3045,6 +3137,12 @@ class Engine:
 
     def dot(self, a, b, sid):
         return self._binop(ndot, a, b, sid)
+
+    def times(self, a, b, sid):
+        return self._binop(ntimes, a, b, sid)
+
+    def otimes(self, a, b, sid):
+        return self._binop(notimes, a, b, sid)
 
     def compose(self, f, g, sid):
         return self._binop(ncompose, f, g, sid)

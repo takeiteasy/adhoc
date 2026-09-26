@@ -48,7 +48,7 @@ written against — it should stay in lockstep with the code.
   `\my_var`); a `_` cannot start a name. `\atan2` is the one name ending in a digit. Backslash names may be built-ins or user-defined
   names, including variables; an unbound one fails at evaluation. `\let` is the one
   statement keyword in this group: it is not a bindable name.
-- Operators: `+ - * / % @ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
+- Operators: `+ - * / % @ × ⊗ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
   (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
   A lone `·` (U+00B7), `⋅` (U+22C5) or `_` is the partial-application placeholder
   (`## Composition and partial application`); inside a `\`-name `_` is an ordinary name
@@ -103,7 +103,7 @@ cmp-op     ::= "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈"
 angle      ::= additive (("∠" | "\\angle") additive)? ;   (* polar form r∠θ *)
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
-           ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "∩" | "\\cap" | "∘" | "\\circ" | "%" | "\\mod") juxtaposed)* ;
+           ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "×" | "\\times" | "⊗" | "\\otimes" | "∩" | "\\cap" | "∘" | "\\circ" | "%" | "\\mod") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
@@ -116,9 +116,9 @@ superscript ::= (superscript-glyph)+ ;         (* sugar for "^" with the run rea
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg | hole | operator ;   (* holes and operators only as a whole argument *)
 hole       ::= "·" | "⋅" | "_" ;
-operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
+operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "×" | "⊗" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
              | ">=" | "≤" | "≥" | "≠" | "≈" | "∈" | "∉" | "⊆" | "⊂" | "⊇" | "⊃" | "√" | "∛" | "∜"
-             | "!" | "‼" | "\\contract" | "\\circ" | "\\cup" | "\\cap" | "\\setminus" | "\\in"
+             | "!" | "‼" | "\\contract" | "\\times" | "\\otimes" | "\\circ" | "\\cup" | "\\cap" | "\\setminus" | "\\in"
              | "\\notin" | "\\subseteq" | "\\subset" | "\\supseteq" | "\\supset" | "\\neq" | "\\approx" ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
@@ -188,7 +188,7 @@ Loosest to tightest:
 | 9 | `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
 | 10 | `∠` (polar form) | non-associative |
 | 11 | `+` `-` (binary), `∪` `∖` | left |
-| 12 | `*` `/` `@` `%`, `∩`, `∘` | left |
+| 12 | `*` `/` `@` `×` `⊗` `%`, `∩`, `∘` | left |
 | 13 | juxtaposition (implicit `*`) | left |
 | 14 | unary `-`, `√` `∛` `∜` | prefix |
 | 15 | `^` | right |
@@ -366,13 +366,13 @@ Braces `{}` are not a grouping form — they build sets (`## Sets`).
 
 ## Tensors
 
-`[...]` builds a uniform numeric tensor: vectors are rank 1, matrices rank 2, and higher
-ranks nest. Indexing is 1-based.
+`[...]` builds a uniform numeric tensor: vectors are order 1, matrices order 2, and higher
+orders nest. Indexing is 1-based.
 
 ```
-v = [1, 2, 3]                   -- rank 1
+v = [1, 2, 3]                   -- order 1
 m = [1, 2; 3, 4]                -- `,` separates columns, `;` rows
-[[1, 2; 3, 4], [5, 6; 7, 8]]    -- rank 3: nested tensors of one shape
+[[1, 2; 3, 4], [5, 6; 7, 8]]    -- order 3: nested tensors of one shape
 m[2, 1]  ->  = 3                m[1]  ->  = [1, 2]
 ```
 
@@ -384,6 +384,8 @@ m[2, 1]  ->  = 3                m[1]  ->  = [1, 2]
 | `x[i, j]` | 1-based index; fewer indices than axes gives the sub-tensor |
 | `x'` | transpose: reverses the axes; a vector is unchanged |
 | `a @ b`, `a \contract b` | contraction of `a`'s last axis with `b`'s first: dot product, matrix product |
+| `a × b`, `a \times b` | cross product of two length-3 vectors; with a scalar operand, the same as `*` |
+| `a ⊗ b`, `a \otimes b` | tensor product: the operands' shapes concatenate; with a scalar operand, the same as `*` |
 | `+ - * / ^` | elementwise; a scalar broadcasts, two tensors need one shape |
 
 ```
@@ -401,8 +403,9 @@ binding rule's check: same shape and equal entries. `\len(t)` is the outer lengt
 Folds bind over a tensor's outer slices: `\sum(x=[1, 2, 3]) x^2` is `14`, and
 `\sum(r=m) r` adds the rows.
 
-`\contract` is an infix operator, never a name: it cannot bind or be aliased, and stands as
-a value only as `(\contract)`, `(@)` or a whole call argument (`## Operator values`).
+`\contract`, `\times` and `\otimes` are infix operators, never names: they cannot bind or be
+aliased, and stand as values only as `(\contract)`, `(@)`, `(×)`, `(⊗)` or a whole call
+argument (`## Operator values`). The matrix functions are in docs/stdlib.md.
 
 [^tensor-index]: A `[` trailer attaches only to name-ish heads (a name, a call, another
     index, a transpose), so `[1, 2][1]` is not an index: it juxtaposes two tensors and fails
@@ -572,6 +575,8 @@ g(1, 2)                        ->  = 3
 | `¬` `\not` | 1 | boolean negation |
 | `-` | 1 or 2 | negate, or subtract |
 | `@` `\contract` | 2 | contraction — the same as infix `@` |
+| `×` `\times` | 2 | cross product or scalar multiple — the same as infix `×` |
+| `⊗` `\otimes` | 2 | tensor product or scalar multiple — the same as infix `⊗` |
 | `∘` `\circ` | 2 | composition |
 | `∪ ∩ ∖` `\cup \cap \setminus` | 2 | set operations |
 | `< > <= >= ≤ ≥` | 2 | ordering, returns a boolean |

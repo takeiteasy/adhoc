@@ -135,12 +135,12 @@ def test_set_arguments_arrive_hashable():
 def test_ndarray_returns_become_tensors():
     pytest.importorskip("numpy")
     env: dict = {}
-    run_source('\\pyimport("numpy": \\array, \\dot, \\zeros)', env)
+    run_source('\\pyimport("numpy": \\array, \\dot, \\full)', env)
     assert last("\\array(⟨1, 2, 3⟩)", env) == "= [1, 2, 3]"
     assert last("\\array(⟨⟨1, 2⟩, ⟨3, 4⟩⟩)", env) == "= [1, 2; 3, 4]"
     assert last("\\array(⟨⟨1, 2⟩, ⟨3, 4⟩⟩)'", env) == "= [1, 3; 2, 4]"
     assert last("\\dot([1, 2], [3, 4])", env) == "= 11"
-    assert last("\\zeros(⟨2, 2⟩)", env) == "= [0.0, 0.0; 0.0, 0.0]"
+    assert last("\\full(⟨2, 2⟩, 0.)", env) == "= [0.0, 0.0; 0.0, 0.0]"
 
 
 def test_ndarray_rejections():

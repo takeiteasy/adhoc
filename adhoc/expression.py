@@ -35,7 +35,7 @@ def _shape(value):
 
 _BIN = {
     BinOperator.ADD: "+", BinOperator.SUB: "-", BinOperator.MUL: "*",
-    BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "@",
+    BinOperator.DIV: "/", BinOperator.POW: "^", BinOperator.DOT: "@", BinOperator.TIMES: "×", BinOperator.OTIMES: "⊗",
     BinOperator.UNION: "∪", BinOperator.INTERSECT: "∩", BinOperator.SETMINUS: "∖",
     BinOperator.COMPOSE: "∘", BinOperator.MOD: "%", BinOperator.ANGLE: "∠", BinOperator.AND: "∧", BinOperator.OR: "∨",
     BinOperator.IMPLIES: "→", BinOperator.IFF: "↔",

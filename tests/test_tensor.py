@@ -133,7 +133,7 @@ def test_index_errors():
     fails("v[0]", "index 0 out of range 1..3", env)
     fails("v[1/2]", "index must be an exact integer", env)
     fails("v[1.]", "index must be an exact integer", env)
-    fails("v[1, 2]", "2 indices for a rank-1 tensor", env)
+    fails("v[1, 2]", "2 indices for an order-1 tensor", env)
 
 
 def test_index_error_span_covers_the_index_expression():

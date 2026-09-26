@@ -25,6 +25,8 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 | `∀` `∃` | `\forall` `\exists` | quantifiers over a range or collection | special form |
 | `r∠θ` | `\angle` `\polar(r, θ)` | polar form: modulus and angle | above `+`, below comparison |
 | `%` | `\mod` | floored modulo | with `*` |
+| `×` | `\times` `\cross(a, b)` | cross product of 3-vectors; scalar multiple with a scalar operand | with `*` |
+| `⊗` | `\otimes` `\outer(a, b)` | tensor product; scalar multiple with a scalar operand | with `*` |
 
 ```
 2x²            ->  2 * (x^2)
