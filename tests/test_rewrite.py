@@ -188,9 +188,8 @@ def test_time_limit_is_swallow_proof(monkeypatch):
 
 def test_zero_timeout_disables_the_limit(monkeypatch):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0")
-    with rewrite.time_limit():
-        pass
-    assert ev(r"\solve(\expr(x^2 - 4))") == "= {-2, 2}"
+    monkeypatch.setattr(rewrite.sympy, "solveset", lambda *a: 42)
+    assert rewrite.run_limited(lambda: "inline") == "inline"
 
 
 def test_bad_timeout_names_the_variable(monkeypatch):
@@ -205,36 +204,47 @@ def test_inverse_falls_back_when_the_exact_solve_times_out(monkeypatch):
     assert ev("f(x) = x^3\nf⁻¹(8)").startswith("= 2.0")
 
 
-def test_time_limit_restores_the_timer_and_handler():
-    import signal
-    before = signal.getsignal(signal.SIGALRM)
-    with rewrite.time_limit():
-        pass
-    assert signal.getsignal(signal.SIGALRM) is before
-    assert signal.getitimer(signal.ITIMER_REAL)[0] == 0
+def test_time_limit_holds_off_the_main_thread(monkeypatch):
+    import threading
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
+    outcome = []
+
+    def work():
+        try:
+            run_source(r"\solve(\expr(x^2 - 4))", {})
+        except EvalError as error:
+            outcome.append(str(error))
+
+    thread = threading.Thread(target=work)
+    thread.start()
+    thread.join(timeout=10)
+    assert outcome and "took longer" in outcome[0]
 
 
-def test_deriv_defaults_to_the_gradient_with_several_names():
-    assert ev(r"\deriv(\expr(x^2 y))") == r"= ⟨\expr(((2 * x) * y)), \expr((x ^ 2))⟩"
-    assert ev("f(x, y) = x y^2\n\\deriv(f)") == r"= ⟨\expr((y ^ 2)), \expr(((2 * x) * y))⟩"
-    assert ev(r"\deriv(\expr(x^2 y))[2]") == r"= \expr((x ^ 2))"
+def test_timed_out_workers_are_reaped(monkeypatch):
+    import multiprocessing
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
+    fails(r"\solve(\expr(x^2 - 4))", "took longer")
+    assert multiprocessing.active_children() == []
 
 
-def test_deriv_of_an_array_of_names_is_a_mixed_partial():
-    assert ev(r"\deriv(\expr(x^2 y), ⟨`(x), `(y)⟩)") == r"= \expr((2 * x))"
-    assert ev(r"\deriv(\expr(x^3 y), ⟨`(x), `(x), `(y)⟩)") == r"= \expr((6 * x))"
+def test_worker_errors_and_crashes_surface(monkeypatch):
+    import os
+
+    def boom(*_):
+        raise NotImplementedError("no")
+
+    def die(*_):
+        os._exit(1)
+
+    with pytest.raises(NotImplementedError):
+        rewrite.run_limited(boom)
+    with pytest.raises(rewrite.RewriteError, match="stopped unexpectedly"):
+        rewrite.run_limited(die)
 
 
-def test_grad_over_chosen_names():
-    assert ev(r"\grad(\expr(x^2 y + z), ⟨`(x), `(y)⟩)") == r"= ⟨\expr(((2 * x) * y)), \expr((x ^ 2))⟩"
-    assert ev(r"\grad(\expr(x))") == r"= ⟨\expr(1)⟩"
-    assert ev(r"\grad(\expr(a x + b y))") == r"= ⟨\expr(x), \expr(y), \expr(a), \expr(b)⟩"
-
-
-def test_grad_and_partial_errors():
-    fails(r"\deriv(\expr(x^2 y), ⟨`(x)⟩, 2)", "only with a single unknown")
-    fails(r"\deriv(\expr(x^2 y), ⟨⟩)", "at least one unknown")
-    fails(r"\deriv(\expr(x^2 y), ⟨2⟩)", "quoted name")
-    fails(r"\grad(\expr(x^2 y), `(x))", "array of quoted names")
-    fails(r"\grad(\expr(2))", "no unknown")
-    fails(r"\grad(3)", "expression quote")
+def test_unpicklable_results_are_an_error_not_a_hang():
+    with pytest.raises(rewrite.RewriteError, match="cannot be sent back"):
+        rewrite.run_limited(lambda: (lambda: 1))

@@ -86,7 +86,7 @@ error.
 
 Each rewrite stops after 5 seconds with `took longer than 5s`. `ADHOC_SYMBOLIC_TIMEOUT` sets
 the seconds; `0` removes the limit. `f⁻¹` and `f'` treat a timeout as "no exact form" and use
-their numeric path.[^timer]
+their numeric path.[^worker]
 
 ## Limitations
 
@@ -95,9 +95,10 @@ their numeric path.[^timer]
 | One unknown; no systems | [#112](https://todo.sr.ht/~takeiteasy/adhoc/112) |
 | `\solve(e)` solves `e = 0`; `lhs = rhs` is not read as an equation | [#113](https://todo.sr.ht/~takeiteasy/adhoc/113) |
 | Infinite solution families are an error; no real-domain option | [#114](https://todo.sr.ht/~takeiteasy/adhoc/114) |
-| The time limit needs SIGALRM on the main thread | [#119](https://todo.sr.ht/~takeiteasy/adhoc/119) |
+| No time limit on Windows | [#122](https://todo.sr.ht/~takeiteasy/adhoc/122) |
 | Gradients are arrays of quotes, without vector algebra | [#121](https://todo.sr.ht/~takeiteasy/adhoc/121) |
 | Numeric third and higher derivatives (float points, non-symbolic bodies) are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
 
-[^timer]: A `setitimer(ITIMER_REAL)` interrupt. Off the main thread, without SIGALRM, or while
-    another interval timer runs, the rewrite is unlimited.
+[^worker]: Each call runs in a forked child that is killed at the limit, so it also holds off the
+    main thread. The fork costs about 65 ms a call, and the child's sympy caches are not kept.
+    Without  (Windows) the rewrite runs unlimited.

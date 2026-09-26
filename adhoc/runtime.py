@@ -2116,8 +2116,8 @@ class Derivative:
                 from . import rewrite
                 try:
                     origin = rewrite.bridge_function(self.fn)
-                    with rewrite.time_limit():
-                        form = sympy.diff(origin.expr, origin.params[0], self.order)
+                    form = rewrite.run_limited(sympy.diff, origin.expr, origin.params[0],
+                                               self.order)
                     self._symbolic = (origin.params[0], form)
                 except (rewrite.RewriteError, NotImplementedError, NumError):
                     pass
@@ -2171,8 +2171,8 @@ class Inverse:
                 from . import rewrite
                 try:
                     origin = rewrite.bridge_function(self.fn)
-                    with rewrite.time_limit():
-                        roots = sympy.solve(origin.expr - target, origin.params[0])
+                    roots = rewrite.run_limited(sympy.solve, origin.expr - target,
+                                                origin.params[0])
                     self._solved = (target, roots)
                 except (rewrite.RewriteError, NotImplementedError, NumError):
                     pass

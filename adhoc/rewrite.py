@@ -6,12 +6,12 @@ result crosses back as an expression quote. Free names stay symbols; a function'
 supplies its numeric bindings. Only the numeric seam converts ad values to sympy
 (`runtime.value_to_sympy`)."""
 
+import multiprocessing
 import os
-import signal
-import threading
-from contextlib import contextmanager
+import pickle
+import warnings
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator
+from typing import Any, Callable
 
 import sympy
 
@@ -28,10 +28,6 @@ class RewriteError(Exception):
     pass
 
 
-class _Timeout(BaseException):
-    """Raised from the timer handler; not an `Exception`, so sympy's own handlers pass it on."""
-
-
 DEFAULT_TIMEOUT = 5.0
 
 
@@ -45,29 +41,45 @@ def _timeout_seconds() -> float:
         raise RewriteError(f"needs ADHOC_SYMBOLIC_TIMEOUT to be a number of seconds, got {text!r}") from None
 
 
-@contextmanager
-def time_limit() -> Iterator[None]:
-    """Bounds the sympy work inside it. Unlimited where SIGALRM is unavailable, off the main
-    thread, or when a timer is already running."""
-    seconds = _timeout_seconds()
-    if (seconds <= 0 or not hasattr(signal, "SIGALRM")
-            or threading.current_thread() is not threading.main_thread()
-            or signal.getitimer(signal.ITIMER_REAL)[0] > 0):
-        yield
-        return
-
-    def expire(*_: Any) -> None:
-        raise _Timeout
-
-    previous = signal.signal(signal.SIGALRM, expire)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+def _child(send: Any, fn: Callable, args: tuple) -> None:
     try:
-        yield
-    except _Timeout:
-        raise RewriteError(f"took longer than {seconds:g}s") from None
+        payload = ("ok", fn(*args))
+    except BaseException as error:
+        payload = ("error", error)
+    try:
+        pickle.dumps(payload)
+    except Exception:
+        payload = ("error", RewriteError("returned a result that cannot be sent back"))
+    send.send(payload)
+
+
+def run_limited(fn: Callable, *args: Any) -> Any:
+    """`fn(*args)` in a forked child that is killed after the time limit; the result comes
+    back pickled. Unlimited where `fork` is unavailable (Windows)."""
+    seconds = _timeout_seconds()
+    if seconds <= 0 or "fork" not in multiprocessing.get_all_start_methods():
+        return fn(*args)
+    context = multiprocessing.get_context("fork")
+    receive, send = context.Pipe(duplex=False)
+    child = context.Process(target=_child, args=(send, fn, args), daemon=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)  # fork from a threaded process
+        child.start()
+    send.close()
+    try:
+        if not receive.poll(seconds):
+            raise RewriteError(f"took longer than {seconds:g}s")
+        try:
+            status, payload = receive.recv()
+        except EOFError:
+            raise RewriteError("stopped unexpectedly") from None
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+        child.kill()
+        child.join()
+        receive.close()
+    if status == "error":
+        raise payload
+    return payload
 
 
 _FUNCTIONS = {
@@ -289,8 +301,7 @@ def quote(expr: sympy.Expr, bridge: Bridge, source: str) -> ExpressionValue:
 
 def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr]) -> ExpressionValue:
     origin = bridge_value(value)
-    with time_limit():
-        result = operation(origin.expr)
+    result = run_limited(operation, origin.expr)
     return quote(result, origin.bridge, origin.source)
 
 
@@ -324,8 +335,7 @@ def gradient(value: Any, unknown: Any = None) -> Any:
 
 
 def _diff(origin: Source, symbols: list[sympy.Symbol]) -> ExpressionValue:
-    with time_limit():
-        result = sympy.diff(origin.expr, *symbols)
+    result = run_limited(sympy.diff, origin.expr, *symbols)
     return quote(result, origin.bridge, origin.source)
 
 
@@ -355,8 +365,7 @@ def solve(value: Any, unknown: Any = None) -> Any:
     from .runtime import NumError, SetValue, _dedup, _sympy_to_ad
     origin = bridge_value(value)
     symbol = _unknown(origin, unknown)
-    with time_limit():
-        solutions = sympy.solveset(origin.expr, symbol, sympy.S.Complexes)
+    solutions = run_limited(sympy.solveset, origin.expr, symbol, sympy.S.Complexes)
     if solutions is sympy.S.EmptySet:
         return SetValue(())
     if not isinstance(solutions, sympy.FiniteSet):
