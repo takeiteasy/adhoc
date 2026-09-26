@@ -3,6 +3,27 @@
 Prelude functions. Exact arguments stay exact where a tier can hold them; floats stay on
 the float tier. Every name is protected: it cannot be rebound or shadowed.
 
+## Aggregates
+
+Each takes several arguments or one collection (array, set, tensor, range) unless noted.
+
+| Function | Result | Example |
+|---|---|---|
+| `\min(…)` `\max(…)` | smallest, largest | `\max(⟨3, 1, 2⟩)` → `3` |
+| `\mean(…)` `\median(…)` | exact where the inputs are | `\mean(⟨1, 2, 4⟩)` → `7/3` |
+| `\stdev(…)` `\sstdev(…)` | population and sample deviation | `\stdev(⟨1, 2⟩)` → `1/2` |
+| `\sort(xs)` | ascending; a set gives an array | `\sort({3, 1, 2})` → `⟨1, 2, 3⟩` |
+| `\reverse(xs)` | reversed; a set is an error | `\reverse(⟨1, 2, 3⟩)` → `⟨3, 2, 1⟩` |
+| `\any(p, xs)` `\all(p, xs)` | short-circuit tests with a predicate | `\all(\fn(x) x > 0, 1..5)` → `true` |
+| `\count(p, xs)` | elements satisfying `p` | `\count(\fn(x) x % 2 ≠ 0, 1..10)` → `5` |
+| `\zip(a, b, …)` | array of tuples, cut to the shortest | `\zip(⟨1, 2⟩, ⟨3, 4⟩)` → `⟨⟨1, 3⟩, ⟨2, 4⟩⟩` |
+| `\enumerate(xs)` | `⟨⟨1, x₁⟩, ⟨2, x₂⟩, …⟩`, 1-based like indexing | `\enumerate(⟨7, 8⟩)` → `⟨⟨1, 7⟩, ⟨2, 8⟩⟩` |
+
+Ordering rejects complex values and booleans. Empty input is a typed error, except that
+`\any` of nothing is `false`, `\all` is `true` and `\count` is `0`. `\any` and `\all` also
+search infinite ranges and give a typed "undecided" error after 2,000,000 elements;
+the other aggregates need finite input.
+
 ## Number theory
 
 | Function | Result | Example |

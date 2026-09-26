@@ -173,6 +173,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
+import functools
 import importlib
 from itertools import islice
 import math
@@ -2144,6 +2145,139 @@ _INVERSE_PAIRS = (("sin", "asin"), ("cos", "acos"), ("tan", "atan"), ("exp", "ln
                   ("sinh", "asinh"), ("cosh", "acosh"), ("tanh", "atanh"))
 _INVERSES = {id(PRELUDE[f]): PRELUDE[g] for f, g in _INVERSE_PAIRS} | \
             {id(PRELUDE[g]): PRELUDE[f] for f, g in _INVERSE_PAIRS}
+
+
+def _values(args: tuple, label: str) -> list:
+    """Values given as arguments or as one collection: `\\max(1, 5)`, `\\max(⟨1, 5⟩)`."""
+    items = _finite_elements(args[0], label) if len(args) == 1 and _elements(args[0]) is not None \
+        else list(args)
+    if not items:
+        raise NumError(f"{label} needs at least one value")
+    return items
+
+
+def _numbers(args: tuple, label: str) -> list:
+    items = _values(args, label)
+    _reject_non_numeric(*items)
+    return items
+
+
+def _sorted(items: list) -> list:
+    return sorted(items, key=functools.cmp_to_key(
+        lambda a, b: -1 if ncompare("lt", a, b) else 1 if ncompare("gt", a, b) else 0))
+
+
+def _extreme(name: str, op: str) -> PreludeFn:
+    def call(*args: AdValue) -> AdValue:
+        best, *rest = _numbers(args, f"\\{name}")
+        for v in rest:
+            if ncompare(op, v, best):
+                best = v
+        return best
+    return PreludeFn(name, call)
+
+
+def _mean(items: list) -> AdValue:
+    return ndiv(functools.reduce(nadd, items), len(items))
+
+
+def _mean_call(*args: AdValue) -> AdValue:
+    return _mean(_numbers(args, "\\mean"))
+
+
+def _median_call(*args: AdValue) -> AdValue:
+    items = _sorted(_numbers(args, "\\median"))
+    mid = len(items) // 2
+    return items[mid] if len(items) % 2 else _mean(items[mid - 1:mid + 1])
+
+
+def _deviation(name: str, sample: bool) -> PreludeFn:
+    def call(*args: AdValue) -> AdValue:
+        items = _numbers(args, f"\\{name}")
+        if sample and len(items) < 2:
+            raise NumError(f"\\{name} needs at least two values")
+        mean = _mean(items)
+        spread = functools.reduce(nadd, (npow(nsub(v, mean), 2) for v in items))
+        return npow(ndiv(spread, len(items) - sample), Fraction(1, 2))
+    return PreludeFn(name, call)
+
+
+def _sort_call(xs: AdValue) -> AdValue:
+    items = _sorted(_finite_elements(xs, "\\sort"))
+    return _rebuild(ArrayValue(()) if isinstance(xs, SetValue) else xs, items, "\\sort")
+
+
+def _reverse_call(xs: AdValue) -> AdValue:
+    if isinstance(xs, SetValue):
+        raise NumError("\\reverse needs an ordered collection; a set has no order")
+    return _rebuild(xs, _finite_elements(xs, "\\reverse")[::-1], "\\reverse")
+
+
+def _tested(predicate: Any, x: Any, label: str) -> bool:
+    result = _invoke(predicate, (x,))
+    if not isinstance(result, bool):
+        raise NumError(f"{label} needs a boolean from its predicate, got {nshow(result)}")
+    return result
+
+
+def _search(label: str, predicate: Any, xs: Any, stop_on: bool) -> bool:
+    """The first element whose test equals `stop_on` ends `\\any`/`\\all`; an infinite
+    input with no such element is undecided after MAX_TERMS elements."""
+    items = _elements(xs)
+    if items is None:
+        raise NumError(f"{label} needs a range or collection, got {nshow(xs)}")
+    for seen, x in enumerate(items, 1):
+        if _tested(predicate, x, label) == stop_on:
+            return True
+        if seen >= MAX_TERMS:
+            raise NumError(f"{label} undecided within {MAX_TERMS} elements")
+    return False
+
+
+def _any_call(*args: Any) -> bool:
+    _takes("any", args, 2, 2, "a predicate and a collection")
+    return _search("\\any", args[0], args[1], True)
+
+
+def _all_call(*args: Any) -> bool:
+    _takes("all", args, 2, 2, "a predicate and a collection")
+    return not _search("\\all", args[0], args[1], False)
+
+
+def _count_matches_call(*args: Any) -> int:
+    _takes("count", args, 2, 2, "a predicate and a collection")
+    p, xs = args
+    return sum(_tested(p, x, "\\count") for x in _finite_elements(xs, "\\count"))
+
+
+def _zip_call(*args: Any) -> ArrayValue:
+    if len(args) < 2:
+        raise NumError("\\zip takes two or more collections")
+    columns = [_finite_elements(xs, "\\zip") for xs in args]
+    return ArrayValue(tuple(ArrayValue(row) for row in zip(*columns)))
+
+
+def _enumerate_call(xs: Any) -> ArrayValue:
+    items = _finite_elements(xs, "\\enumerate")
+    return ArrayValue(tuple(ArrayValue((i, x)) for i, x in enumerate(items, 1)))
+
+
+PRELUDE.update({
+    "min": _extreme("min", "lt"),
+    "max": _extreme("max", "gt"),
+    "mean": PreludeFn("mean", _mean_call),
+    "median": PreludeFn("median", _median_call),
+    "stdev": _deviation("stdev", sample=False),
+    "sstdev": _deviation("sstdev", sample=True),
+    "sort": PreludeFn("sort", _sort_call),
+    "reverse": PreludeFn("reverse", _reverse_call),
+    "any": PreludeFn("any", _any_call),
+    "all": PreludeFn("all", _all_call),
+    "count": PreludeFn("count", _count_matches_call),
+    "zip": PreludeFn("zip", _zip_call),
+    "enumerate": PreludeFn("enumerate", _enumerate_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 
 class Engine:

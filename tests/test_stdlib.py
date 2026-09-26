@@ -150,3 +150,47 @@ def test_factorial_of_a_non_integer_is_gamma():
     assert ev(r"(-1/2)! - \sqrt(\pi)") == "= 0"
     assert ev(r"(1/2)!") == ev(r"\gamma(3/2)")
     fails(r"(-2)!", "non-negative integer")
+
+
+# --- aggregates ---
+
+
+@pytest.mark.parametrize("src, out", [
+    (r"\min(3, 1, 2)", "= 1"), (r"\max(⟨3, 1, 2⟩)", "= 3"), (r"\max(1/2, 0.75)", "= 3/4"),
+    (r"\min(\pi, 3)", "= 3"), (r"\max({2, 9})", "= 9"), (r"\min(1..5)", "= 1"),
+    (r"\mean(⟨1, 2, 4⟩)", "= 7/3"), (r"\mean(1, 2, 3)", "= 2"),
+    (r"\median(⟨5, 1, 3⟩)", "= 3"), (r"\median(⟨4, 1, 3, 2⟩)", "= 5/2"),
+    (r"\stdev(⟨2, 4, 4, 4, 5, 5, 7, 9⟩)", "= 2"), (r"\stdev(⟨1, 2⟩)", "= 1/2"),
+    (r"\sstdev(⟨1, 3⟩) ^ 2", "= 2"),
+    (r"\sort(⟨3, 1, 2⟩)", "= ⟨1, 2, 3⟩"), (r"\sort({3, 1, 2})", "= ⟨1, 2, 3⟩"),
+    (r"\sort([3, 1, 2])", "= [1, 2, 3]"), (r"\sort(⟨1/2, 0.25, \pi⟩)", "= ⟨1/4, 1/2, 3.14159265358979...⟩"),
+    (r"\reverse(⟨1, 2, 3⟩)", "= ⟨3, 2, 1⟩"), (r"\reverse([1, 2, 3])", "= [3, 2, 1]"),
+    (r"\zip(⟨1, 2, 3⟩, ⟨4, 5⟩)", "= ⟨⟨1, 4⟩, ⟨2, 5⟩⟩"),
+    (r"\enumerate(⟨7, 8⟩)", "= ⟨⟨1, 7⟩, ⟨2, 8⟩⟩"),
+    (r"\count(\fn(x) x % 2 ≠ 0, 1..10)", "= 5"), (r"\count(\fn(x) x > 0, ⟨⟩)", "= 0"),
+    (r"\any(\fn(x) x > 2, ⟨1, 2, 3⟩)", "= true"), (r"\all(\fn(x) x > 2, ⟨1, 2, 3⟩)", "= false"),
+    (r"\any(\fn(x) x > 2, ⟨⟩)", "= false"), (r"\all(\fn(x) x > 2, ⟨⟩)", "= true"),
+])
+def test_aggregates(src, out):
+    assert ev(src) == out
+
+
+def test_any_and_all_search_infinite_ranges():
+    assert ev(r"\any(\fn(x) x > 100, 1..)") == "= true"
+    assert ev(r"\all(\fn(x) x < 5, 1..)") == "= false"
+
+
+def test_any_and_all_short_circuit():
+    assert ev(r"\any(\fn(x) 1 / (x - 2) > 0, ⟨3, 2⟩)") == "= true"
+
+
+@pytest.mark.parametrize("src, message", [
+    (r"\mean(⟨⟩)", "at least one"), (r"\max()", "at least one"),
+    (r"\sstdev(⟨1⟩)", "at least two"), (r"\min(1, \true)", "booleans"),
+    (r"\sort(⟨1, 1+i⟩)", "not ordered"), (r"\reverse({1, 2})", "no order"),
+    (r"\any(\fn(x) x, ⟨1⟩)", "boolean"), (r"\zip(⟨1⟩)", "two or more"),
+    (r"\sort(1..)", "infinite"), (r"\enumerate(5)", "range or collection"),
+    (r"\count(\fn(x) x > 0, 1..)", "infinite"),
+])
+def test_aggregate_errors(src, message):
+    fails(src, message)
