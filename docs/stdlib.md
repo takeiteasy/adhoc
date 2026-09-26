@@ -44,10 +44,10 @@ the other aggregates need finite input.
 | Function | Result | Example |
 |---|---|---|
 | `a % b`, `a \mod b` | floored modulo; rationals and symbolic reals work | `-7 % 3` -> `2` |
-| `\gcd(a, b, …)` `\lcm(…)` | arguments or one collection of exact integers | `\gcd(⟨12, 18⟩)` -> `6` |
+| `\gcd(a, b, …)` `\lcm(…)` | arguments or one collection of exact rationals; gcd is the gcd of numerators over the lcm of denominators, lcm the reverse | `\gcd(⟨12, 18⟩)` -> `6`, `\gcd(1/2, 1/3)` -> `1/6` |
 | `\divmod(a, b)` | `⟨⌊a/b⌋, a % b⟩` | `\divmod(-7, 3)` -> `⟨-3, 2⟩` |
 | `\isprime(n)` | boolean | `\isprime(97)` -> `true` |
-| `\factor(n)` | prime factors with repetition, up to 10¹⁸ | `\factor(360)` -> `⟨2, 2, 2, 3, 3, 5⟩` |
+| `\factor(q)` | positive rational as `⟨p, exponent⟩` pairs, denominator primes negative; numerator and denominator up to 10¹⁸ | `\factor(12/5)` -> `⟨⟨2, 2⟩, ⟨3, 1⟩, ⟨5, -1⟩⟩` |
 | `\choose(n, k)` `\perm(n, k)` | binomial and falling factorial, `n ≤ 100000` | `\choose(5, 2)` -> `10` |
 | `\fib(n)` | Fibonacci number, `n ≤ 1000000` | `\fib(10)` -> `55` |
 
@@ -89,6 +89,6 @@ Complex arguments are a typed error, except for `\abs`.
 
 ## Limitations
 
-- `\gcd`, `\lcm` and `\factor` take exact integers only — [#89](https://todo.sr.ht/~takeiteasy/adhoc/89).
+- `\gcd`, `\lcm` and `\factor` reject Gaussian integers — [#92](https://todo.sr.ht/~takeiteasy/adhoc/92).
 - `\zip` and `\enumerate` need finite input — [#90](https://todo.sr.ht/~takeiteasy/adhoc/90).
 - `r∠θ` and `\abs` of a non-special angle are held approximately (`\abs(2∠1)` shows `2...`) — [#91](https://todo.sr.ht/~takeiteasy/adhoc/91).

@@ -2048,22 +2048,32 @@ def _exact_int(v: AdValue, label: str) -> int:
     return n
 
 
-def _integer_args(args: tuple, label: str) -> list[int]:
-    """Integers given as arguments or as one collection: `\\gcd(12, 18)`, `\\gcd(⟨12, 18⟩)`."""
+def _exact_rational(v: AdValue, label: str) -> Fraction:
+    if isinstance(v, bool) or not isinstance(v, int | Fraction):
+        raise NumError(f"{label} needs an exact rational, got {nshow(v)}")
+    return Fraction(v)
+
+
+def _rational_args(args: tuple, label: str) -> list[Fraction]:
+    """Rationals given as arguments or as one collection: `\\gcd(12, 18)`, `\\gcd(⟨12, 18⟩)`."""
     items = list(args)
     if len(args) == 1 and _elements(args[0]) is not None:
         items = _finite_elements(args[0], label)
     if not items:
-        raise NumError(f"{label} needs at least one integer")
-    return [_exact_int(v, label) for v in items]
+        raise NumError(f"{label} needs at least one rational")
+    return [_exact_rational(v, label) for v in items]
 
 
-def _gcd_call(*args: AdValue) -> int:
-    return math.gcd(*_integer_args(args, "\\gcd"))
+def _gcd_call(*args: AdValue) -> AdValue:
+    qs = _rational_args(args, "\\gcd")
+    return _normalize(Fraction(math.gcd(*(q.numerator for q in qs)),
+                               math.lcm(*(q.denominator for q in qs))))
 
 
-def _lcm_call(*args: AdValue) -> int:
-    return math.lcm(*_integer_args(args, "\\lcm"))
+def _lcm_call(*args: AdValue) -> AdValue:
+    qs = _rational_args(args, "\\lcm")
+    return _normalize(Fraction(math.lcm(*(q.numerator for q in qs)),
+                               math.gcd(*(q.denominator for q in qs))))
 
 
 def _divmod_call(*args: AdValue) -> ArrayValue:
@@ -2077,12 +2087,14 @@ def _isprime_call(n: AdValue) -> bool:
 
 
 def _factor_call(n: AdValue) -> ArrayValue:
-    n = _exact_int(n, "\\factor")
-    if n < 1:
-        raise NumError(f"\\factor needs a positive integer, got {n}")
-    if n > MAX_FACTOR:
+    q = _exact_rational(n, "\\factor")
+    if q <= 0:
+        raise NumError(f"\\factor needs a positive rational, got {nshow(n)}")
+    if max(q.numerator, q.denominator) > MAX_FACTOR:
         raise NumError(f"\\factor is limited to arguments up to {MAX_FACTOR}")
-    return ArrayValue(tuple(p for p, k in sorted(sympy.factorint(n).items()) for _ in range(k)))
+    exponents = {p: k for p, k in sympy.factorint(q.numerator).items()}
+    exponents.update({p: -k for p, k in sympy.factorint(q.denominator).items()})
+    return ArrayValue(tuple(ArrayValue((int(p), k)) for p, k in sorted(exponents.items())))
 
 
 def _count_call(name: str, fn: Callable[[int, int], int]) -> PreludeFn:
