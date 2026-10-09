@@ -82,6 +82,58 @@ def test_range_has_lower_precedence_than_addition():
     assert isinstance(right, Range) and isinstance(right.end, BinOp)
 
 
+@pytest.mark.parametrize("opener, closer", [
+    ("{", "}"), ("[", "]"), ("⟨", "⟩"), ("#[", "]"),
+    ("⌊", "⌋"), ("⌈", "⌉"), ("|", "|"), ("‖", "‖"), ("(", ")"),
+])
+@pytest.mark.parametrize("newline", ["", "\n"])
+def test_open_range_at_closing_delimiter(opener, closer, newline):
+    node = parse_program(f"{opener}1..{newline}{closer}")
+    assert shape(node) == shape(parse_program(f"{opener}(1..){closer}"))
+    if isinstance(node, Range):
+        inner = node
+    elif isinstance(node, Call):
+        inner = node.args[0]
+    else:
+        inner = node.items[0]
+    assert inner.end is None
+    start = len(opener.encode())
+    assert inner.span == Span(start, start + 3)
+
+
+@pytest.mark.parametrize("source, equivalent", [
+    ("{⟨1..⟩}", "{⟨(1..)⟩}"),
+    ("⟨1, 3..⟩", "⟨1, (3..)⟩"),
+    ("{2 ∈ 1..}", "{2 ∈ (1..)}"),
+    ("{x^2 | x ∈ 1..}", "{x^2 | x ∈ (1..)}"),
+])
+def test_open_ranges_in_nested_and_list_contexts(source, equivalent):
+    assert shape(parse_program(source)) == shape(parse_program(equivalent))
+
+
+def test_parenthesized_stepped_range_is_one_set_element():
+    node = parse_program("{(1,3..)}")
+    assert len(node.items) == 1
+    inner = node.items[0]
+    assert isinstance(inner, Range)
+    assert inner.second.text == "3"
+    assert inner.end is None
+
+
+@pytest.mark.parametrize("source, closer", [
+    ("{1..]", "}"), ("⟨1..}", "⟩"), ("#[1..}", "]"), ("⌊1..⌉", "⌋"),
+])
+def test_open_range_leaves_mismatched_closer_to_container(source, closer):
+    with pytest.raises(ParseError, match=f"expected `{closer}`"):
+        parse_program(source)
+
+
+@pytest.mark.parametrize("source", ["{1..", "[1..", "⟨1..", "#[1..", "⌊1..", "⌈1.."])
+def test_open_range_in_unclosed_container_is_incomplete(source):
+    with pytest.raises(IncompleteInput):
+        parse_program(source)
+
+
 def test_range_is_non_associative():
     with pytest.raises(ParseError):
         parse_program("1..2..3")

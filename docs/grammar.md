@@ -1115,6 +1115,12 @@ and index brackets, a comma never starts a stepped range: `⟨1, 3..9⟩` has tw
 Ranges can be assigned and passed through the runtime; folds bind them directly
 (`\sum(i=1..10) …`, `Σ(i=1..) …` — see `## Special forms`).
 
+An open range ends at a closing delimiter, including `}`, `]`, `⟩`, `⌋`, and `⌉`.
+Sets and arrays store a range as one element without expanding it:
+`{1..}` contains one lazy infinite range, and `⟨1..3⟩` contains one finite range.
+Tensors require numeric elements, so `[1..]` is a typed error. Set-builders require
+finite domains even when their guards would select only finitely many elements.
+
 A callable binds like any other value (`s = \py("math.sqrt")` prints `s = <py math.sqrt>`);
 a call returning a string binds like any value too (see `## String literals`). Two
 non-numeric values never compare equal unless identical — strings by content.

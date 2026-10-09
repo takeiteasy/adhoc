@@ -234,8 +234,6 @@ phases add bindings without touching the lexer.
 - Numeric calculus stops at finite bounds and order 2 — see docs/calculus.md, `## Limitations`.
 - `f⁻¹` on a user function gives one branch — see docs/calculus.md, `## Limitations`.
 - `/` is elementwise on tensors; matrix division is `\inv` or `\linsolve` (docs/stdlib.md).
-- `{1..}` is a parse error: an open range does not end at a closing brace —
-  [#107](https://todo.sr.ht/~takeiteasy/adhoc/107).
 
 - Symbolic and algebraic values display 15 significant digits plus a trailing
   ellipsis (`π` is `3.14159265358979...`, `2^(1/3)` is

@@ -853,10 +853,10 @@ class _Parser:
             return start
         dotdot = self.advance()
         self._skip_newlines()
-        # A closing delimiter terminates the range just like `,` `)` `;` and EOF —
-        # `( r = 1.. )` is the infinite range, not a broken one.
-        closed = isinstance(self.peek(), (Comma, RParen, Semi, Eof)) or (
-            isinstance(self.peek(), Delim) and self._bars and self._bars[-1] == self.peek().ch)
+        closed = isinstance(self.peek(), (Comma, RParen, Semi, Eof, *_CLOSERS)) or (
+            isinstance(self.peek(), Delim) and (
+                self.peek().ch in {"⌋", "⌉"}
+                or (self._bars and self._bars[-1] == self.peek().ch)))
         end = None if closed else bound()
         return Range(start=start, second=second, end=end,
                      span=start.span.to((end or dotdot).span))

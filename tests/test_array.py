@@ -35,6 +35,12 @@ def test_empty_arrays():
     assert ev(r"\len(⟨⟩)") == "= 0"
 
 
+@pytest.mark.parametrize("source", ["⟨1..⟩", "#[1..]"])
+def test_range_is_one_lazy_array_element(source):
+    assert ev(source) == ev("⟨(1..)⟩") == "= ⟨<range 1.. (lazy, infinite)>⟩"
+    assert ev(f"\\len({source})") == "= 1"
+
+
 def test_indexing_is_one_based_and_chains():
     env = {}
     run_source("a = ⟨1, [10, 20], ⟨5, 6⟩⟩", env)

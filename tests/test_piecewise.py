@@ -93,6 +93,7 @@ def test_bars_inside_a_builder():
 
 
 def test_builder_errors():
+    fails("{x^2 | x ∈ 1..}", "cannot range over an infinite range or sequence")
     fails("{x ∈ 1.. | x > 1}", "infinite")
     fails("{x ∈ 5 | x > 1}", "range or collection")
     fails("{x ∈ 1..3 | x}", "must be boolean")

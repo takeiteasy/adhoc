@@ -40,6 +40,7 @@ def test_entries_keep_their_exact_tiers():
 
 
 def test_entries_must_be_numbers():
+    fails("[1..]", "operands must be numbers")
     fails('["a", 1]', "strings are not numbers")
     fails(r"[\true]", "booleans are not numbers")
     fails("[1, [2, 3]]", "cannot mix numbers and tensors")

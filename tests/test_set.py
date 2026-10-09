@@ -24,6 +24,13 @@ def test_literals_dedupe_in_first_seen_order():
     assert ev('{1, "a", [1, 2], ⟨1⟩, {2}}') == '= {1, "a", [1, 2], ⟨1⟩, {2}}'
 
 
+def test_range_is_one_lazy_set_element():
+    assert ev("{1..}") == ev("{(1..)}") == "= {<range 1.. (lazy, infinite)>}"
+    assert ev(r"\len({1..})") == "= 1"
+    assert ev("{1..3}") == "= {<range 1..3>}"
+    assert ev(r"r = 1..; \len({r, r})") == "= 1"
+
+
 def test_dedup_uses_value_equality():
     assert ev("{1, 1., 1.0}") == "= {1}"
     assert ev("{[1, 2], [1, 2], [2, 1]}") == "= {[1, 2], [2, 1]}"
