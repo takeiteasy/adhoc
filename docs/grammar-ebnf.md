@@ -54,8 +54,9 @@ radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
 nth-root   ::= ("∛" | "∜") unary ;         (* prefix spelling of \root(x, 3) / \root(x, 4) *)
 power      ::= postfix ("^" unary)? ;      (* right-associative *)
 postfix    ::= atom trailer* ;             (* application — see below *)
-trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" | "ᵀ" | "!" | "‼" | "!!" | superscript
+trailer    ::= "(" args? ")" | "[" selector ("," selector)* "]" | "'" | "ᵀ" | "!" | "‼" | "!!" | superscript
              | superscript "(" args? ")" ;   (* function power, on a name head only *)
+selector   ::= ".." | expr ;                (* bare .. selects a whole axis *)
 superscript ::= (superscript-glyph)+ ;         (* sugar for "^" with the run read as an expression *)
 args       ::= arg ("," arg)* ;
 arg        ::= expr | string | kwarg | hole | operator ;   (* holes and operators only as a whole argument *)

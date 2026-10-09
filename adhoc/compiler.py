@@ -75,6 +75,7 @@ from .syntax import (
     StrLit,
     TensorLit,
     Transpose,
+    WholeAxis,
     PowCall,
     UnOp,
     UnaryOperator,
@@ -297,6 +298,8 @@ class _Lowerer:
                 return _call("set_", [pyast.Tuple(elts=[self.expr(i) for i in items],
                                                   ctx=pyast.Load()),
                                       pyast.Constant(sid)])
+            case WholeAxis():
+                return pyast.Constant(None)
             case Index(head=head, items=items, span=span):
                 head_expr = self.expr(head)
                 sid = self._push(span)

@@ -399,6 +399,11 @@ class SetLit(Node):
 
 
 @dataclass(frozen=True)
+class WholeAxis(Node):
+    """Bare `..` within index brackets."""
+
+
+@dataclass(frozen=True)
 class Index(Node):
     """`x[i, j]`: 1-based indexing. A head that is not indexable multiplies instead
     (the call rule's paper-product fallback)."""

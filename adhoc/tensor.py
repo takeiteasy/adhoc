@@ -67,10 +67,20 @@ def from_rows(items: list, row_length: int) -> TensorValue:
     return TensorValue((len(items) // row_length, row_length), tuple(items))
 
 
-def index(t: TensorValue, indices: tuple[int, ...]) -> Any:
-    """1-based index into the leading axes; fewer indices than axes gives a sub-tensor."""
+def index(t: TensorValue, indices: tuple[int | range, ...]) -> Any:
+    """1-based selectors; integers remove axes and ranges retain them."""
     if len(indices) > t.order:
         raise TensorError(f"{len(indices)} indices for an order-{t.order} tensor")
+    if any(isinstance(i, range) for i in indices):
+        selectors = indices + tuple(range(1, n + 1) for n in t.shape[len(indices):])
+        axes = [(i,) if isinstance(i, int) else i for i in selectors]
+        shape = tuple(len(i) for i in selectors if isinstance(i, range))
+        if any(n == 0 for n in shape):
+            raise TensorError("a tensor slice cannot be empty")
+        strides = _strides(t.shape)
+        items = tuple(t.items[sum((i - 1) * s for i, s in zip(position, strides))]
+                      for position in product(*axes))
+        return TensorValue(shape, items)
     offset = 0
     for axis, (i, stride) in enumerate(zip(indices, _strides(t.shape))):
         if not 1 <= i <= t.shape[axis]:

@@ -12,7 +12,7 @@ from .syntax import (
     Assign, ArrayLit, BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Diff,
     Eval, Fold, Hole, IfExpr, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OpRef,
     Piecewise, PowCall, Quote, Range, SetBuilder, SetLit, StrLit, TensorLit, Transpose,
-    UnaryOperator, UnOp, Var,
+    UnaryOperator, UnOp, Var, WholeAxis,
 )
 
 
@@ -250,6 +250,8 @@ def node_tex(node: Node, prec: int = 0) -> str:
                 return rf"\{{ {name} \in {node_tex(domain)} \mid {tests} \}}"
             tail = f", {tests}" if guards else ""
             return rf"\{{ {node_tex(element)} \mid {name} \in {node_tex(domain)}{tail} \}}"
+        case WholeAxis():
+            return r"\ldots"
         case Index(head=head, items=items):
             return f"{node_tex(head, _ATOM)}_{{{_args(items)}}}"
         case Transpose(operand=operand, glyph=glyph):

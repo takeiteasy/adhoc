@@ -31,7 +31,7 @@ See [runtime lowering](lowering.md) for the operation mapping.
 | `reduction` | Beta reduction of quoted expressions |
 | `rewrite` | Bridge between quotes or function bodies and SymPy |
 | `tex` | LaTeX rendering of syntax and values |
-| `tensor` | Tensors, arrays and sets; indexing and tensor operations |
+| `tensor` | Tensors, arrays and sets; indexing, slicing and tensor operations |
 | `linalg` | Matrix elimination, constructors and tensor products |
 | `runtime` | Numeric dispatch, `Engine`, lazy ranges, Python interop and numeric calculus |
 | `gauss` | Gaussian rationals using exact component arithmetic |

@@ -375,6 +375,7 @@ m[2, 1]  ->  = 3                m[1]  ->  = [1, 2]
 | `[a, b; c, d]` | matrix; `;` rows hold numbers and have one length |
 | `[a, b;]` / `[a; b]` | one-row / one-column matrix — a trailing `;` keeps a single row a matrix |
 | `x[i, j]` | 1-based index; fewer indices than axes gives the sub-tensor |
+| `x[2..3]`, `x[..,2]` | range or whole-axis selection; ranges retain axes, integers remove them ([slicing](slicing.md)) |
 | `x'`, `xᵀ` | transpose: reverses the axes; a vector is unchanged (`'` on a function is its derivative, [calculus](calculus.md)) |
 | `a @ b`, `a \contract b` | contraction of `a`'s last axis with `b`'s first: dot product, matrix product |
 | `a × b`, `a \times b` | cross product of two length-3 vectors; with a scalar operand, the same as `*` |
@@ -388,8 +389,8 @@ m + 1        ->  = [2, 3; 4, 5]         m'      ->  = [1, 3; 2, 4]
 ```
 
 Entries stay on their exact tiers (`[√2, 1/3] * 3`). Booleans, strings, and other
-collections are typed errors, as are the empty tensor `[]`, shape mismatches, and an
-index that is not an exact integer within range.[^tensor-index] Tensors compare with the
+collections are typed errors, as are the empty tensor `[]`, shape mismatches,
+non-integer or out-of-bounds indices, and slices with invalid bounds.[^tensor-index] Tensors compare with the
 binding rule's check: same shape and equal entries. `\len(t)` is the outer length,
 `\shape(t)` the shape as a vector, `\transpose(t)` the prelude spelling of `t'`.
 
@@ -413,8 +414,9 @@ a[2]      ->  = [1, 2]               a[4][1]  ->  = 4
 \sum(x=⟨1, 2, 3⟩) x^2  ->  = 14
 ```
 
-An array indexes with one 1-based exact-integer subscript (chain `a[i][j]` for nested
-arrays) and folds bind over its elements in order. It has no algebra: every arithmetic
+An array accepts one 1-based exact-integer index or [slice selector](slicing.md)
+(chain `a[i][j]` for nested arrays). Ranges and bare `..` return arrays;
+folds bind over elements in order. It has no algebra: every arithmetic
 operator, comparison, and transpose on an array is a typed error. The binding rule's check
 compares arrays by length and elements in order. Literal heads do not index (`⟨1, 2⟩[1]`
 juxtaposes and fails), like tensor literals. `\arr` is reserved: it cannot be bound, and

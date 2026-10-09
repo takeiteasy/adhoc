@@ -44,6 +44,7 @@ importing file. See [import rules](grammar.md#modules-and-imports).
 |---|---|
 | Tensor literal | `_e.tensor(items, row_length, sid)` |
 | Index | `_e.index(head, items, sid, spelling)` |
+| Whole-axis selector `..` | `None` within the index selector tuple |
 | Transpose | `_e.transpose(value, sid)` |
 | Contraction `@` | `_e.dot` |
 | Array literal | `_e.array(items, sid)` |
@@ -53,6 +54,10 @@ importing file. See [import rules](grammar.md#modules-and-imports).
 `\arr(...)` rewrites to an array node during parsing. Set construction
 deduplicates through numeric-tier equality. A numeric index head multiplies;
 a non-numeric, non-indexable head fails.
+
+Collection indexing normalizes range selectors to finite, 1-based Python ranges
+using the axis length. Tensor selection retains range axes and removes integer
+axes; array slicing preserves the array kind. Open ranges never iterate infinitely.
 
 Tensor arithmetic uses `tensor.map1` and `map2` through the numeric helpers.
 Folds, product fallback and function calls share that broadcasting behavior.

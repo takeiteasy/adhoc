@@ -3568,15 +3568,34 @@ class Engine:
     def approx(self, a, b, sid): return self._binop(napprox, a, b, sid)
     def member(self, value, collection, sid): return self._binop(nmember, value, collection, sid)
 
+    def _index_selector(self, item, length, sid):
+        if item is None:
+            return range(1, length + 1)
+        if isinstance(item, RangeValue):
+            bounds = (item.start, item.step, item.second, item.end)
+            if any(isinstance(v, bool) or not isinstance(v, int)
+                   for v in bounds if v is not None):
+                self._fail("slice bounds and step must be exact integers", sid)
+            for bound in (item.start, item.end):
+                if bound is not None and not 1 <= bound <= length:
+                    self._fail(f"slice bound {bound} out of range 1..{length}", sid)
+            end = item.end if item.end is not None else (length if item.step > 0 else 1)
+            return range(item.start, end + (1 if item.step > 0 else -1), item.step)
+        if isinstance(item, bool) or not isinstance(item, int):
+            self._fail(f"index must be an exact integer, got {nshow(item)}", sid)
+        if not 1 <= item <= length:
+            self._fail(f"index {item} out of range 1..{length}", sid)
+        return item
+
     def index(self, head, items, sid, spelling=None):
-        """`x[i, j]`: index a tensor (1-based, exact integers); any other number
-        multiplies by the bracketed tensor, like the call rule's product fallback."""
+        """1-based collection selection; numeric heads multiply by the bracketed tensor."""
         if isinstance(head, TensorValue):
-            for item in items:
-                if isinstance(item, bool) or not isinstance(item, int):
-                    self._fail(f"index must be an exact integer, got {nshow(item)}", sid)
+            if len(items) > head.order:
+                self._fail(f"{len(items)} indices for an order-{head.order} tensor", sid)
+            selectors = tuple(self._index_selector(item, length, sid)
+                              for item, length in zip(items, head.shape))
             try:
-                return tn.index(head, tuple(items))
+                return tn.index(head, selectors)
             except TensorError as e:
                 self._fail(e.args[0], sid)
         if isinstance(head, SetValue):
@@ -3584,14 +3603,14 @@ class Engine:
         if isinstance(head, ArrayValue):
             if len(items) != 1:
                 self._fail("an array takes one index; chain `a[i][j]` for nested arrays", sid)
-            (i,) = items
-            if isinstance(i, bool) or not isinstance(i, int):
-                self._fail(f"index must be an exact integer, got {nshow(i)}", sid)
-            if not 1 <= i <= len(head.items):
-                self._fail(f"index {i} out of range 1..{len(head.items)}", sid)
+            i = self._index_selector(items[0], len(head.items), sid)
+            if isinstance(i, range):
+                return ArrayValue(tuple(head.items[j - 1] for j in i))
             return head.items[i - 1]
         if not isinstance(head, _NUMERIC_TYPES) or isinstance(head, bool):
             self._fail(f"{spelling or nshow(head)} is not indexable", sid)
+        if any(item is None for item in items):
+            self._fail("whole-axis selection needs a tensor or array", sid)
         return self.mul(head, self.tensor(items, None, sid), sid)
 
     def transpose(self, value, sid, glyph="'"):

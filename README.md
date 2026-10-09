@@ -62,6 +62,7 @@ Heavyweight tests are marked `slow`;
 | [Language guide](docs/language.md) | Values, bindings, functions, collections and interop |
 | [Grammar](docs/grammar.md) | Syntax, lexical rules and precedence |
 | [Formal grammar](docs/grammar-ebnf.md) | EBNF parser productions |
+| [Collection slicing](docs/slicing.md) | Range selectors, tensor shapes and bounds |
 | [Notation](docs/notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](docs/operators.md) | Infix declarations, precedence and scope |
 | [Calculus](docs/calculus.md) | Derivatives and integrals |

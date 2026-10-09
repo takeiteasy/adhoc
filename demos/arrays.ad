@@ -11,6 +11,10 @@ a = b
 a[2]
 a[4][1]
 
+a[2..3]
+a[..]
+a[(4,2..)]
+
 -- no implied algebra: arrays only index and iterate
 \len(a)
 \sum(x=⟨1, 2, 3⟩) x^2

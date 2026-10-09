@@ -166,6 +166,9 @@ Tensors nest to higher orders. `m[2, 1]` indexes a matrix; `m'` transposes it.
 `@`/`\contract` contracts, `×` crosses 3-vectors, and `⊗` forms a tensor product.
 The prelude provides `\len`, `\shape`, `\transpose`, `\det`, `\inv` and `\linsolve`.
 
+Tensors and arrays support [range slicing](slicing.md): `v[2..3]`, `a[2..]`,
+and `m[..,2]`. Integer selectors remove tensor axes; ranges retain them.
+
 Arrays also use `#[...]` or `\arr(...)`. They support chained indexing (`a[i][j]`)
 and have no elementwise algebra. Sets accept any values and support
 [set-builders](grammar.md#set-builder), such as `{x ∈ 1..10 | x^2 < 50}`.
@@ -257,8 +260,6 @@ script or module. See [custom operators](operators.md) for precedence and exampl
 - Graphing is not implemented. See [the roadmap](../ROADMAP.md).
 - Custom operators omit punctuation sequences and sections; see
   [operator limitations](operators.md#limitations).
-- Collections have no range slicing (`v[2..3]`):
-  [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise; construction is
   quadratic in set size: [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
 - Numeric derivatives stop at order 2. Integrals support finite and

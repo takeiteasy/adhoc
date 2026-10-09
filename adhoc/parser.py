@@ -157,6 +157,7 @@ from .syntax import (
     StrLit,
     TensorLit,
     Transpose,
+    WholeAxis,
     PowCall,
     UnOp,
     UnaryOperator,
@@ -1210,21 +1211,26 @@ class _Parser:
         sub.expect(Eof, "end of superscript")
         return exponent
 
-    # index ::= "[" expr ("," expr)* "]" — a trailer on name-ish heads and transposes.
+    # index ::= "[" selector ("," selector)* "]"; selector ::= ".." | expr.
     def _index(self, head: Node) -> Index:
         self.advance()  # `[`
         self._skip_newlines()
         with self._list_context(True):
-            items = [self.expr()]
+            items = [self._index_selector()]
             self._skip_newlines()
             while isinstance(self.peek(), Comma):
                 self.advance()
                 self._skip_newlines()
-                items.append(self.expr())
+                items.append(self._index_selector())
                 self._skip_newlines()
         close = self.expect(RBracket, "`]`")
         self._nl = False
         return Index(head=head, items=tuple(items), span=head.span.to(close.span))
+
+    def _index_selector(self) -> Node:
+        if isinstance(self.peek(), DotDot):
+            return WholeAxis(span=self.advance().span)
+        return self.expr()
 
     # tensor ::= "[" expr ("," expr)* "]" | "[" row (";" row)* ";"? "]"
     # A `;` makes every item a scalar in a row of equal length; a trailing `;` keeps

@@ -7,7 +7,7 @@ from .syntax import (
     is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
     Assign, ArrayLit, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
-    PyImport, Quote, Range, Seq, SetBuilder, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var,
+    PyImport, Quote, Range, Seq, SetBuilder, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var, WholeAxis,
 )
 
 
@@ -158,6 +158,8 @@ def show(node: Node) -> str:
             return f"⟨{', '.join(show(item) for item in items)}⟩"
         case SetLit(items=items):
             return f"{{{', '.join(show(item) for item in items)}}}"
+        case WholeAxis():
+            return ".."
         case Index(head=head, items=items):
             return f"{show(head)}[{', '.join(show(item) for item in items)}]"
         case Transpose(operand=operand, glyph=glyph):
