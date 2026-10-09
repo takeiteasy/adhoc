@@ -1,18 +1,18 @@
 # Calculus
 
-Derivatives, integrals and inverses: `\diff`, `\int`, `f'` and `f⁻¹`. They run in the float tier and
-return a float (a complex float for a complex body), or a typed error when they do not
-converge. `f'`, `f''` and `f⁻¹` are exact when the function body is symbolic (docs/symbolic.md).
+`\diff` and `\int` compute numeric derivatives and integrals. Function derivatives
+(`f'`, `f''`, …) and inverses (`f⁻¹`) use exact symbolic results when the body
+supports them, otherwise numeric methods. Failure to converge is a typed error.
 
 | Form | Meaning |
 |---|---|
-| `\diff(x=a) body`, `∂(x=a) body` | derivative of `body` at `a` |
-| `\int(x=a..b) body`, `∫(x=a..b) body` | integral of `body` over `[a, b]` |
-| `\int(x=a..) body` | integral over `[a, ∞)` |
-| `f'`, `f''`, `f'''`... | the derivatives of a function, as a function; exact where the body allows, numeric to order 2 |
-| `f⁻¹` | the numeric inverse of a function, as a function |
+| `\diff(x=a) body`, `∂(x=a) body` | Numeric derivative at a real point |
+| `\int(x=a..b) body`, `∫(x=a..b) body` | Numeric integral over `[a, b]` |
+| `\int(x=a..) body` | Numeric integral over `[a, ∞)` |
+| `f'`, `f''`, `f'''`, … | Derivative function; exact to any order, numeric to order 2 |
+| `f⁻¹` | Inverse function, returning one branch |
 
-```
+```text
 \diff(x=1) \sin(x)          ->  = 0.5403023058681385
 ∫(x=0..π) \sin(x)           ->  = 2.0
 ∫(x=0..) e^(-x)             ->  = 1.0
@@ -25,62 +25,93 @@ f⁻¹(8)                      ->  = 2
 
 ## Binders
 
-`\diff` and `\int` are special forms like `\lim` (`docs/grammar.md`, `## Special forms`):
-the first argument is a binding, the body extends over the rest of the expression, and the
-variable scopes like a function parameter. `∂` and `∫` are aliases of the `\`-names.
+`\diff` and `\int` are [special forms](grammar.md#special-forms-folds-and-limits).
+Their first parentheses bind a variable; the body extends over the rest of the
+expression. The variable stays local, as a function parameter does. `∂` and `∫`
+are name aliases of `\diff` and `\int`.
+
+Numeric methods return floats or complex floats. The body may be complex;
+`\diff` requires a real anchor.
 
 ## Derivatives
 
-`\diff(x=a) body` never evaluates the body at `a` itself. It differences the body at
-`a ± h` and extrapolates as `h` shrinks[^ridders]; it returns when the error estimate is
-within `1e-9` (relatively scaled) and is otherwise a `did not converge` error. The anchor is
-real; the body may be complex.
+### Numeric binder
 
-`f'`, `f''`, `f'''` and so on apply to any function value: a definition, a lambda, a composition, a prelude
-function or a Python callable. At an exact point (an integer, fraction or Gaussian), a
-one-parameter definition or lambda whose body bridges to sympy is differentiated exactly, once
-per function, to any order: `f'(1/2)` is `3/4` for `x^3`. Anything else, and any float point,
-is numeric, and only orders 1 and 2 exist there: `f''` uses second differences (tolerance `1e-6`) and does evaluate `f(a)`. Postfix `'` on a tensor is still the transpose, so `A'` is unchanged; `ᵀ` is
-always the transpose and is an error on a function. The result of `f'` is an ordinary
-function: it passes to `\map`, composes, and displays as `<fn f′>`.
+`\diff(x=a)` probes `a ± h` without evaluating at `a`. It shrinks the step and
+extrapolates until the relatively scaled error estimate is within `1e-9`, or
+reports `did not converge`.[^ridders]
+
+### Function derivatives
+
+Postfix `'` applies to definitions, lambdas, compositions, prelude functions
+and Python callables. The result is an ordinary function: it maps, composes
+and displays as `<fn f′>`.
+
+| Function and argument | Method |
+|---|---|
+| One-parameter definition or lambda with a supported symbolic body; exact integer, rational or Gaussian point | Exact derivative, cached per function, to any order |
+| Other function or float point, first derivative | Numeric differences; tolerance `1e-9` |
+| Other function or float point, second derivative | Numeric second differences; tolerance `1e-6`; evaluates at the anchor |
+| Numeric derivative above order 2 | Typed error |
+
+For `f(x) = x^3`, `f'(1/2)` is exactly `3/4`.
+See [symbolic rewriting](symbolic.md) for supported bodies and `\deriv`.
+
+On tensors, `'` remains transpose. `ᵀ` always means transpose and is an error on
+a function.
 
 ## Integrals
 
-`\int(x=a..b) body` integrates adaptively[^quadrature] until the summed error estimate is
-within `1e-12` (scaled by the integrand's magnitude), or errors after 2,000 subintervals.
-Endpoints are never evaluated, so `∫(x=0..1) 1/√x` is `2`. A reversed range negates
-(`∫(x=1..0) x` is `-0.5`); a stepped range is an error. A diverging or slowly decaying
-integrand on `a..` ends in `did not converge`.
+Adaptive integration stops when its summed error estimate is within `1e-12`,
+scaled by the integrand's magnitude. It reports `did not converge` after 2,000
+subintervals.[^quadrature]
+
+| Bound or body | Behavior |
+|---|---|
+| Finite endpoints | Endpoints are never evaluated |
+| Reversed bounds | Negate the result |
+| Upper-infinite `a..` | Integrate through a finite-interval transformation |
+| Stepped range | Typed error |
+| Divergent or slowly decaying body | Can exhaust the convergence budget |
+
+For example, `∫(x=0..1) 1/√x` is approximately `2`, and
+`∫(x=1..0) x` is `-0.5`. Symbolic integration is not implemented.
 
 ## Inverses
 
-`f⁻¹` on a function without a paired inverse (anything but `\sin`, `\exp` and the other
-prelude pairs, which give `\asin`, `\ln`, …) is a function whose value at `y` is the root of
-`f(x) = y` nearest `y`. When `f` is not one-to-one the nearest root wins, the larger real part
-on a tie (`f(x) = x^2` gives `f⁻¹(4)` as `2`; `\solve` gives both, docs/symbolic.md). A `y` with no
-preimage (`f⁻¹(-1)` for `x^2`) or a jump (`\floor⁻¹(2.5)`) is a `no value maps to` error.
-`(f⁻¹)⁻¹` is `f`.
+Paired prelude functions return their paired inverse: `\sin⁻¹` is `\asin`,
+`\exp⁻¹` is `\ln`, and so on.
 
-| Case | Result |
+Other inverses solve `f(x) = y` and return the root nearest `y`. If distances tie,
+the root with the larger real part wins. For `f(x) = x^2`, `f⁻¹(4)` is `2`;
+[solving](symbolic.md#solving) can return both roots. `(f⁻¹)⁻¹` is `f`.
+
+| Function and argument | Result |
 |---|---|
-| user function with a body that solves exactly, exact `y` | exact root, `y` may be complex: `(x ↦ 2x)⁻¹(6)` is `3`, `f⁻¹(3+4i)` is `2+i` for `x^2` |
-| any other function, or a float `y` | float root nearest `y`[^inverse], real `y` only |
+| User function with an exactly solvable body and exact `y` | Exact root; complex `y` supported |
+| Other function or float `y` | Numeric root nearest `y`; real `y` required[^inverse] |
+| No preimage or a jump | Typed “no value maps to” error |
+
+`(x ↦ 2x)⁻¹(6)` is `3`. For `f(x) = x^2`, `f⁻¹(3+4i)` is `2+i` and
+`f⁻¹(-1)` has no real preimage. `\floor⁻¹(2.5)` reports a jump error.
 
 ## Limitations
 
 | Limit | Ticket |
 |---|---|
-| Only finite bounds and `a..`; no `-\inf` or whole-line bounds | [#101](https://todo.sr.ht/~takeiteasy/adhoc/101) |
-| Derivatives above the second order are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
+| Integral bounds are finite or upper-infinite `a..`; no `-\inf` or whole-line bounds | [#101](https://todo.sr.ht/~takeiteasy/adhoc/101) |
+| Numeric derivatives above order 2 are errors; symbolic derivatives support higher orders | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
 | `f⁻¹` returns one branch; no set-valued inverse | [#117](https://todo.sr.ht/~takeiteasy/adhoc/117) |
-| `\diff` at a kink reads as the mean slope (`\diff(x=0) \|x\|` is `0.0`) | [#103](https://todo.sr.ht/~takeiteasy/adhoc/103) |
+| `\diff` at a kink returns the mean slope: `\diff(x=0) \|x\|` is `0.0` | [#103](https://todo.sr.ht/~takeiteasy/adhoc/103) |
 
-Symbolic derivatives and integrals are not built; `\simplify` and friends are in docs/symbolic.md.
+[^ridders]: Ridders' method uses central differences with a step shrinking by
+    1.4 per row, combined by Richardson extrapolation. It keeps the entry with
+    the smallest error estimate. The initial step is `0.1·|a|`, or `0.1` at zero.
 
-[^ridders]: Ridders' method: central differences with a step shrinking by 1.4 per row,
-    combined by Richardson extrapolation, keeping the entry with the smallest error
-    estimate. The first step is `0.1·|a|` (`0.1` at `0`).
-[^inverse]: A bracket grows outward from `y` until `f(x) − y` changes sign, then bisects; a
-    tangent root falls back to a secant walk. The residual is checked before returning.
-[^quadrature]: Globally adaptive Gauss–Kronrod (7 and 15 points): the panel with the largest
-    error estimate bisects. An infinite range maps through `x = a + t/(1-t)`.
+[^quadrature]: Globally adaptive Gauss–Kronrod uses 7- and 15-point rules and
+    bisects the panel with the largest error estimate. An infinite range maps
+    through `x = a + t/(1-t)`.
+
+[^inverse]: A bracket grows outward from `y` until `f(x) - y` changes sign, then
+    bisects. A tangent root falls back to a secant walk. The residual is checked
+    before returning.

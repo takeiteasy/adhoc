@@ -13,15 +13,19 @@ ordinary string.
 The REPL shows the string escaped; the string itself holds single backslashes, so it
 composes (`"$" + \tex(e) + "$"`) and passes to `\py` for writing to a file.
 
-## What renders
+## Supported inputs
 
 | Input | Output |
 |---|---|
 | Quote | the expression, with parentheses only where precedence needs them |
 | User function or lambda | `f(x) = body` or `x \mapsto body` |
 | Number | `\frac{a}{b}` for a rational; `sympy.latex` for symbolic and algebraic values; digits followed by `\ldots` for the rest |
-| Tensor, array, set, range | `pmatrix`, `\langle … \rangle`, `\{ … \}` |
+| Tensor | `pmatrix` |
+| Array | `\langle … \rangle` |
+| Set or range | `\{ … \}`; ranges use an ellipsis |
 | Boolean, string | `\text{…}` |
+
+## Syntax rendering
 
 | Syntax | LaTeX |
 |---|---|
@@ -35,6 +39,10 @@ composes (`"$" + \tex(e) + "$"`) and passes to `\py` for writing to a file.
 | `f⁻¹(y)`, `\sin⁻¹(y)` | `f^{-1}\left(y\right)`, `\sin^{-1}\left(y\right)` |
 | `Aᵀ`, `A'` | `A^{\mathsf{T}}`, `A'` |
 
-Names map to their LaTeX spelling: Greek letters (`α` is `\alpha`), subscripts (`x₁` is
+## Names and errors
+
+Names use their LaTeX spelling: Greek letters (`α` is `\alpha`), subscripts (`x₁` is
 `x_{1}`), known functions (`\sin`, `\asin` is `\arcsin`) and `\operatorname{name}` for the rest.
-A builtin, a Python callable or another value with no LaTeX form is a typed error.
+Built-in functions, Python callables and other values without a LaTeX form
+produce typed errors. See [notation limitations](notation.md#limitations) for
+function-power rendering.

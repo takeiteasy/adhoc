@@ -1,15 +1,18 @@
-# docs
+# Documentation
 
-- [`language.md`](language.md) — what's actually implemented right now, and what isn't yet.
-- [`grammar.md`](grammar.md) — the formal grammar and precedence table; what the parser is
-  written against.
-- [`notation.md`](notation.md) — math glyphs (`x²`, `n!`, `∛`, `≠`, `∉`, `∅`) and their ASCII spellings.
-- [`operators.md`](operators.md) — custom infix declarations, precedence, paired glyphs, and session scope.
-- [`calculus.md`](calculus.md) — `\diff`, `\int`, and `f'`: numeric derivatives and integrals.
-- [`symbolic.md`](symbolic.md) — `\simplify`, `\expand`, `\factor`, `\solve`, `\deriv` over quotes and functions.
-- [`tex.md`](tex.md) — `\tex(e)`: LaTeX output for quotes, functions and values.
-- [`stdlib.md`](stdlib.md) — prelude functions by group: rounding, number theory, elementary
-  and special functions, aggregates, complex.
-- [`architecture.md`](architecture.md) — the package layout and pipeline.
-- [`numerics.md`](numerics.md) — the numeric seam: what backs it today, what it's for, and
-  the Python boundary conversion matrix.
+Start with the language guide; use the grammar for precise syntax rules.
+
+| Guide | Contents |
+|---|---|
+| [Language guide](language.md) | Values, bindings, functions, collections and interop |
+| [Grammar](grammar.md) | Syntax, lexical rules and precedence |
+| [Formal grammar](grammar-ebnf.md) | EBNF parser productions |
+| [Notation](notation.md) | Math glyphs and ASCII spellings |
+| [Custom operators](operators.md) | Infix declarations, precedence and scope |
+| [Calculus](calculus.md) | Derivatives and integrals |
+| [Symbolic rewriting](symbolic.md) | Simplification, expansion, factoring and solving |
+| [LaTeX output](tex.md) | Rendering quotes, functions and values |
+| [Standard library](stdlib.md) | Prelude constants and functions |
+| [Numerics](numerics.md) | Exact arithmetic, convergence, display and Python conversions |
+| [Architecture](architecture.md) | Package layout and evaluation pipeline |
+| [Runtime lowering](lowering.md) | Engine calls, scope and error mapping |

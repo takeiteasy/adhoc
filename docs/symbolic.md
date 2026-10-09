@@ -1,104 +1,132 @@
 # Symbolic rewriting
 
-`\simplify`, `\expand`, `\factor`, `\solve` and `\deriv` rewrite an expression quote or a user function and
-answer with an expression quote (or, for `\solve`, a set of solutions). They run on sympy;
-free names stay symbols.
+`\simplify`, `\expand`, `\factor`, `\solve`, `\deriv` and `\grad` rewrite an
+expression quote or a user function using SymPy. Results are expression quotes,
+sets of solutions or arrays of derivative quotes. Free names remain symbols.
 
-| Form | Result |
+| Function | Result |
 |---|---|
-| `\simplify(e)` | the simplified expression |
-| `\expand(e)` | products and powers multiplied out |
-| `\factor(e)` | the factored expression (`\factor(12)` on a number is prime factors, docs/stdlib.md) |
-| `\solve(e)` | the set of `x` with `e = 0`, over the complex numbers |
-| `\solve(e, `(y))` | the same, solving for `y` |
-| `\deriv(e)` | the exact derivative with respect to the one free name (several names: the gradient) |
-| `\deriv(e, `(y))` | the same, with respect to `y` |
-| `\deriv(e, `(y), n)` | the `n`th derivative, `n` a positive integer |
-| `\deriv(e, ⟨`(x), `(y)⟩)` | the mixed partial, differentiating by each name in turn |
-| `\grad(e)`, `\grad(e, ⟨`(x), `(y)⟩)` | the array of first partials, over every name or the listed ones |
+| `\simplify(e)` | Simplified expression quote |
+| `\expand(e)` | Quote with products and powers expanded |
+| `\factor(e)` | Factored quote; numeric arguments use [prime factoring](stdlib.md#factoring) |
+| `\solve(e)` | Set of solutions to `e = 0` over complex numbers |
+| `\deriv(e)` | Derivative quote; several free names give a gradient |
+| `\grad(e)` | Array of first partial-derivative quotes |
 
-```
+```text
 \simplify(\expr((x^2 - 1)/(x - 1)))   ->  = \expr((x + 1))
 \expand(\expr((x + 1)^2))            ->  = \expr((((x ^ 2) + (2 * x)) + 1))
 \factor(\expr(x^2 - 1))              ->  = \expr(((x + 1) * (x - 1)))
 \solve(\expr(x^2 - 4))               ->  = {-2, 2}
 \solve(\expr(x^2 + 1))               ->  = {-i, i}
-\solve(\expr(a x - b), `(x))         ->  = {\expr((b / a))}
-f(x) = x^2 - 9
-\solve(f)                            ->  = {-3, 3}
-\deriv(\expr(x^3))                    ->  = \expr((3 * (x ^ 2)))
-\deriv(\expr(a x^2), `(a))           ->  = \expr((x ^ 2))
+\deriv(\expr(x^3))                   ->  = \expr((3 * (x ^ 2)))
 ```
-
-`\deriv` names its unknown the way `\solve` does. Numeric derivatives at a point are `f'` and
-`\diff` (docs/calculus.md); `f'` uses the exact derivative when the body bridges.
-
-## Partial derivatives
-
-With no unknown and several candidates (free names in name order, or a function's parameters),
-`\deriv` and `\grad` answer with an array of quotes, one partial per name. Repeat a name in the
-array for higher orders.
-
-```
-\deriv(\expr(x^2 y))                    ->  = ⟨\expr(((2 * x) * y)), \expr((x ^ 2))⟩
-f(x, y) = x y^2
-\grad(f)                                ->  = ⟨\expr((y ^ 2)), \expr(((2 * x) * y))⟩
-\deriv(\expr(x^3 y), ⟨`(x), `(x), `(y)⟩) ->  = \expr((6 * x))
-```
-
-An order argument takes a single unknown. The gradient is an array, not a tensor, because
-tensors hold numbers only; it indexes and maps but has no vector algebra.
 
 ## Inputs
 
-- An **expression quote** (`\expr(...)`). Every name is free, except `\pi`, `e`, `i` and `\inf`,
-  which are the constants.
-- A **user function or lambda** with a single-expression body. Its parameters are the symbols;
-  other names take their numeric values from where the function was defined
-  (`a = 3; f(x) = a x + x` simplifies to `4 x`). A parameter named `e` or `i` shadows the
-  constant.
+| Input | Names used as symbols | Other names |
+|---|---|---|
+| Expression quote, `\expr(...)` | Free names | `\pi`, `e`, `i` and `\inf` retain their constant meaning |
+| User function or lambda with one expression as its body | Parameters | Numeric values from the defining scope |
 
-Supported: numbers, names, `+ - * / ^`, unary minus, `\sin` and the other elementary
-functions, `\sqrt`, `\root`, `\ln`, `\log`, `\abs`, and calls to other names (kept as
-undefined functions: `g(x) + g(x)` simplifies to `2 g(x)`). Anything else, such as sets,
-comparisons, folds, lambdas or statement quotes, is an error naming the construct.
+For `a = 3` and `f(x) = a x + x`, `\simplify(f)` returns `\expr((4 * x))`.
+A parameter named `i` shadows the imaginary unit; other prelude constants remain
+protected.
+
+| Supported syntax | Examples |
+|---|---|
+| Numbers and names | `2`, `1/3`, `x` |
+| Arithmetic and unary minus | `+ - * / ^`, `-x` |
+| Elementary functions | `\sin`, `\sqrt`, `\root`, `\ln`, `\log`, `\abs` |
+| Calls to other names | Undefined symbolic functions: `g(x) + g(x)` simplifies to `2 g(x)` |
+
+Sets, comparisons, folds, lambda syntax and statement quotes produce an error
+naming the unsupported construct. A lambda passed as a function input is supported;
+a lambda expression inside a quote is not.
+
+## Selecting names and orders
+
+Use a quoted name to select an unknown or differentiation variable. Both
+`\expr(y)` and backtick quotes work.
+
+| Form | Meaning |
+|---|---|
+| `\solve(e, \expr(y))` | Solve for `y` |
+| `\deriv(e, \expr(y))` | Differentiate with respect to `y` |
+| `\deriv(e, \expr(y), n)` | Positive integer derivative order `n` |
+| `\deriv(e, ⟨\expr(x), \expr(y)⟩)` | Mixed partial: differentiate by each listed name in turn |
+| `\grad(e, ⟨\expr(x), \expr(y)⟩)` | First partial for each listed name |
+
+An order argument requires a single variable. Repeat names in a mixed-partial
+list for higher orders.
+
+```text
+\solve(\expr(a x - b), `(x))         ->  = {\expr((b / a))}
+\deriv(\expr(a x^2), `(a))           ->  = \expr((x ^ 2))
+\deriv(\expr(x^3 y), ⟨`(x), `(x), `(y)⟩) ->  = \expr((6 * x))
+```
+
+## Partial derivatives
+
+With several candidate names and no selected variable, `\deriv` and `\grad`
+return one partial quote per name. Quotes use free-name order; functions use
+parameter order.
+
+```text
+\deriv(\expr(x^2 y))     ->  = ⟨\expr(((2 * x) * y)), \expr((x ^ 2))⟩
+f(x, y) = x y^2
+\grad(f)                 ->  = ⟨\expr((y ^ 2)), \expr(((2 * x) * y))⟩
+```
+
+Gradients are arrays because tensors hold numbers only. They support indexing
+and mapping, with no vector algebra; see [limitations](#limitations).
+Numeric derivatives at a point use `f'` or `\diff`; see [calculus](calculus.md).
 
 ## Solving
 
-`\solve` finds the unknown itself when there is exactly one free name (or, for a function, one
-parameter). With several, name it with a quote: `\solve(e, `(x))`. The result is a set:
+`\solve` infers the unknown when there is one free name or one function parameter.
+With several names, select one explicitly. It returns a set:
 
-| Solution | Shown as |
+| Solution | Representation |
 |---|---|
-| exact or closed-form | a value (`2`, `i`, `1.41421356237309...`) |
-| depends on other names | an expression quote |
-| none | `{}` |
+| Exact number or closed form | Numeric value, such as `2`, `i` or exact `√2` |
+| Depends on other names | Expression quote |
+| No solutions | `{}` |
 
-An equation with infinitely many solutions (`\sin(x) = 0`) or none sympy can express is an
-error.
+```text
+f(x) = x^2 - 9
+\solve(f)              ->  = {-3, 3}
+```
+
+Infinite solution families, or solutions SymPy cannot express in closed form,
+produce typed errors.
 
 ## Inverses
 
-`f⁻¹(y)` on a user function solves `f(x) = y` this way once per function, then substitutes
-`y`, so the result is exact and `y` may be complex (docs/calculus.md, `## Inverses`).
+For supported user functions, `f⁻¹(y)` solves `f(x) = y` once per function and
+substitutes the argument into that exact form. Exact complex arguments are
+supported. See [inverse behavior](calculus.md#inverses) for branch selection and
+numeric fallback.
 
 ## Time limit
 
-Each rewrite stops after 5 seconds with `took longer than 5s`. `ADHOC_SYMBOLIC_TIMEOUT` sets
-the seconds; `0` removes the limit. `f⁻¹` and `f'` treat a timeout as "no exact form" and use
-their numeric path.[^worker]
+Rewrites stop after 5 seconds by default. `ADHOC_SYMBOLIC_TIMEOUT` sets the limit
+in seconds; `0` disables it. A timeout reports `took longer than 5s` at the default
+setting. `f⁻¹` and `f'` treat a timeout as no exact form and use their numeric
+path.[^worker]
 
 ## Limitations
 
 | Limit | Ticket |
 |---|---|
-| One unknown; no systems | [#112](https://todo.sr.ht/~takeiteasy/adhoc/112) |
-| `\solve(e)` solves `e = 0`; `lhs = rhs` is not read as an equation | [#113](https://todo.sr.ht/~takeiteasy/adhoc/113) |
-| Infinite solution families are an error; no real-domain option | [#114](https://todo.sr.ht/~takeiteasy/adhoc/114) |
+| One unknown; no systems of equations | [#112](https://todo.sr.ht/~takeiteasy/adhoc/112) |
+| `\solve(e)` solves `e = 0`; `lhs = rhs` is not equation syntax | [#113](https://todo.sr.ht/~takeiteasy/adhoc/113) |
+| Infinite solution families are errors; no real-domain option | [#114](https://todo.sr.ht/~takeiteasy/adhoc/114) |
 | No time limit on Windows | [#122](https://todo.sr.ht/~takeiteasy/adhoc/122) |
-| Gradients are arrays of quotes, without vector algebra | [#121](https://todo.sr.ht/~takeiteasy/adhoc/121) |
-| Numeric third and higher derivatives (float points, non-symbolic bodies) are an error | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
+| Gradients are arrays of quotes without vector algebra | [#121](https://todo.sr.ht/~takeiteasy/adhoc/121) |
+| Numeric derivatives above order 2 are errors | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
 
-[^worker]: Each call runs in a forked child that is killed at the limit, so it also holds off the
-    main thread. The fork costs about 65 ms a call, and the child's sympy caches are not kept.
-    Without `fork` (Windows) the rewrite runs unlimited.
+[^worker]: Each rewrite runs in a forked child that is killed at the limit.
+    This also enforces the timeout off the main thread. Forking adds per-call
+    overhead; the child's SymPy caches are discarded. On systems without `fork`,
+    such as Windows, rewriting runs without a time limit.

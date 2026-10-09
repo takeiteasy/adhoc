@@ -1,162 +1,97 @@
 # Architecture
 
-## Layout
-
-`adhoc` is one Python package. The library modules *are* the language; `__main__` and `repl`
-are thin drivers over it, depending on it the way any other consumer would.
-
-```
-adhoc/
-├── span        — byte-offset spans (start, end)
-├── lexer       — tokens: numbers, strings, identifiers, \-names, operators, the √ radical
-├── syntax      — frozen AST dataclasses, each node carries its own Span and optional
-│                 non-semantic source spelling
-├── parser      — precedence climbing over docs/grammar.md
-├── expression  — frozen expression values and parseable display
-├── reduction   — beta reduction over quoted expression ASTs
-├── rewrite     — expression quotes and function bodies ↔ sympy, behind `\simplify`,
-│                 `\expand`, `\factor`, `\solve` and exact `f⁻¹`
-├── tex         — LaTeX rendering of quoted ASTs and values behind `\tex` (formatting only)
-├── tensor      — tensor values (shape, indexing, transpose, contraction; scalar
-│                 operations are passed in by runtime.py), array values, and set values
-├── linalg      — elimination (det, inverse, solve, rank, rref), constructors, and
-│                 cross/outer/Kronecker products; scalar operations passed in by runtime.py
-├── runtime     — the numeric seam + lazy ranges + Engine (everything lowered code calls into),
-│                 plus the \py boundary and its conversion matrix, and the numeric
-│                 calculus (Ridders derivatives, Gauss–Kronrod quadrature)
-├── symbolic    — the symbolic closed-form tier behind the seam (coefficient × atom,
-│                 real or pure-imaginary, backed by sympy; only runtime.py
-│                 dispatches into it)
-├── gauss       — the exact complex tier behind the seam (Gaussian rationals:
-│                 plain rational component arithmetic, no sympy; only
-│                 runtime.py and the exact tiers import it)
-├── algebraic   — the algebraic tier behind the seam (roots beyond the
-│                 closed-form shape, real or complex, backed by sympy; only
-│                 runtime.py dispatches into it)
-├── rra         — the Recursive Real Arithmetic fallback behind the seam
-│                 (every other finite number, real or complex, as a
-│                 tolerance->rational function, backed
-│                 by sympy; only runtime.py dispatches into it)
-├── compiler    — lowering: adhoc AST → Python source, one line per statement
-├── driver      — compile/exec pairing, error mapping back through spans
-├── diagnostic  — caret-pointing renderer
-├── output      — shared error printing for both drivers
-└── repl        — prompt loop, continuation, history (__main__ dispatches argv)
-```
+`adhoc` parses math notation into a frozen syntax tree, lowers it to Python AST
+and executes it on CPython. Runtime helpers implement language semantics and
+attach errors to source spans. The REPL and script runner use the same library.
 
 ## Pipeline
 
-```
-source text
-    │
-    ▼
-lexer (lexer.py)       -- tokens with byte-offset spans
-    │
-    ▼
-parser (parser.py)     -- precedence climbing → syntax.py dataclasses; canonical names
-     │                    and source spellings, spans tagged at construction
-    │
-    ▼
-compiler (compiler.py) -- lowering to Python source: one line per statement,
-    │                    every operation an Engine call carrying a span id
-    ▼
-driver (driver.py)     -- compile() + exec() against an Engine; user env is a plain dict
-    │                    the engine holds; EvalError carries narrow spans
-    ▼
-repl / __main__        -- read/print loop or script-file driver via output.py rendering
-```
+| Stage | Module | Output |
+|---|---|---|
+| Tokenize | `lexer.py` | Tokens with byte-offset spans |
+| Parse | `parser.py` | Frozen `syntax.py` nodes with canonical names and source spellings |
+| Lower | `compiler.py` | Python AST and compiled code; operations call `Engine` with span IDs |
+| Execute | `driver.py` | Run code against an `Engine` holding the user environment |
+| Display | `repl.py`, `__main__.py`, `output.py` | Results and shared caret diagnostics |
 
-The evaluation engine is CPython itself: generated code runs through `compile()`/`exec`, so
-the language's arithmetic semantics live entirely in `runtime.py`'s helpers (`nadd`/.../
-`nshow` plus the `Engine` methods), never in operators applied directly to user values. See
-`docs/numerics.md` for the seam and its pinned float semantics.
+Arithmetic on user values goes through the
+[numeric operations](numerics.md), including tensor operations. Generated code
+uses runtime calls rather than direct Python arithmetic or variable access.
+See [runtime lowering](lowering.md) for the operation mapping.
+
+## Package layout
+
+| Module | Responsibility |
+|---|---|
+| `span` | Zero-based, half-open byte spans |
+| `lexer` | Literals, names, operators and punctuation |
+| `syntax` | Frozen AST dataclasses |
+| `parser` | Precedence climbing, aliases and custom operator declarations |
+| `expression` | Frozen expression values and parseable display |
+| `reduction` | Beta reduction of quoted expressions |
+| `rewrite` | Bridge between quotes or function bodies and SymPy |
+| `tex` | LaTeX rendering of syntax and values |
+| `tensor` | Tensors, arrays and sets; indexing and tensor operations |
+| `linalg` | Matrix elimination, constructors and tensor products |
+| `runtime` | Numeric dispatch, `Engine`, lazy ranges, Python interop and numeric calculus |
+| `gauss` | Gaussian rationals using exact component arithmetic |
+| `symbolic` | Rational coefficient times one recognized SymPy atom |
+| `algebraic` | Exact algebraic SymPy values |
+| `rra` | Other finite exact values and tolerance-based approximation |
+| `compiler` | Lower language AST into Python AST and bytecode |
+| `driver` | Compile/execute pairing and unexpected-error mapping |
+| `diagnostic` | Caret renderer |
+| `output` | Error printing shared by both drivers |
+| `repl` | Prompts, continuation and history |
+| `__main__` | Command-line dispatch and script running |
 
 ## Spans and diagnostics
 
-Every token and every AST node carries a `Span` — byte offsets, 0-based, half-open — tagged
-at construction time by the parser (at construction, not on unwind, so `(expr)` returns the
-inner node's own narrower span rather than a paren-inclusive one). The compiler allocates a
-span id per lowered operation and emits it as an argument; `runtime.Engine` raises
-`EvalError(msg, span)` from that id when an operation fails. This preserves per-node span
-narrowing end-to-end: in `1 + x`, an unbound-`x` failure points at `x`, not at the statement;
-in `2 + 1/0`, the division-by-zero points at `1/0`.
-`diagnostic.render(source, label, message, span)` takes a span and a message rather than
-an error value, which is what lets the REPL and script mode share it unchanged — the one
-difference between them is *when* each calls it, not how the output looks.
+Tokens and syntax nodes carry byte spans. The compiler assigns each lowered
+operation a span ID; runtime failures produce `EvalError(message, span)`.
+Errors therefore point to the failing subexpression:
 
-Name-bearing AST nodes also retain an optional written spelling with `compare=False`.
-Canonical fields remain the only inputs to lookup, protection, recursion, and value
-identity; spelling fields travel to the compiler and engine solely for diagnostics and
-fresh declaration echoes.
+| Source | Error points to |
+|---|---|
+| `1 + x` with unbound `x` | `x` |
+| `2 + 1/0` | `1/0` |
 
-Quoted values carry their frozen AST and original source. Quotation lowers to a lookup in
-the compiled unit's quote table. `\eval` lowers to an engine call that compiles the stored
-expression through the same lowering path and runs it in a child frame. Binding values
-evaluate in the caller before that frame is created. Errors from the stored AST retain its
-source for caret rendering, including across REPL inputs.
-Compiled function bodies also retain their AST and defining source. `\body` wraps the
-body as a statement-sequence expression value; `\eval` compiles that sequence through
-the function-body path, with local bindings and the last statement as its result.
-Nested definitions use the same compiled-body table as top-level definitions and return
-their callable without adding an output line.
-`\reduce` converts bound names to De Bruijn indices while substituting, then restores
-parseable names. It preserves free names and original byte spans in the returned expression.
+`diagnostic.render` converts byte offsets to character columns and accepts a
+message and span. Both drivers share this renderer.[^spans]
 
+Names also retain their written spelling for diagnostics and fresh declaration
+echoes. Canonical names determine lookup, protection, recursion and identity.[^spelling]
 
-## Engine notes
+## Quotes and function bodies
 
-- One generated Python line per top-level statement, with a `lineno → span` table riding on
-  the compiled unit; anything unexpected escaping the engine maps back through it. A bare
-  string statement lowers to `pass` — it produces no output but keeps the one-line-per-
-  statement invariant the table depends on.
-- Variables never become Python name loads or stores — reads go through `_e.var`, writes
-  through `_e.assign` (bind-or-compare; `\let` selects the fresh-only mode). Function calls
-  create a local frame with global read-through; body writes use `_e.assign` and never escape.
-  The user environment is a plain dict kept separate from exec globals. Callables and strings
-  bind like any other value.
-- Application lowers to `_e.app(head, args, kwargs, sid, spelling)` with dynamic juxtaposition:
-  callable heads apply (kwargs pass through as native Python keyword arguments); a
-  non-callable head with one positional argument and no kwargs falls back to
-  multiplication; anything else fails at the call's span. Definitions lower to callable
-  `AdFunction` values;
-  each body has its own compiled code and span table, and recursion pre-binds the function
-  name in the call frame. The ternary `? :` is a lazy compiler special form (not an
-  eager ordinary call).
-  `\py(path)` has its own seam method
-  resolving the dotted path and converting results back through the matrix
-  (docs/numerics.md). Imports lower to `_e.import_(path, members, sid, member_spellings)` and
-  `_e.pyimport(...)`: the session's module registry (absolute path → module
-  environment), the import base directory, and the in-progress import chain ride on
-  the root engine and are inherited by every child frame and imported module engine,
-  which is what makes re-imports cached, cycles typed errors, and nested resolution
-  relative to the importing file. Internal prelude and user-function results preserve
-  boolean values; Python `\py` results still use the external conversion matrix.
-- Tensor literals, indexing, and transpose lower to `_e.tensor(items, row_length, sid)`,
-  `_e.index(head, items, sid, spelling)`, and `_e.transpose(value, sid)`; `@` lowers to
-  `_e.dot`; array literals lower to `_e.array(items, sid)` (`\arr(...)` rewrites to the same
-  node at parse time); set literals and operators lower to `_e.set_`, `_e.union`,
-  `_e.intersect`, `_e.setminus`, `_e.member`, and `_e.subseteq`. Set construction
-  deduplicates through `neq`, the binding rule's equality. `nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg` dispatch to `tensor.map1`/`map2`
-  when an operand is a tensor, so folds, the product fallback, and function calls all
-  broadcast through the same seam. A non-tensor, non-numeric index head is an error;
-  a numeric head multiplies.
-- Range construction lowers to `_e.range(start, second, end, sid)`. `RangeValue` stores
-  numeric endpoints and step without materializing values; iteration computes each next
-  value through the numeric seam.
-- Folds and limits lower like definitions: `Fold`/`Limit` compile their bodies via
-  `_compile_body` into the unit's `definitions` table and emit one engine call —
-  `_e.fold(op, "i", <range>, sid, spelling, var_spelling)` /
-  `_e.limit("x", <point>, sid, spelling, var_spelling)`. The engine evaluates
-  the body once per term or probe in a fresh child frame (the `AdFunction.__call__`
-  scoping pattern: parent read-through, local writes); all accumulation arithmetic runs
-  through the numeric seam inside `runtime.py`, never in generated code. The convergence
-  knobs and their shared plateau test also live there (docs/numerics.md).
-- Statement outputs accumulate in order; the REPL prints only the last, script mode echoes
-  every statement and stops at the first failure.
+Quoted values retain frozen syntax and original source. `\eval` compiles the
+stored syntax through the same lowering path and runs it in a child frame.
+Binding values evaluate in the caller first. Errors retain the quote's source,
+including across REPL submissions.
 
-## The lowering is the engine
+Function bodies retain their AST and defining source. `\body` wraps a body as
+a statement-sequence expression value. Evaluation keeps its bindings local and
+returns the last statement's value. Nested definitions use the compiled-body
+table and return their callable without adding an output line.
 
-There is no bootstrap-then-replace split here: the compiler + CPython execution is the
-durable implementation, not a stand-in for something else. The interaction-net direction in
-`DESIGN.md` remains a recorded future direction, not scheduled work — nothing here expects to
-be replaced by it.
+`\reduce` preserves free names and original spans while beta-reducing quotes.[^reduction]
+
+## Execution model
+
+The user environment is separate from Python execution globals. Reads walk
+parent frames; bindings and checks stay local. Functions, binders and probes use
+child frames. See [runtime lowering](lowering.md) for scope and dispatch details.
+
+CPython lowering is the evaluation engine. The interaction-net design in
+[DESIGN.md](../DESIGN.md#interaction-combinators) is an unscheduled alternative.
+
+[^spans]: Spans use `[start, end)` byte offsets. Never apply them directly to a
+    Python string slice, which uses character offsets. The parser tags spans at
+    construction; `(expr)` retains the inner node's narrower span.
+
+[^spelling]: Written spelling is optional, non-semantic metadata with
+    `compare=False` on name-bearing AST nodes. It travels through compilation to
+    the engine without participating in identity.
+
+[^reduction]: Reduction substitutes through De Bruijn indices, then restores
+    parseable names in the returned expression.

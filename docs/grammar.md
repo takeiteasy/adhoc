@@ -1,193 +1,145 @@
 # Grammar
 
-The `ad` subset implemented today. This is the file the parser (`adhoc/parser.py`) is
-written against — it should stay in lockstep with the code.
+This reference covers supported syntax and evaluation rules. The parser
+(`adhoc/parser.py`) follows the [formal grammar](grammar-ebnf.md). For a feature
+overview, see the [language guide](language.md).
 
 ## Lexical rules
 
-- Whitespace is insignificant, except as a token separator — and except that a **newline
-  is a token** (`Newline`), everywhere. The parser skips newline runs wherever an
-  *operand* is expected, so a statement or expression continues onto the next line
-  mid-expression (`1 +` NL `2` is one sum, an argument may start on the line after its
-  `,`); where an expression is complete, the newline separates statements. The rule is
-  uniform inside `(...)`: a parenthesized group is the multi-line statement form
-  (`## Groups`), and argument lists span lines comma-separated as they always have.
-- `--` starts a line comment, running to end of line; the newline that ends it is an
-  ordinary newline token.
-- A **number literal** is an integer, an exact decimal, or a float spelling
-  (docs/numerics.md): `3` is an exact integer; a dotted decimal without an
-  exponent (`0.5`, `12.34`, `.5`) is an *exact rational* read from its own
-  digits; the float spellings are the trailing-dot marker (`1.` is the float
-  1.0, explicitly inexact) and any exponent form (`5e-1`, `1.5e3`, `2e3` — an
-  `e`/`E` not followed by an optional sign and a digit stays juxtaposition, so
-  `2e` is `2*e`). A `.` not consumed by a number is only ever the range
-  operator's first dot — `1..10` lexes `1`, `..`, `10`.
-- A **string literal** is `"…"`: characters up to the closing `"`, possibly spanning lines.
-  Inside a literal exactly four escapes decode — `\"` (quote), `\\` (backslash), `\n`
-  (newline), `\t` (tab) — and any other backslash pair is a lex error. Strings are full
-  values: see `## String literals` for their operators.
-- An **identifier** is one ASCII or unicode letter, optionally followed by a subscript run of
-  digits `₀…₉` and letters `ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ` (`x`, `π`, `α`, `x₁`, `a₂₃`, `xᵢⱼ`); `x₁` is a
-  name unrelated to `x`. The ASCII spelling is a letter, `_`, then ASCII letters or digits
-  (`x_1`, `x_ij`, `x_b`); it is the same name as the glyph form where every character has a
-  glyph, and its own name otherwise (`x_b`, `x_ib`). A `_` with no alphanumeric after it is
-  the placeholder. A subscript glyph with no letter before it is a lex error. `ab` is still
-  `a * b`, and `∅` lexes as an identifier that aliases `\emptyset`. See `docs/notation.md`.
-- An unused non-ASCII Unicode mathematical symbol (`Sm`) is a custom operator glyph.
-  Existing lexical meanings and `≡` stay reserved; see [custom operators](operators.md).
-- A **superscript run** (`²`, `⁻¹`, `ⁿ⁺¹`, `⁽ⁿ⁺¹⁾`: digits, letters, `⁺ ⁻ ⁽ ⁾`) is one token,
-  sugar for `^` with the run read as an expression. A run without digits or letters is a lex
-  error. `ᵀ` is not part of a run: it is the transpose `'`.
-- The radicals `∛` and `∜` are prefix operators like `√`; they rewrite to `\root(x, 3)` and
-  `\root(x, 4)`. `!` (factorial) and `‼` / `!!` (double factorial) are postfix. `!=` is a
-  lex error pointing at `≠`.
-- The radical `√` is the one **prefix operator**: it is a math symbol, not a letter, so
-  it lexes as its own token and cannot be a name — it can never be aliased, bound, or
-  shadowed. The parser rewrites `√` + operand into a `\sqrt(...)` application
-  (docs/numerics.md for the values it produces).
-- A **name** longer than one character is written `\`-prefixed (`\pi`, `\sin`, `\fact`, ...).
-  After the first character a name may continue with letters or underscores (`\rel_tol`,
-  `\my_var`); a `_` cannot start a name. `\atan2` is the one name ending in a digit. Backslash names may be built-ins or user-defined
-  names, including variables; an unbound one fails at evaluation. `\let` is the one
-  statement keyword in this group: it is not a bindable name.
-- `∫` and `∂` lex as identifiers that alias `\int` and `\diff`.
-- The delimiters `⌊ ⌋ ⌈ ⌉` and the bars `|` and `‖` (`∥` reads as `‖`) bracket an expression
-  (`## Delimited forms`).
-- Operators: `↦ -> + - * / % @ × ⊗ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^ < > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :`. Statement separator: `;`
-  (inside `[...]` it separates rows). `#[` is one token; a `#` not followed by `[` is a lex error.
-  A lone `·` (U+00B7), `⋅` (U+22C5) or `_` is the partial-application placeholder
-  (`## Composition and partial application`); inside a `\`-name `_` is an ordinary name
-  character.
-  A backtick starts a quote: `` `(expression) `` or a statement-sequence quote.
-  `=` is the one binding/check operator (see `## Assignment semantics`); there is no
-  `==` — two adjacent `=` are two tokens and cannot parse. `?` opens a ternary
-  conditional and `:` closes it
-  in expression position (the only other use of `:` is the import member list).
-- The lambda arrow `↦` (ASCII `->` or `\mapsto`, which is never a name) is one token. The
-  lambda heads `\λ` / `\fn` are the one name the parser consumes specially —
-  and only when a parameter-list paren follows. Any other `\`-name lexes cleanly,
-  binds like any name, and fails at evaluation if unbound.
+### Whitespace and comments
+
+Whitespace separates tokens. A newline also separates complete statements. When
+an operand is still required, parsing continues onto the next line: `1 +` followed
+by `2` is one sum. This rule applies inside parentheses and argument lists.
+Arguments on separate lines still need commas.
+
+`--` starts a comment through the end of the line. Its ending newline remains a
+statement separator.
+
+### Number and string literals
+
+| Spelling | Value |
+|---|---|
+| `3` | Exact integer |
+| `0.5`, `12.34`, `.5` | Exact rational, read from the literal's digits |
+| `1.` | Explicit float `1.0` |
+| `5e-1`, `1.5e3`, `2e3` | Float |
+| `2e` | Juxtaposition: `2 * e` |
+| `1..10` | Integer, range operator, integer |
+
+An exponent marker `e` or `E` requires a digit after its optional sign.
+A dot outside a number starts the range operator. See [numerics](numerics.md).
+
+Strings use double quotes and can span lines. Only four escapes decode:
+
+| Escape | Character |
+|---|---|
+| `\"` | Quote |
+| `\\` | Backslash |
+| `\n` | Newline |
+| `\t` | Tab |
+
+Other backslash pairs are lexical errors. See [string literals](#string-literals)
+for value operations.
+
+### Identifiers and backslash names
+
+A bare identifier is one ASCII or Unicode letter, optionally followed by a
+subscript. `ab` is `a * b`; `x₁` is a name distinct from `x`.
+
+| Form | Examples | Rule |
+|---|---|---|
+| Unicode subscript | `x₁`, `a₂₃`, `xᵢⱼ` | Digits `₀…₉` or supported subscript letters[^subscripts] |
+| ASCII subscript | `x_1`, `x_ij`, `x_b` | Letter, `_`, then ASCII letters or digits |
+| Backslash name | `\pi`, `\rel_tol`, `\my_var` | Letters and underscores; underscore cannot start the name |
+
+ASCII and glyph subscripts identify the same name when every character has a
+glyph. Other ASCII forms, such as `x_b` or `x_ib`, remain distinct names.
+A subscript glyph without a preceding letter is an error.
+
+`\atan2` is the exception permitting a final digit. Backslash names can refer to
+built-ins or user bindings; an unbound name fails at evaluation. `\let` is a
+statement keyword and cannot be bound.
+
+`∅`, `∫` and `∂` are identifiers aliasing `\emptyset`, `\int` and `\diff`.
+See [notation](notation.md) and [name aliases](#name-aliases).
+
+### Superscripts, radicals and delimiters
+
+| Form | Meaning |
+|---|---|
+| `²`, `⁻¹`, `ⁿ⁺¹`, `⁽ⁿ⁺¹⁾` | One superscript token; sugar for `^` followed by an expression |
+| `ᵀ` | Transpose, equivalent to `'`; outside superscript runs |
+| `√x` | Prefix spelling of `\sqrt(x)` |
+| `∛x`, `∜x` | Prefix spellings of `\root(x, 3)` and `\root(x, 4)` |
+| `!`, `‼`, `!!` | Postfix factorial and double factorial |
+| `⌊ ⌋`, `⌈ ⌉`, `\| \|`, `‖ ‖` | [Delimited forms](#delimited-forms); `∥` also reads as `‖` |
+
+A superscript run uses digits, letters, `⁺ ⁻ ⁽ ⁾` and must contain a digit or
+letter. `√` is an operator token, so it cannot be bound, aliased or shadowed.
+`!=` is a lexical error pointing to `≠`.
+
+### Operators and punctuation
+
+```text
+↦ -> + - * / % @ × ⊗ ∘ ∠ ∪ ∩ ∖ ∈ ∉ ⊆ ⊂ ⊇ ⊃ ≠ ≈ ∧ ∨ ¬ → ↔ ^
+< > <= >= ≤ ≥ = .. ( ) [ ] { } ⟨ ⟩ #[ ' ! ‼ , ? :
+```
+
+| Token | Use |
+|---|---|
+| `;` | Statement separator; tensor row separator inside `[...]` |
+| `#[` | One array-opening token; a lone `#` is an error |
+| `·`, `⋅`, `_` | Partial-application placeholder; `_` within a backslash name is a name character |
+| Backtick | Expression or statement-sequence quote |
+| `=` | Binding or check; adjacent `==` tokens cannot parse |
+| `? :` | Ternary conditional; `:` also separates an import's member list |
+| `↦`, `->`, `\mapsto` | Lambda arrow; `\mapsto` is not a name |
+
+An unused Unicode mathematical symbol (`Sm`) can be a custom operator glyph.
+Existing lexical meanings and `≡` remain reserved. See [custom operators](operators.md).
+
+The parser recognizes `\λ` and `\fn` as lambda heads when followed by a parameter
+list. Other backslash names tokenize normally and require a binding at evaluation.
 
 ## Grammar (EBNF)
 
-```
-program    ::= statement (sep statement)* sep? ;
-sep        ::= newline-run | ";" ;    -- a ";" after a newline run is one separator too
-statement  ::= func-def
-             | let-stmt
-             | import-stmt
-             | pyimport-stmt
-             | spelling-directive
-             | infix-stmt
-             | string
-             | name "=" expr
-             | expr ;
-let-stmt    ::= "\let" name "=" expr
-             | "\let" name "(" params? ")" "=" statement (";" statement)* ;
-import-stmt   ::= "\import" "(" string (":" member ("," member)*)? ")" ;
-pyimport-stmt ::= "\pyimport" "(" string ":" member ("," member)* ")" ;
-member        ::= identifier | "\"-name ;
-spelling-directive ::= alias-stmt | dual-stmt ;
-alias-stmt  ::= "\alias" name "," single-char ("," single-char)* ;
-dual-stmt   ::= "\dual" name "," single-char params? "=" statement (";" statement)* ;
-single-char ::= identifier ;                (* aliases are one-character letters *)
-name        ::= identifier | "\"-name ;
-infix-stmt  ::= "\infix" "(" integer ")" operator-name ("," operator-glyph)?
-                "(" name "," name ")" "=" statement (";" statement)* ;
-operator-name ::= "\"-name | operator-glyph ;
-operator-glyph ::= unused-mathematical-symbol ;
-
-expr       ::= ternary ;
-ternary    ::= iff ("?" ternary ":" ternary)? ;   (* right-associative *)
-iff        ::= implies (("↔" | "\\iff") implies)? ;      (* non-associative *)
-implies    ::= or (("→" | "\\implies") implies)? ;       (* right-associative *)
-or         ::= and (("∨" | "\\or") and)* ;
-and        ::= not (("∧" | "\\and") not)* ;
-not        ::= ("¬" | "\\not") not | range ;
-range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
-                                           (* the "," form is not read inside lists *)
-comparison ::= angle (cmp-op angle)? | angle ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
-range-tail ::= additive (".." additive? | "," additive ".." additive?) ;   (* membership only *)
-cmp-op     ::= "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈" | "\\approx"
-             | "∈" | "\\in" | "∉" | "\\notin" | "⊆" | "\\subseteq" | "⊂" | "\\subset"
-             | "⊇" | "\\supseteq" | "⊃" | "\\supset" ;
-angle      ::= additive (("∠" | "\\angle") additive)? ;   (* polar form r∠θ *)
-additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
-multiplicative
-           ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "×" | "\\times" | "⊗" | "\\otimes" | "∩" | "\\cap" | "∘" | "\\circ" | "%" | "\\mod") juxtaposed)* ;
-juxtaposed ::= unary unary* ;              (* implicit multiplication *)
-unary      ::= "-" unary | power ;
-radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
-nth-root   ::= ("∛" | "∜") unary ;         (* prefix spelling of \root(x, 3) / \root(x, 4) *)
-power      ::= postfix ("^" unary)? ;      (* right-associative *)
-postfix    ::= atom trailer* ;             (* application — see below *)
-trailer    ::= "(" args? ")" | "[" expr ("," expr)* "]" | "'" | "ᵀ" | "!" | "‼" | "!!" | superscript
-             | superscript "(" args? ")" ;   (* function power, on a name head only *)
-superscript ::= (superscript-glyph)+ ;         (* sugar for "^" with the run read as an expression *)
-args       ::= arg ("," arg)* ;
-arg        ::= expr | string | kwarg | hole | operator ;   (* holes and operators only as a whole argument *)
-hole       ::= "·" | "⋅" | "_" ;
-operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "×" | "⊗" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
-             | ">=" | "≤" | "≥" | "≠" | "≈" | "∈" | "∉" | "⊆" | "⊂" | "⊇" | "⊃" | "√" | "∛" | "∜"
-             | "!" | "‼" | "\\contract" | "\\times" | "\\otimes" | "\\circ" | "\\cup" | "\\cap" | "\\setminus" | "\\in"
-             | "\\notin" | "\\subseteq" | "\\subset" | "\\supseteq" | "\\supset" | "\\neq" | "\\approx" ;
-kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
-func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
-params     ::= name ("," name)* ;
-atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
-              | "(" operator ")" | "(" operator operand ")" | "(" operand operator ")"
-              | lambda | arrow-lambda | radical | delimited | quote | tensor | array | set | piecewise | builder ;
-delimited  ::= "⌊" expr "⌋" | "⌈" expr "⌉" | "|" expr "|" | "‖" expr "‖" ;
-tensor     ::= "[" expr ("," expr)* "]"
-             | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
-set        ::= "{" (expr ("," expr)*)? "}" ;
-piecewise  ::= "{" (expr ":" expr sep)* (expr ":" expr | expr) sep? "}" ;
-builder    ::= "{" name "∈" expr "|" guards "}" | "{" expr "|" name "∈" expr ("," guards)? "}" ;
-guards     ::= expr ("," expr)* ;
-array      ::= ("⟨" | "#[") (expr ("," expr)*)? ("⟩" | "]")
-             | "\\arr" "(" (expr ("," expr)*)? ")" ;
-quote      ::= ("\\expr" | "`") "(" expr ")"
-             | ("\\expr" | "`") "(" "(" sequence ")" ")" ;
-eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
-sequence   ::= statement (sep statement)* sep? ;
-lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
-arrow-lambda ::= (name | "(" params? ")") ("↦" | "->" | "\mapsto") expr ;
-```
+The [formal grammar](grammar-ebnf.md) lists the parser productions.
+The rules below explain their semantics.
 
 `\let` is a statement form. Its variable form is legal wherever a statement is legal;
 its function form is top-level (including a group that flattens at top level). A bare
 or misplaced `\let` is an error, and incomplete forms enter the REPL continuation path.
 
-`\expr` and `` ` `` quote without evaluating. A parenthesized statement sequence uses
-`\expr((x=1; x+1))`; a single-statement body has a trailing separator,
-`\expr((x+1;))`. `\eval` evaluates an expression value with optional named bindings.
-Binding values evaluate in the caller's scope before the quoted value runs. Other names
-read from the scope of the `\eval` call; the bindings are local to that evaluation.
-Protected names cannot be bound, except
-`i` under the usual rule. Expression values print as parseable `\expr(...)` text, and the
-binding rule compares them by AST structure and canonical names.
-`\body(f)` returns the statement body of a user-defined function or lambda as an
-expression value. Built-ins and Python callables have no reflected body.
-`\reduce(e)` takes an expression quote and returns its beta-normal form. It uses
-leftmost-outermost reduction, avoids variable capture, and stops with a typed error after
-10,000 beta steps. Nested quotes are opaque. Named function calls stay as calls; arithmetic
-stays as syntax until `\eval` runs the result. Statement quotes are rejected.
+### Quotes and evaluation
 
-`sep` inside a group's `sequence` is a newline run or a single `;` — blank lines are
-free, `;;` is an error. A trailing `;` after the last statement is tolerated (`1;` and
-`2;` both parse as a single statement, not as a statement followed by an empty one),
-at top level and before a group's closing `)` alike.
+| Form | Behavior |
+|---|---|
+| `\expr(x+1)` or `` `(x+1) `` | Quote an expression without evaluating |
+| `\expr((x=1; x+1))` | Quote a statement sequence |
+| `\expr((x+1;))` | Quote a single-statement sequence; trailing separator required |
+| `\eval(q, x=3)` | Evaluate a quote with local named bindings |
+| `\body(f)` | Return a user function or lambda's body as an expression value |
+| `\reduce(q)` | Beta-reduce an expression quote |
 
-Special forms sit in postfix position but are not applications — their first parenthesized
-argument is a binding, not a general expression (see `## Special forms`):
+Evaluation bindings are computed in the caller's scope before the quote runs.
+Other names resolve in the evaluation scope. Bindings stay local and cannot
+shadow protected names except `i`. Expression values print as parseable
+`\expr(...)` text; binding checks compare AST structure and canonical names.
+Built-ins and Python callables have no reflected body.
 
-```
-fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident ("=" | "∈") expr ")" expr ;
-quantifier ::= ("\forall" | "∀" | "\exists" | "∃") "(" ident ("=" | "∈") expr ")" expr ;
-limit      ::= "\lim" "(" ident "=" expr ")" expr ;
-diff       ::= ("\diff" | "∂") "(" ident "=" expr ")" expr ;
-integral   ::= ("\int" | "∫") "(" ident "=" range ")" expr ;
-```
+Reduction leaves arithmetic as syntax and named functions as calls. Statement
+quotes are rejected.[^reduction]
+
+### Separators and binders
+
+A statement separator is a newline run or a single `;`. Blank lines and one
+trailing separator are allowed; `;;` is an error. This applies at top level and
+inside groups.
+
+[Special forms](#special-forms-folds-and-limits) sit in postfix position but bind
+a name in their first parentheses rather than accepting an ordinary argument.
+Their productions are in the [formal grammar](grammar-ebnf.md#special-forms).
 
 ## Precedence table
 
@@ -219,7 +171,7 @@ reads on paper:
 1/2x     ->  1 / (2*x)      -- not (1/2)*x
 2x^2     ->  2 * (x^2)      -- ^ still tightest
 -2^2     ->  -(2^2) = -4    -- unary minus is looser than ^
-2^-1     ->  1/2            -- exact rational, displays as a fraction (docs/numerics.md)
+2^-1     ->  1/2            -- exact rational, displays as a fraction ([numerics](numerics.md))
 2^3^2    ->  2^(3^2) = 512  -- right-associative
 1 + 2*3  ->  7
 (1+2)*3  ->  9
@@ -234,18 +186,13 @@ f(x)^2   ->  (f(x))^2       -- application binds tightest
 ∛-8      ->  = -2           -- `\root(-8, 3)`
 ```
 
-Glyphs and their ASCII spellings are in `docs/notation.md`.
+Glyphs and their ASCII spellings are in [notation](notation.md).
 
 A parenthesized composition is a call head: `(f ∘ g)(x)` applies. Unparenthesized,
 `f ∘ g(x)` composes `f` with the result of `g(x)`.
 
-`ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `string`, `identifier`, `\`-name, a custom operator glyph, `√`, `∛`, `∜`,
-`(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
-parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
-parses as the multiplication it spells and dies as the usual typed "strings are not
-numbers" at evaluation — the same shape as any other string reaching a numeric operator.
-Declared custom operator spellings end a juxtaposition run and parse as infix instead.
+Juxtaposition recognizes the start of another factor; a declared custom operator
+ends the factor sequence and parses as infix.[^atom-starters]
 
 ## Delimited forms
 
@@ -275,14 +222,10 @@ argument. A nested pair of the same glyph reached after an operand needs parenth
 Trailers attach to the closer: `|x|²`, `⌊x⌋!`. A stray closer is an `unexpected token` error, a
 mismatched one ``expected `⌋`, found `⌉` ``, and an unclosed form is incomplete input.
 
-[^bars]: `|a|b||` reads as `|a|·b·|` and fails at the last bar. Inside `{ }` the first item
-    reads with a separator bar on the stack, so `{a |b|}` is set-builder and needs `{a*|b|}`
-    for the product (`## Sets`).
-
 ## Application: dynamic name-headed parens
 
 A `(…)` trailer attaches **only** to name-ish heads — a single-character identifier, a
-`\`-name, another call, a parenthesized lambda (see `## Lambdas`), or a parenthesized
+`\`-name, another call, a parenthesized lambda (see [Lambdas](#lambdas-anonymous-functions)), or a parenthesized
 `f ∘ g` or `f⁻¹`. Number-headed
 parens never even parse as a call (`2(x+1)` is juxtaposition, always). What a call *does* is decided at evaluation by what the head holds:
 
@@ -295,14 +238,15 @@ x = 3; x(1+2)         ->  = 9    -- not callable, one argument: paper product x*
 x(2, 3), x()          ->  ERROR  -- non-callable with ≠1 arguments can't be a product
 ```
 
-The fallback rule: **callable → apply; non-callable with exactly one argument → multiply;
-anything else → `` `…` is not a function `` at the call's span.** This keeps the paper
-reading `x(y+1) = x*(y+1)` alive while letting bound functions apply — at the price that
-identical source text reads differently depending on what its head is bound to. Accepted
-deliberately: the alternative (static application) made every arithmetic `x(...)` an error,
-and multiplication-by-juxtaposition is the reading a calculator's users expect first.
-Rebinding a name from number to function flips old lines' meaning — visible in source, and
-the failure mode when it surprises you is a typed error, not a silent wrong value.
+| Head value | Behavior |
+|---|---|
+| Callable | Apply it |
+| Non-callable, exactly one positional argument | Multiply |
+| Other non-callable call | Typed “is not a function” error at the call span |
+
+The head's value determines whether `x(y+1)` applies a function or multiplies.
+Errors cover the whole call span. Strings on the product path produce the usual
+“strings are not numbers” error.
 
 ### Keyword arguments
 
@@ -347,7 +291,7 @@ f(3,4)                       ->  = 144
 \fact(n) = n <= 1 ? 1 : n*\fact(n-1)
 ```
 
-Function bodies are semicolon-separated statements; a parenthesized group (`## Groups`)
+Function bodies are semicolon-separated statements; a parenthesized group ([Groups](#groups-parenthesized-statement-sequences))
 gives a def a multi-line body. A call gets a fresh local frame;
 reads fall through to globals, while assignments never escape the call. The function's
 own name is installed in that frame before the body runs, enabling recursion. Definitions
@@ -369,7 +313,7 @@ A semicolon after `g(y) = ...` continues `g`'s body.
 Because `;` also separates top-level statements, a function definition consumes the
 semicolon-separated statements after its `=` **on its own line** as its body — write one
 definition per line, or group a multi-statement body in parentheses (a `;` after the
-group's closing `)` still belongs to the body — see `## Groups`).
+group's closing `)` still belongs to the body — see [Groups](#groups-parenthesized-statement-sequences)).
 
 ## Groups: parenthesized statement sequences
 
@@ -390,32 +334,28 @@ c ? (a = 1
      a + 1) : 0     -- a group as a ternary branch
 ```
 
-Statements inside a group separate on a newline run or a single `;` (blank lines are
-free, `;;` is an error, a trailing `;` before `)` is tolerated), and the same uniform
-newline rule holds that governs the top level: a line ending mid-expression continues
-(`x = 1 +` NL `2` is one sum, a committed range `1..` runs to the `)`), while an
-operator that *starts* a line belongs to a new statement (`x = 1` NL `+ 2` is two
-statements, the second an error). The same rule makes argument lists span lines
-comma-separated — an argument missing its comma is a new statement and a parse error.
-There is no single-line/new-line distinction to learn: parens group, newlines
-separate complete statements, trailing operators continue.
+### Newlines and extent
 
-It parses through the same statement machinery as the top level and produces the
-same `Seq` node — **no scope of its own**, the ordinary flatten/echo/frame rules.
-A group is legal anywhere an expression is: statement position (it flattens into
-the enclosing unit, each statement with its own echo line), def bodies, ternary
-branches, lambda bodies. Its value is its last statement's value.
+| Input shape | Parse rule |
+|---|---|
+| Complete statement followed by newline | Start the next statement |
+| `x = 1 +` followed by `2` | Continue the same expression |
+| `x = 1` followed by `+ 2` | Two statements; the second is an error |
+| Arguments on several lines | Require commas between arguments |
+| Blank lines or one trailing `;` | Allowed |
+| `;;` | Error |
 
-**Explicit extent.** The form earns its keep in expression position, where `,` and
-`)` would otherwise end the sequence: def bodies and lambda bodies. It does **not**
-shield against `;`: in a def body or at top level, a `;` after the closing `)`
-simply continues the enclosing statement sequence (a group is one grouped statement
-of it — definitions still consume their line). Imports are rejected inside an ordinary
-group; a quoted statement sequence may contain them. `\alias`/`\dual` are rejected
-(top-level directives). An unclosed group is incomplete
-input — the REPL offers a continuation prompt, and a blank line cancels.
+A group creates no scope and returns its last statement's value. In statement
+position, it flattens into the enclosing unit with an echo for each statement.
+In a function or conditional branch, it uses that evaluation frame.
 
-Braces `{}` are not a grouping form — they build sets (`## Sets`).
+Parentheses give a body an explicit end, but a `;` after the closing parenthesis
+continues the enclosing statement sequence. Function definitions still consume
+their line. A committed open range such as `1..` ends at the closing `)`.
+
+Imports are rejected in ordinary groups and allowed in quoted statement
+sequences. Alias directives are top-level only. An unclosed group triggers REPL
+continuation; a blank line cancels it. Braces build [sets](#sets).
 
 ## Tensors
 
@@ -435,7 +375,7 @@ m[2, 1]  ->  = 3                m[1]  ->  = [1, 2]
 | `[a, b; c, d]` | matrix; `;` rows hold numbers and have one length |
 | `[a, b;]` / `[a; b]` | one-row / one-column matrix — a trailing `;` keeps a single row a matrix |
 | `x[i, j]` | 1-based index; fewer indices than axes gives the sub-tensor |
-| `x'`, `xᵀ` | transpose: reverses the axes; a vector is unchanged (`'` on a function is its derivative, docs/calculus.md) |
+| `x'`, `xᵀ` | transpose: reverses the axes; a vector is unchanged (`'` on a function is its derivative, [calculus](calculus.md)) |
 | `a @ b`, `a \contract b` | contraction of `a`'s last axis with `b`'s first: dot product, matrix product |
 | `a × b`, `a \times b` | cross product of two length-3 vectors; with a scalar operand, the same as `*` |
 | `a ⊗ b`, `a \otimes b` | tensor product: the operands' shapes concatenate; with a scalar operand, the same as `*` |
@@ -458,13 +398,7 @@ Folds bind over a tensor's outer slices: `\sum(x=[1, 2, 3]) x^2` is `14`, and
 
 `\contract`, `\times` and `\otimes` are infix operators, never names: they cannot bind or be
 aliased, and stand as values only as `(\contract)`, `(@)`, `(×)`, `(⊗)` or a whole call
-argument (`## Operator values`). The matrix functions are in docs/stdlib.md.
-
-[^tensor-index]: A `[` trailer attaches only to name-ish heads (a name, a call, another
-    index, a transpose), so `[1, 2][1]` is not an index: it juxtaposes two tensors and fails
-    on the shape mismatch. A name holding a number followed by `[...]` multiplies, matching
-    the call rule (`k = 3; k[1, 2]` is `[3, 6]`); any other head is `` `…` is not indexable ``.
-    Whitespace is not significant, so `v [1]` also indexes.
+argument ([Operator values](#operator-values)). The matrix functions are in [standard library](stdlib.md).
 
 ## Arrays
 
@@ -516,7 +450,7 @@ array (element equality), or a range (a term of the progression, so `5 ∈ (1,3.
 right; the range reads unparenthesized (`3 ∈ 1..5`), though `..` stays looser than every other comparison. `∅` / `\emptyset` is
 the empty set. Anything else is a typed error, as are arithmetic, ordering, and indexing on a set. The
 `\`-names `cup cap setminus in subseteq` and `notin subset supseteq supset neq approx` are operators, never names: they cannot bind or be aliased, and stand as a
-value only as `(\cup)` or a whole call argument (`## Operator values`).
+value only as `(\cup)` or a whole call argument ([Operator values](#operator-values)).
 
 ### Set-builder
 
@@ -542,9 +476,6 @@ Sets display in first-seen order and compare regardless of it: `{1, 2} = {2, 1}`
 and functions. A `NaN` never equals itself, so `{\nan, \nan}` keeps both.
 `\len(s)` is the size and folds bind over the elements. Building a set compares
 elements pairwise.[^set-cost]
-
-[^set-cost]: Quadratic in the number of elements; see
-    [Known limitations](language.md#known-limitations-not-bugs).
 
 ## Composition and partial application
 
@@ -597,7 +528,7 @@ iterate by outer slice, like folds.
 | `\scan(f, xs, init)` | running fold `f(init, x1), f(f(init, x1), x2), …`; an empty collection gives an empty result |
 | `\take(n, xs)` | the first `n` elements (fewer if there are fewer), in the kind of `xs` like `\map`; `n` is an exact integer, 0 or more |
 
-Operators pass as values: `\fold(+, xs)` (`## Operator values`).
+Operators pass as values: `\fold(+, xs)` ([Operator values](#operator-values)).
 
 ### Infinite ranges and lazy sequences
 
@@ -620,7 +551,7 @@ q = \map(s, 1..)                                 ->  q = <seq \map(s, 1..)>
 |---|---|
 | Re-iteration | A sequence re-runs from the start each time it is consumed; it caches nothing |
 | Errors | A failing element (or a `\filter` predicate returning a non-boolean) errors when it is reached, not when the sequence is built |
-| Folds | `\sum`/`\prod` binders and `\fold` consume a sequence with the infinite-range convergence rule (`## Special forms`): float tier, plateau exit, error at 2,000,000 elements; only `\fold(+, …)` gets the sum tail estimate. `\len` rejects it |
+| Folds | `\sum`/`\prod` binders and `\fold` consume a sequence with the infinite-range convergence rule ([Special forms](#special-forms-folds-and-limits)): float tier, plateau exit, error at 2,000,000 elements; only `\fold(+, …)` gets the sum tail estimate. `\len` rejects it |
 | `\filter` cap | A predicate that stops matching gives up after 2,000,000 elements in a row with a typed error |
 | Values | They bind, pass, and compare by identity; `\take` on a finite range gives an array |
 
@@ -689,7 +620,6 @@ forms `(+)(·, 1)` and `(^)(2, ·)`.
 | Radical | `(√ x)`, `(∛ x)` are calls, not sections; postfix `!` `‼` have none either |
 | Quotes | A section is the hole form: `\expr((+ 1))` prints `\expr((+)(·, 1))` |
 
-
 ## Custom infix operators
 
 `\infix(N)` defines an ordinary two-argument function with infix syntax:
@@ -728,7 +658,7 @@ branches; a nested middle closes at the first free `:`. A missing `:` at end of
 input offers the REPL continuation prompt. There is no two-branch form — a
 conditional that could do nothing would have no value to give, so a ternary is an
 expression that always needs its else. Branches may be any expression, including
-parenthesized statement groups (the multi-statement branch — `## Groups`):
+parenthesized statement groups (the multi-statement branch — [Groups](#groups-parenthesized-statement-sequences)):
 
 ```
 x > 0 ? 1 : -1                  ->  = 1
@@ -779,7 +709,7 @@ recursion goes through named defs or a fixpoint combinator (the Z form works eag
 Lambdas display as `<λ(x)>` and compare by identity like other callables; they take
 positional arguments only, and a parameter named like a prelude constant is rejected
 at evaluation, exactly as for defs — with the one exception of `i` (see
-`## Assignment semantics`).
+[Assignment semantics](#assignment-semantics)).
 
 ### Arrow form
 
@@ -792,9 +722,6 @@ are the lambda's, so arrows nest right-associatively.
 ((x, y) ↦ x * y)(3, 4)       ->  = 12
 (x -> y -> x + y)(1)(2)      ->  = 3
 ```
-
-[^arrow]: `->` in these docs' examples also marks "evaluates to" (`f(3)  ->  = 10`); in code it
-    is always the lambda arrow. It is not the implication `→` (`\implies`).
 
 **Body extent** follows the fold/limit rule: the body extends greedily over the rest
 of the current expression, up to the enclosing delimiter (`,` `)` `;`, end of
@@ -841,7 +768,7 @@ Folds and quantifiers also take `∈` (or `\in`) in place of `=`; `\lim` binds a
 takes `=` only. The parser recognizes the `(ident =` shape after one of these heads; any other
 parenthesized use is a parse-time usage error naming the expected binder form, and
 without a paren the head is simply an unbound name at evaluation. The unicode
-spellings `Σ` and `Π` are name aliases of `\sum` and `\prod` (see `## Name aliases`)
+spellings `Σ` and `Π` are name aliases of `\sum` and `\prod` (see [Name aliases](#name-aliases))
 — they normalize to the canonical heads before the special-form table is consulted,
 and a user `\alias` onto those names gets the same treatment for free.
 
@@ -877,13 +804,13 @@ outer environment.
 tier that stays exact (`\sum(i=1..10) i^2` is an exact integer all the way through). A
 lazy infinite range switches to approximate iteration: partial sums/products advance in
 the float tier until consecutive values stabilize within `CONVERGENCE_TOLERANCE`
-(relatively scaled; `docs/numerics.md`), hard-capped at `MAX_TERMS` — while infinite
+(relatively scaled; [numerics](numerics.md)), hard-capped at `MAX_TERMS` — while infinite
 sums additionally stop early on a confirmed tail estimate (monotone-decay or Leibniz
 shapes with a bounded claimed error). The cap produces a typed error rather
 than returning a possibly-misleading partial result; so does any non-finite partial.
 
 `\diff` and `\int` bind `x` the same way and evaluate the body in a fresh frame per probe;
-`\int` takes a range binder. Their methods and tolerances are in docs/calculus.md, and `\diff`
+`\int` takes a range binder. Their methods and tolerances are in [calculus](calculus.md), and `\diff`
 and `\int` (`∂`, `∫`) join `Σ` and `Π` in the alias table.
 
 **Limits are numeric only** — this is a calculator, not a CAS. `\lim(x=a) body` probes
@@ -897,31 +824,29 @@ shrink and may fail to stabilize — write them simplified.
 
 ## String literals
 
-Strings are **values**. They bind (`s = "data"`), display quoted and round-trippable
-(`= "a\"b"` — the `\"`/`\\` the lexer decodes is exactly what display emits), pass through
-`\py` boundaries as native `str`, and appear anywhere an expression does:
+Strings are values: they bind, appear anywhere an expression does and display as
+quoted, round-trippable text. Escaped quotes and backslashes use the same spelling
+on input and output.
 
-- `+` **concatenates** two strings: `"data" + ".csv"`. It is the *only* string operator —
-  there is no mixed arithmetic: `"a" + 1` fails with the usual typed "strings are not
-  numbers", as do `- * / ^`, unary `-`, and the ordering comparisons `< <= > >=`.
-- A string is an ordinary atom, so it may be a whole call argument (the `\py("dotted.path")`
-  case, positional or as a kwarg value `\mode="r"`) — or an operand: `\py(n + ".sqrt")`
-  composes a path from a bound name.
-- A string **alone as a statement** still echoes nothing — the comment-like literate note:
+| Use | Behavior |
+|---|---|
+| `"data" + ".csv"` | Concatenate two strings |
+| `"a" + 1`, other arithmetic, or ordering | Typed “strings are not numbers” error |
+| `\py("dotted.path")`, `\mode="r"` | Positional or keyword argument |
+| `\py(n + ".sqrt")` | Compose a Python callable path |
+| `s = "a"; s = "a"` | Binding check prints `true` |
+| Bare string statement | Silent note |
 
-  ```
-  > "chapter 3: convergence"
-  > 1 + 1
-  < = 2
-  ```
+```text
+> "chapter 3: convergence"
+> 1 + 1
+< = 2
+```
 
-- Strings compare equal only to strings, and only through the binding rule's check
-  (`s = "a"; s = "a"` echoes `true`): the language has no `==` operator at all —
-  `==` lexes as two `=` and cannot parse — so there is no string equality *expression*.
-
-When a Python function hands a `str` back across the boundary it is a plain ad string
-value: printable (`= "hello"`), bindable, concatenable. See docs/numerics.md for the full
-conversion matrix.
+Strings compare equal only to strings with the same content. There is no string
+equality expression: `==` cannot parse. A Python `str` returns as an ordinary
+ad string, and ad strings cross into Python as native `str`. See the
+[conversion matrix](numerics.md#the-python-boundary-conversion-matrix).
 
 ## Modules and imports
 
@@ -942,26 +867,18 @@ is mandatory — there is nothing to bind without names. Callables bind as calla
 `\py` rule); every other member converts through the interop matrix or fails at the
 import's span, so `tau` binds as a number while a dict member is a typed rejection.
 
-Shared rules:
+| Rule | Behavior |
+|---|---|
+| File resolution | Importing file's directory, then working directory; REPL uses working directory |
+| Python resolution | Dotted paths, as with `\py`; a Python module passed to `\import` gets a `\pyimport` hint |
+| Caching | Each ad file evaluates once per session in its own root environment |
+| Closures | Imported functions retain the module's environment |
+| Cycles | Typed error naming the import chain |
+| Validation | Validate every requested member before binding any |
+| Existing names | Protected names or conflicting values error; the identical cached value is a silent no-op |
 
-- **Resolution**: `\import` searches the importing file's directory first, then the
-  working directory (REPL: working directory). A name that resolves as a Python module
-  instead of a file gets an error hinting at `\pyimport`. `\pyimport` resolves dotted
-  paths exactly like `\py`.
-- **Once per session**: each ad file evaluates exactly once per session, in a fresh
-  root environment of its own; the module's bindings are cached and re-imports re-copy
-  the cached values without re-evaluating. Evaluating a module twice (e.g. two
-  sessions) yields fresh, unrelated values.
-- **Closures**: imported functions keep the module's environment as their closure —
-  reads of module globals stay live through the closure — while the copied values are
-  snapshots bound into the importer.
-- **Cycles**: importing a file that is already being evaluated (directly or through a
-  chain) is a typed error naming the chain.
-- **Binding rules**: everything validates before anything binds. A member missing from
-  the module, a protected prelude name, or a name already bound to a different value is
-  a typed error; a name already bound to the *identical* cached value is a silent
-  no-op (re-import). Imported names land as ordinary bindings — not protected, and a
-  repeat `=` compares rather than overwrites.
+Imports copy bindings into the importer; repeating `=` checks them rather than
+reassigning. Re-imports reuse cached values.[^imports]
 
 ```
 \import("lib")                 -- bind everything lib.ad defines at the top level
@@ -975,13 +892,13 @@ Shared rules:
 A name is one letter, optionally subscripted (`x₁`, `xᵢ`, `x_1`). Any language-defined name longer than one character
 is `\`-prefixed, regardless of script — `\pi`, `\sum`, `\sin`, `\solve`, `\map`, `\graph`. Where
 a `\`-name has a single-character unicode form, they are the same name (`\pi` ≡ `π` — the
-name-alias mechanism, `## Name aliases`); where
+name-alias mechanism, [Name aliases](#name-aliases)); where
 there is no unicode form, the `\` spelling is the only one (`\sin`, `\lim`, `\solve`, ...).
 
 The names are chosen to match their LaTeX command where one exists, so `ad` source reads like
 the ASCII you'd already type to write the same expression in LaTeX — this is a naming
-convention, not a claim that `ad` parses TeX. The built-ins bound today are listed under
-`## The prelude`; `docs/language.md` has the fuller picture and `README.md` the
+convention, not a claim that `ad` parses TeX. Built-ins are listed under
+[The prelude](#the-prelude); [language guide](language.md) has the fuller picture and `README.md` the
 framing.
 
 ## Name aliases
@@ -1004,7 +921,7 @@ everywhere a name is consumed, seeded with:
 `\alias` extends the map for the rest of the session:
 
 ```
-\alias \sum, σ        -- σ now reads (and checks against) as \sum
+\alias \sum, σ        -- σ reads and checks as \sum
 \alias \alpha, α, ϵ   -- several short spellings may share one canonical name
 ```
 
@@ -1016,119 +933,118 @@ ordinary definition forms with a second spelling attached:
 \dual \fact, φ(n) = n*\fact(n-1)     -- echoes φ = <fn φ(n)>
 ```
 
-Rules:
+| Rule | Behavior |
+|---|---|
+| Canonical first | First name is canonical; remaining names are single-letter aliases |
+| Declare before use | A declaration affects subsequent statements in the same input unit |
+| Top-level only | `\alias` and `\dual` cannot appear in functions or groups |
+| Protected names | Existing prelude spellings cannot be repurposed; aliases onto prelude names are allowed |
+| Session scope | REPL aliases persist; scripts and modules start from seeded aliases |
+| Source spelling | Lookup uses canonical names; diagnostics and fresh echoes use the written spelling |
+| Atomic registration | Failed or cancelled parsing registers nothing; an evaluation failure can leave a parsed alias registered |
 
-- **Canonical first**: the first spelling is the canonical name (either name form);
-  the rest are single-character aliases — one character that lexes as an identifier,
-  i.e. a letter. Definitions bind the canonical name only, and the short spelling
-  reads (and checks against, via the statement `=` rule) as the very same name from
-  its declaration on. The radical `√` is not a name (it is not a letter) and so is
-  outside the alias mechanism entirely — it is a fixed operator spelling.
-- **Parse-time, declare-before-use**: declarations take effect with the next
-  statement in the same unit; a use parsed before the declaration reads the raw
-  spelling, and no alias declaration renames it retroactively.
-- **Top-level only**: `\alias` and `\dual` are directives, not expressions — they
-  cannot appear inside a function body or parenthesized group (their effect is
-  parse-time, and a body's declarations would fire whether or not it ever runs).
-- **Protected names**: a spelling that names a prelude value cannot be repurposed as an
-  alias (`\alias x, e` errors). Aliasing *onto* a canonical prelude
-  name is allowed — `\alias \pi, ϖ` gives `ϖ` to the constant — and protection still
-  holds, since every use of the short spelling becomes a use of the canonical name.
-- **Session scope**: the REPL threads the map across inputs alongside the environment;
-  scripts and `\import`ed modules parse with the seed
-  alone — they never inherit or export declarations. The driver API threads the map
-  explicitly (`parse_program`/`compile_source` take `aliases=`).
-- **Source spelling**: each name-bearing occurrence retains the spelling written at
-  that occurrence as non-semantic metadata. Canonical names still determine identity,
-  lookup, and protection; diagnostics and fresh declaration echoes use the written
-  spelling. For example, `\dual \alpha, α = 3.14` echoes `α = 3.14` while storing
-  `\alpha` in the environment.
-- **Atomic registration**: declarations merge into the session map only after the
-  parse of their input unit succeeds; a failed or cancelled line declares nothing.
-  An evaluation failure after a successful parse may leave a declaration registered.
+`\alias \pi, ϖ` adds a spelling for the protected constant; `\alias x, e` is an
+error. `√` is an operator rather than a letter, so it cannot be an alias.
+Declarations do not rename earlier parsed uses. Scripts and imported modules
+neither inherit nor export session aliases.[^alias-api]
 
 Bare `\alias`/`\dual` heads (not followed by a name) stay ordinary unbound names and
 report their usage at evaluation, like `\py`.
 
 ## Assignment semantics
 
-One rule everywhere (`x = e`, any statement context):
+`name = expr` binds or checks in the current frame:
 
-- `x` protected (a prelude name, except `i`) → error naming the written spelling, e.g.
-  `` `π` is protected ``
-- `x` unbound in the current frame → **bind** it, prints `x = v`
-- `x` bound in the current frame → **compare** current value to `v`, prints `true` / `false`
+| Name in current frame | Result |
+|---|---|
+| Protected prelude name, except `i` | Redefinition error |
+| Unbound | Bind once; print `name = value` |
+| Bound | Compare with the existing value; print `true` or `false` |
 
-The comparison is value-based on the numeric tower, not type-checked: `x = 1; x = 1.0`
-echoes `true`, `0.5` and `1/2` compare `true`, `"a" = 1` echoes `false` (mixed kinds
-simply are not equal). There is no reassignment operator. A binding is made once by the
-first `=` and can never be overwritten, only compared against. `\let name = expr` is
-the explicit fresh-only spelling: it binds a new current-frame name, echoes the same
-`name = value` line, and errors when that name is already bound in the current frame.
-To iterate on a value, bind a fresh name or compute inside a function, where every call
-starts from a fresh frame.
+There is no reassignment operator. `\let name = expr` requires a fresh name and
+errors if it is already bound in the current frame. To compute another value,
+use a fresh name or a function call with a fresh frame.
 
-**The `i` exception**: the imaginary unit's spelling is the conventional loop-binder
-name, so `i` is the one prelude name a binding may shadow — `i = 5` binds a fresh `i`,
-`\sum(i=1..3) i` uses it as the binder, `f(i) = i*i` takes it as a parameter, exactly
-like any other identifier. Both spellings read the one binding, so a shadow covers `i`
-and `\i` alike, and the shadow lifts when the scope ends (the unit is reachable inside
-as `\complex(0, 1)`). It is an ordinary identifier clash handled by the ordinary
-frame rules — not a hole in protection: `π` and every other prelude name stay
-unshadowable, and `\alias` still refuses to repurpose the `i` spelling.
+Comparison follows value semantics across numeric tiers. Exact decimals compare
+with equal rationals; incompatible kinds compare unequal.
 
-Frame locality: reads walk the chain (locals → enclosing → globals → prelude), but
-binds and compares are frame-local. Inside a body, `y = e` shadows a global `y` with a
-fresh local (it never touches the global), and a repeat `y = e` compares the local.
-Function definitions are the one exception to bind-or-check: `f(x) = body` on a bound
-or protected name is an error — definitions are declarations, and functions compare by
-identity, so a check would be meaningless. The top-level `\let f(x) = body` form has
-the same fresh-only behavior. Note that inside an argument list, `name=value` is a
-keyword argument and never assigns.
+```text
+x = 1
+x = 1.                 -> true
+s = "a"
+s = 1                  -> false
+```
 
-Statement groups flatten: a top-level `(a; b)` becomes plain top-level statements, each
-with its own echo line — the parentheses do not create a scope, so a group cannot
-overwrite a global either (its `=` compares). Expression-position groups (function
-bodies, ternary branch groups) run the same rule in the frame they evaluate in.
+### Frame locality
+
+Reads search locals, enclosing scopes, globals and the prelude. Binding and
+checking stay in the current frame. A local `y = expr` shadows a global `y`;
+repeating it checks the local value without changing the global.
+
+Function definitions always declare: defining `f(x) = body` on a bound or
+protected name is an error. The top-level `\let f(x) = body` form has the same
+fresh-only behavior. Within call arguments, `name=value` passes a keyword
+argument and never binds.
+
+Top-level groups flatten into statements with individual echo lines and create
+no scope. Expression-position groups use their evaluation frame.
+
+### The imaginary-unit exception
+
+`i` and `\i` are the same shadowable name. `i = 5`, `f(i) = i*i` and
+`\sum(i=1..3) i` use ordinary frame rules. A shadow covers both spellings and
+ends with its scope; `\complex(0, 1)` still accesses the imaginary unit.
+Other prelude names remain protected, and `\alias` cannot repurpose `i`.
 
 ## The prelude
 
-There are no user-declared constants: every binding is immutable by the assignment rule
-itself, while `\let` is only the explicit fresh-binding spelling. Built-in names live
-in a prelude scope protected by the same mechanism:
+Built-in constants and functions live in a protected prelude scope. Every binding
+is immutable; `\let` explicitly requires a fresh binding.
 
-| spelling | value |
+| Name | Value or operation |
 |---|---|
-| `π` / `\pi` | the symbolic real π — exact; displays `3.14159265358979...` (docs/numerics.md) |
-| `e` | the symbolic real e — exact; displays `2.71828182845905...` |
-| `i` / `\i` | the imaginary unit — an exact complex value (`i` displays as `i`); the one prelude name a binding may shadow (see `## Assignment semantics`) |
-| `\inf` / `\nan` | the non-finite floats `Inf` / `NaN` — float tier only; the exact tiers have neither (`1/0` is a typed error). IEEE semantics, docs/numerics.md |
-| `\true` / `\false` | the booleans — comparisons return them, arithmetic rejects them |
-| `\sin` `\cos` `\tan` `\ln` `\sqrt` | seam-native builtins: exact arguments go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sin(π/3)` is `√3/2`, `\sqrt(-2)` is `√2·i`, `\ln(-1)` is `π·i`); algebraic `√` arguments through the algebraic tier (`\sqrt(2^(1/3))` is `2^(1/6)`); anything finite the lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact, complex results included); everything else falls to the `math.*` float tier. Display as `<fn \sqrt(x)>` |
-| `\isnan` / `\isinf` / `\isfinite` | test the float tier's non-finite states; exact-tier values are finite, so `\isnan` and `\isinf` are false and `\isfinite` is true. Non-numeric arguments are typed errors. Display as `<fn \isnan(x)>`, `<fn \isinf(x)>`, and `<fn \isfinite(x)>` |
-| `\complex` | builds a complex value from two real components: `\complex(2, 3)` is `2+3i`, a vanishing imaginary part collapses to the real; float components read as their exact decimals |
-| `\re` / `\im` | project the real or imaginary side (`\re(2+3i)` is `2`, `\im(π·i)` is `π`); a float's imaginary side is `0.0` |
-| `\root` | `\root(x, n)`: the exact positive integer `n`th root, `x^(1/n)` on the numeric seam; `∛x` is `\root(x, 3)`. Displays as `<fn \root(x)>` |
-| `\emptyset` / `∅` | the empty set, a protected constant |
-| `\map` / `\filter` / `\fold` / `\scan` / `\take` | higher-order functions over collections (`## Higher-order functions`). Display as `<fn \map(x)>` etc. |
-| `\len` / `\shape` / `\transpose` | collection length, tensor shape (a vector), and tensor transpose. Display as `<fn \len(x)>` etc. |
-| `\prec` | the RRA display-precision setting: `\prec(5)` shows `π + 1` as `4.1416...` — an exact integer 1..1000, returns the new value, protected like every prelude name. Displays as `<fn \prec(x)>` |
+| `π` / `\pi` | Exact symbolic π; displays `3.14159265358979...` |
+| `e` | Exact symbolic e; displays `2.71828182845905...` |
+| `i` / `\i` | Exact imaginary unit; the one shadowable prelude name |
+| `\inf` / `\nan` | Float constants `Inf` and `NaN` |
+| `\true` / `\false` | Boolean constants |
+| `\sin` `\cos` `\tan` `\ln` `\sqrt` | Elementary functions; exact arguments stay exact |
+| `\isnan` / `\isinf` / `\isfinite` | Numeric finiteness tests; exact tiers are finite |
+| `\complex(re, im)` | Build a complex value; zero imaginary part collapses to real |
+| `\re` / `\im` | Real and imaginary components |
+| `\root(x, n)` | `x^(1/n)` for exact positive integer `n`; `∛x` uses `n=3` |
+| `\emptyset` / `∅` | Empty set |
+| `\map` / `\filter` / `\fold` / `\scan` / `\take` | [Higher-order functions](#higher-order-functions) |
+| `\len` / `\shape` / `\transpose` | Collection length, tensor shape and transpose |
+| `\prec(n)` | RRA display precision, 1–1000 significant digits; returns `n` |
 
-Prelude names are **protected everywhere**: `π = 3`, a parameter named `π`, a local
-`π = ...`, or a `\sum(π=...)` binder are all redefinition errors (`` `π` is protected ``,
-naming the spelling written at the failing occurrence), never shadows — except `i`,
-the one shadowable prelude name (above).
-Unicode and ASCII spellings are the same value — `π` and `\pi` are one
-name, not two, and `i` and `\i` are one name reached as a bare identifier and as a
-`\`-reference. The function builtins replaced the original float-tier `math.*` aliases
-in place: binding names unchanged, but exact closed forms stay exact
-(`√2 * √2` collapses back to the integer `2`); a result with no recognized closed form
-stays exact in the algebraic or RRA tier (`π + 1` is `4.14159265358979...`), and the float tier keeps
-`math.*`'s own behavior for float arguments (`\sqrt(2.)` is `1.4142135623730951`).
-`√` is the prefix-operator spelling of `\sqrt(...)` — same evaluation, no separate
-name. Exact-tier domain failures are typed errors (`\ln(0)`,
-`\tan(π/2)`); the float tier keeps `math.*`'s own raising (`\sqrt(-1.0)` →
-`ValueError`, wrapped and spanned).
+Prelude protection applies to assignments, parameters, local bindings and binders.
+`π = 3`, `f(π) = π` and `\sum(π=1..3) π` are redefinition errors. Diagnostics
+name the spelling written at the failing occurrence. `i` is the exception; see
+[assignment semantics](#assignment-semantics).
+
+Unicode and ASCII aliases refer to one binding. `√` is a prefix operator that
+calls `\sqrt`, with no separate binding.
+
+```text
+√2 * √2                  ->  = 2
+\sqrt(2^(1/3))           -- exact algebraic 2^(1/6)
+\sin(1)                  -- exact RRA value
+\sqrt(2.)                ->  = 1.4142135623730951
+\sqrt(-1.)               ->  = 1.0i
+\re(2+3i)                ->  = 2
+\im(π·i)                 -- exact π
+```
+
+Elementary functions use the symbolic, algebraic or RRA tier for exact results,
+and float or complex float arithmetic for float inputs. Exact-tier domain
+failures such as `\ln(0)` and `\tan(π/2)` are typed errors. Float domain errors
+are wrapped and spanned. See [numerics](numerics.md) for dispatch and display.
+
+Finiteness tests reject non-numeric arguments. `\im` of a real float returns `0.0`.
+`\complex` reads float components as exact decimals. Built-in functions display
+as `<fn \sqrt(x)>`, `<fn \root(x)>` and corresponding names. See the
+[standard library](stdlib.md) for all prelude functions.
 
 ## Ranges
 
@@ -1150,7 +1066,7 @@ and index brackets, a comma never starts a stepped range: `⟨1, 3..9⟩` has tw
 (`Σ(k=1,3..7) k`, also inside a list) — `a,b..c` is stepped.
 
 Ranges can be assigned and passed through the runtime; folds bind them directly
-(`\sum(i=1..10) …`, `Σ(i=1..) …` — see `## Special forms`).
+(`\sum(i=1..10) …`, `Σ(i=1..) …` — see [Special forms](#special-forms-folds-and-limits)).
 
 An open range ends at a closing delimiter, including `}`, `]`, `⟩`, `⌋`, and `⌉`.
 Sets and arrays store a range as one element without expanding it:
@@ -1159,16 +1075,53 @@ Tensors require numeric elements, so `[1..]` is a typed error. Set-builders requ
 finite domains even when their guards would select only finitely many elements.
 
 A callable binds like any other value (`s = \py("math.sqrt")` prints `s = <py math.sqrt>`);
-a call returning a string binds like any value too (see `## String literals`). Two
+a call returning a string binds like any value too (see [String literals](#string-literals)). Two
 non-numeric values never compare equal unless identical — strings by content.
 
-## Deferred
+## Limitations
 
-Graphing.
+Graphing is not implemented.
 `==` and `!=` do not exist: `≠` / `\neq` is the inequality operator, and the binding
 rule's check is the only equality, with tier-aware semantics: exact for
 the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)
-and the Richardson–Fitch heuristic for any RRA-involved pair (docs/numerics.md).
+and the Richardson–Fitch heuristic for any RRA-involved pair ([numerics](numerics.md)).
 Custom infix declarations are described in [custom operators](operators.md).
-Name aliases cover names only (see `## Name aliases`).
-See `ROADMAP.md` for planned work.
+Name aliases cover names only (see [Name aliases](#name-aliases)).
+See [the roadmap](../ROADMAP.md) for planned work.
+
+[^bars]: `|a|b||` reads as `|a|·b·|` and fails at the last bar. Inside `{ }` the first item
+    reads with a separator bar on the stack, so `{a |b|}` is set-builder and needs `{a*|b|}`
+    for the product ([Sets](#sets)).
+
+[^tensor-index]: A `[` trailer attaches only to name-ish heads (a name, a call, another
+    index, a transpose), so `[1, 2][1]` is not an index: it juxtaposes two tensors and fails
+    on the shape mismatch. A name holding a number followed by `[...]` multiplies, matching
+    the call rule (`k = 3; k[1, 2]` is `[3, 6]`); any other head is `` `…` is not indexable ``.
+    Whitespace is not significant, so `v [1]` also indexes.
+
+[^set-cost]: Quadratic in the number of elements; see
+    [Limitations](language.md#limitations).
+
+[^arrow]: `->` in these docs' examples also marks "evaluates to" (`f(3)  ->  = 10`); in code it
+    is always the lambda arrow. It is not the implication `→` (`\implies`).
+
+[^subscripts]: Supported subscript letters are `ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ`.
+
+[^atom-starters]: `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
+    `number`, `string`, `identifier`, `\`-name, a custom operator glyph, `√`, `∛`, `∜`,
+    `(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
+    parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
+    parses as the multiplication it spells and dies as the usual typed "strings are not
+    numbers" at evaluation — the same shape as any other string reaching a numeric operator.
+    Declared custom operator spellings end a juxtaposition run and parse as infix instead.
+
+[^alias-api]: The driver threads the alias map explicitly through the `aliases=`
+    argument to `parse_program` and `compile_source`. Each name occurrence retains
+    source spelling as non-semantic metadata.
+
+[^imports]: Cached values are copied as snapshots, while function closures retain
+    module-global reads. Separate sessions evaluate fresh, unrelated values.
+
+[^reduction]: Reduction is leftmost-outermost and avoids variable capture. Nested
+    quotes remain opaque. The reducer produces a typed error after 10,000 beta
+    steps; `\eval` performs arithmetic on the reduced result.

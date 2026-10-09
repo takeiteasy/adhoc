@@ -25,11 +25,17 @@ recursion works, and semicolon-separated statements form a body. Both operands
 evaluate before the function runs. Built-in logical operators keep their lazy
 behavior.
 
-A glyph is one non-ASCII Unicode mathematical symbol (category `Sm`) without an
-existing lexical meaning. Letters, delimiters, built-in operators, and `≡` are
-reserved. Protected names, names with existing aliases, and previously declared
-operator spellings are rejected. `\alias` and `\dual` do not add spellings to a
-custom operator; use the paired declaration.
+### Allowed spellings
+
+| Spelling | Requirement |
+|---|---|
+| Glyph | One unused non-ASCII Unicode mathematical symbol (`Sm`) |
+| Backslash name | Unprotected, without an existing alias or operator declaration |
+| Paired declaration | One name and one glyph; both refer to the same function |
+
+Letters, delimiters, built-in operators and `≡` are reserved. Previously
+declared operator spellings are rejected. `\alias` and `\dual` cannot extend
+a custom operator; use the paired declaration.
 
 ## Precedence and grouping
 

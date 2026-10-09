@@ -1,262 +1,281 @@
-# Language: what's implemented today
+# Language guide
 
-This describes the subset of `ad` that actually runs right now — not the full design. For the
-target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
+`ad` evaluates math notation with exact arithmetic, immutable bindings and
+first-class functions. This guide covers supported features. See the
+[grammar](grammar.md) for precise syntax and the [design](../DESIGN.md) for the
+target language.
 
-## Working today
+## Running programs
 
-- A REPL: `> ` prompts for input, `... ` prompts for a continuation when a statement is
-  incomplete (an open paren or string — the gutter is the visible "still open" signal),
-  `< ` prefixes output, Ctrl-D exits.
-- Multi-line input: an unterminated statement (`(1 + 2`, `1 +`, `2 ^`, `x =`, `"abc`,
-  an unclosed `(`) buffers and continues on the next line rather
-  than erroring immediately. A blank line cancels a pending continuation.
-- Script mode: `adhoc run script.ad` runs a file through the same grammar, printing one
-  `< ...` line per top-level statement. Statements are separated by `;`, a newline, or
-  simply by ending mid-expression and continuing on the next line — one uniform newline
-  rule everywhere, inside parens and out. See `demos/` for working
-  examples.
-- Caret-pointing error diagnostics with source spans, e.g.:
-  ```
-  < ERROR! division by zero
-      1/0
-      ^~~
-  ```
-- REPL history, persisted to `$ADHOC_HISTORY` (default `~/.adhoc_history`).
-- `$ADHOC_SYMBOLIC_TIMEOUT`: seconds before a symbolic rewrite stops (default 5, `0` for none;
-  docs/symbolic.md).
-- Arithmetic: `+ - * / ^`, unary minus, parentheses, implicit multiplication by juxtaposition
-  (`2x` = `2 * x`, `ab` = `a * b`).
-- Bare identifiers are one letter (ASCII or unicode), optionally with a subscript
-  (`x`, `x₁`, `xᵢ`, ASCII `x_1`); multi-character names, including user-defined function names, use the
-  backslash sigil (`\fact`).
-- Math notation: `x²`, `xⁿ⁻¹`, `\sin²(x)`, `\sin⁻¹(x)`, `3 ∈ 1..5`, `n!`, `∛x`, `≤ ≥ ≠ ≈`, `∉ ⊂ ⊇ ⊃ ∅` — see [`notation.md`](notation.md).
-- Assignment (`x = 1`) with declare-once-then-check semantics: a fresh name binds and
-  echoes the spelling written at that occurrence; `x = 1` again *compares*, printing
-  `true`/`false`. `\let x = 1` is the explicit fresh-only spelling, and the top-level
-  `\let f(x) = body` form reuses the fresh-only function definition path. Every binding
-  is immutable (docs/grammar.md, `## Assignment semantics`).
-- Multi-character variables use the same backslash sigil as multi-character functions:
-  `\bar = 100; \foo = 200; \foobar = \foo\bar`.
-- `--` line comments, plus bare string literals as comment-like statements (`"a note"` alone
-  on a statement is parsed and echoes nothing; docs/grammar.md).
-- Postfix application `f(x)`: name-headed parens parse as calls; at evaluation a callable
-  head applies, and a non-callable head with exactly one argument falls back to the paper
-  product (`x(y+1)` = `x*(y+1)`). Number-headed parens (`2(x+1)`) are always
-  juxtaposition. Zero-argument calls are legal. Keyword arguments pass through to Python
-  callables natively: `\py("int")("ff", \base=16)` → `= 255` (multi-character kwarg names
-  take the `\` sigil; user-defined functions take positional arguments only).
-- The `\py` escape hatch: `\py("math.sqrt")(2)` → `= 1.4142135623730951`. Resolves any dotted
-  Python path to a callable (full trust — same power as running Python itself); arguments and
-  results convert at the boundary (docs/numerics.md). Strings are values: they bind,
-  concatenate with `+`, and compose `\py` paths (`\py(n + ".sqrt")`).
-- Anonymous functions (lambdas): `\fn(x) x + 1` or `\λ(x) x + 1` — a definition without
-  the name. First-class, eager, fixed arity, closures capture the defining scope; a
-  parenthesized lambda applies in head position (`(\fn(x) x)(5)` → `= 5`); bodies extend
-  greedily unless bounded by a parenthesized group; display as `<λ(x)>` (docs/grammar.md,
-  `## Lambdas`).
-- Parenthesized statement groups: newlines separate statements inside `(...)` exactly as
-  at top level, so a group is the multi-line, multi-statement form for def bodies,
-  ternary branches, and lambda bodies — same flattening/scope rules as a top-level
-  `Seq`, value of its last statement. Braces build sets
-  (docs/grammar.md, `## Sets`).
-- Imports, statement-level and silent: `\import("lib")` binds the top-level names of `lib.ad`
-  (all of them, or only the listed members: `\import("lib": f, \fact)`), each file evaluating
-  once per session in a fresh root environment — imported functions keep the module's
-  environment as their closure, re-imports reuse the cache, cycles are typed errors, and
-  resolution searches the importing file's directory then the working directory.
-  `\pyimport("math": \hypot, \tau)` binds named Python-module members (callables as
-  callables, values through the conversion matrix); member selection is mandatory and
-  there are no module values or dotted attribute access (docs/grammar.md,
-  `## Modules and imports`).
-- Exact integer and rational arithmetic (`1/3 + 1/3 + 1/3` is exactly `1`, not `0.999...`),
-  exact decimals (`0.1 + 0.2` is exactly `3/10` — a dotted literal is a rational read
-  from its own digits; the float spellings are the trailing-dot marker `1.` and any
-  exponent form `5e-1`), exact symbolic closed forms (`√2 * √2` is exactly `2`),
-  exact algebraic numbers (`2^(1/3)` stays exact, displaying
-  `1.25992104989487...`), exact Recursive Real Arithmetic (`π + 1` stays exact,
-  displaying `4.14159265358979...`; any error bound yields a rational within it),
-  and the exact complex tower: `i`/`\i` is the imaginary unit, `(2+3i)(2-3i)` is
-  exactly `13`, `\sqrt(-2)` is `√2·i`, `\ln(-1)` is `π·i`, `\sin(1+i)` stays
-  exact, and `\complex(re, im)`/`\re`/`\im` build and project complex values.
-  Negative bases take the odd-root real branch (`(-8)^(1/3)` is `-2`) or the
-  complex principal (`(-2)^(1/2)` is `√2·i`); a float meeting a complex value gives a
-  complex float (`1. + i` is `1.0+1.0i`), and complex values are not ordered.
-- Exact rationals display as `a/b` (`1/2` prints `1/2`, not `0.5`).
-- RRA display precision is tunable: `\prec(5)` shows `π + 1` as `4.1416...`;
-  `\prec` takes an integer 1..1000, returns the new value, and is protected
-  like every prelude name. Digits print only once successive approximations
-  agree to the full target, otherwise the longest agreed prefix prints.
-- User-defined functions: `f(x) = x^2` or `\fact(n) = ...`, local parameters and assignments,
-  semicolon-sequenced bodies, first-class function values, and recursion. Nested definitions
-  bind locally and return their callable when they are the last body statement. Parameters
-  may use single-character or `\`-sigiled names.
-- Comparisons `<`, `>`, `<=`, `>=` return `true`/`false` and reject arithmetic use.
-- Logic: `∧ ∨ ¬ → ↔` (`\and \or \not \implies \iff`) combine booleans and short-circuit;
-  `∀(x∈s) body` and `∃(x∈s) body` (or `x=s`) quantify over a range or collection
-  (docs/notation.md, `## Logic`).
-- Booleans are real values: comparisons produce them, arithmetic rejects them, the
-  ternary consumes them, and `\true`/`\false` are bound constants. There
-  is no numeric truthiness — a number is never a condition (`0 ? 1 : 2` is a typed
-  error).
-- Non-finite tests are protected prelude callables: `\isnan(x)`, `\isinf(x)`, and
-  `\isfinite(x)` test the float tier; exact-tier values are finite. Non-numeric
-  arguments are typed errors.
-- Lazy conditionals: the ternary `c ? a : b` is the one conditional — only the selected
-  branch evaluates. It is right-associative with the loosest expression precedence,
-  and a parenthesized statement group is its multi-statement branch form
-  (docs/grammar.md, `## Conditionals`).
-- A protected prelude scope: `π`/`\pi` and `e` are exact symbolic reals (displaying with
-  a trailing ellipsis), `i`/`\i` the exact imaginary unit (the one prelude name a
-  binding may shadow — `i = 5` or `\sum(i=1..3) i` is an ordinary identifier clash,
-  docs/grammar.md, `## Assignment semantics`), `\inf`/`\nan` the non-finite floats,
-  `\true`/`\false` the booleans,
-  and the `\sin`, `\cos`, `\tan`, `\asin`, `\acos`, `\atan`, `\ln`, `\sqrt` function builtins — exact arguments
-  go through the symbolic closed-form tier (`\sqrt(2)` stays `√2`, `\sqrt(-2)` is
-  `√2·i`), algebraic `√` arguments through the algebraic tier, anything finite the
-  lower tiers cannot hold through the RRA tier (`\sin(1)` stays exact), everything
-  else falls to the `math.*` float tier. The `\isnan`/`\isinf`/`\isfinite` predicates
-  test float non-finiteness and treat exact tiers as finite. `\complex`/`\re`/`\im`
-  build and project complex values, and `\prec` is the display-precision setting above.
-  Rounding, number theory, more elementary and special functions, aggregates and complex
-  helpers are listed in docs/stdlib.md.
-  Prelude names other than `i` can never be rebound or shadowed, and unicode/ASCII
-  spellings are one and the same value (`π` and `\pi` are a single constant, via the
-  name alias map). `√` is the
-  prefix-operator spelling of `\sqrt(...)` — `√2 * √2` collapses back to the exact
-  integer `2` (docs/numerics.md).
-- Lazy arithmetic ranges: `a..b` is an inclusive step-1 range, `a..` is infinite, and
-  `a,c..b` / `a,c..` infer the step as `c-a`. Finite ranges stop before crossing an
-  unreachable endpoint; ranges display as `<range ...>` and can be assigned.
-- Folds: `\sum(i=1..10) i^2` → `= 385` and `\prod(j=1..5) j` → `= 120`, with the unicode
-  spellings `Σ` and `Π`. The loop variable scopes like a function parameter (reads fall
-  through, writes stay local, nothing leaks). Finite ranges accumulate exactly.
-- Name aliases: one name owns several spellings — `Σ` is `\sum`, `π` is `\pi`, and
-  `\alias \sum, σ` declares your own for the session (declare-before-use, top-level
-  only, protected names repurposed by no one; docs/grammar.md, `## Name aliases`).
-  Diagnostics and fresh declaration echoes use the spelling written at the occurrence;
-  the canonical name still determines identity and lookup.
-- Dual-form definitions: `\dual \alpha, α = 3.14` and `\dual \fact, φ(n) = ...` define
-  the canonical name and register its short spelling in one statement; both spellings
-  read and compare as the same binding, and the definition echo keeps the written name
-  and parameter spellings.
-- Infinite-range folds: `\sum(i=1..) 1/i^2` ≈ ζ(2) evaluates as the limit of partial sums
-  — approximate iteration in the float tier until values stabilize within tolerance
-  (infinite sums additionally stop early on a confirmed tail estimate),
-  erroring at the iteration cap rather than returning a misleading partial (`\sum(i=1..) i`
-  errors; docs/numerics.md).
-- Numeric limits: `\lim(x=0) x/x` → `= 1.0` approximates by two-sided shrinking-step
-  probing without ever evaluating at the anchor. Disagreeing one-sided limits (jump
-  discontinuities) report `` limit does not exist ``. Complex bodies and complex anchors
-  work (a complex anchor probes eight rays at golden-angle spacing).
-- Expression values: `q = \expr(x^2 - 4)` or ``q = `(x^2 - 4)`` stores a quoted AST;
-  `\eval(q, x=3)` returns `5`. Bindings evaluate in the caller's scope and remain local to
-  that evaluation. Other names resolve where `\eval` runs. Values display as parseable
-  `\expr(...)` text; errors inside them point to their original source.
-- Function reflection: `\body(f)` returns the body AST of a user-defined function or
-  lambda. `\eval(\body(f), x=3)` evaluates it with explicit parameter bindings and
-  names from the evaluation scope. Multi-statement bodies display as `\expr((...))`;
-  their local bindings stay local and the last statement supplies the result.
-- Lambda reduction: `\reduce(\expr((\fn(x) x + 1)(2)))` returns
-  `\expr((2 + 1))`. It reduces explicit lambda calls throughout expression quotes
-  without evaluating arithmetic or expanding named functions. Free names remain free;
-  `\eval` can bind them later. Statement quotes are not reducible.
+Run `adhoc` for the REPL or `adhoc run script.ad` for a script. Both use the same
+grammar. Statements end at `;` or a newline; a line ending mid-expression
+continues onto the next line. See [demos](../demos/) for complete programs.
 
-- Calculus: `\diff(x=a) body` (`∂`) and `\int(x=a..b) body` (`∫`) are numeric binders, and
-  `f'` / `f''` are derivative functions, exact where the body allows (docs/calculus.md).
-- Lambda arrow: `x ↦ x^2`, ASCII `x -> x^2` or `x \mapsto x^2`; `(x, y) ↦ x + y` for several
-  parameters (docs/grammar.md, `## Lambdas`).
-- Piecewise definitions `{x < 0: -x; x}` and set-builder `{x ∈ 1..10 | x^2 < 50}`
-  (docs/grammar.md, `## Sets`, `## Conditionals`).
-- Symbolic rewriting: `\simplify(q)`, `\expand(q)`, `\factor(q)`, `\solve(q)`, `\deriv(q)` and `\grad(q)` take a
-  quote or a function and return a quote (`\solve`: a set of solutions), e.g.
-  `\solve(\expr(x^2 - 4))` is `{-2, 2}` (docs/symbolic.md).
-- `\tex(e)` returns LaTeX for a quote, function or value (docs/tex.md).
+| REPL input or output | Meaning |
+|---|---|
+| `> ` | Ready for a statement |
+| `... ` | Incomplete input: continue an open string, group or expression |
+| `< ` | Output |
+| Blank line during continuation | Cancel pending input |
+| Ctrl-D | Exit |
 
-- Tensors: `[1, 2; 3, 4]` is a uniform numeric tensor (vectors order 1, matrices order 2,
-  higher orders nest). Indexing is 1-based (`m[2, 1]`), `'` transposes, `+ - * / ^` are
-  elementwise with scalar broadcast, and `@` / `\contract` contracts (dot and matrix
-  products), `×` crosses 3-vectors and `⊗` takes the tensor product. Folds bind over a
-  tensor's outer slices; `\len`, `\shape`, `\transpose` and the linear algebra functions
-  (`\det`, `\inv`, `\linsolve`, ...) are prelude functions (docs/grammar.md, `## Tensors`;
-  docs/stdlib.md, `## Linear algebra`).
+Errors point to the source span:
 
-- Arrays: `⟨1, [1, 2], "a"⟩`, `#[...]`, and `\arr(...)` build an ordered container of
-  any values, possibly ragged. They index (`a[2]`, chain `a[i][j]`), fold, and report
-  `\len`, with no elementwise algebra (docs/grammar.md, `## Arrays`).
+```text
+< ERROR! division by zero
+    1/0
+    ^~~
+```
 
-- Sets: `{3, 1, 3, 2}` is the deduplicated set `{3, 1, 2}` of any values, compared without
-  order. `∪ ∩ ∖ ∈ ⊆` (ASCII `\cup \cap \setminus \in \subseteq`) are infix; `∈` and `⊆`
-  give booleans. Folds iterate the elements (docs/grammar.md, `## Sets`).
+| Setting | Default | Purpose |
+|---|---|---|
+| `$ADHOC_HISTORY` | `~/.adhoc_history` | Persistent REPL history |
+| `$ADHOC_SYMBOLIC_TIMEOUT` | `5` seconds | [Symbolic rewrite](symbolic.md) timeout; `0` disables it |
 
-- Composition and partial application: `(s ∘ t)(2)` composes functions and
-  `f(10, ·)` fixes arguments (`·` is the placeholder; `⋅` and `_` also work), and `(+ 1)` / `(2 ^)` fix one operand of
-  an operator. `\map`, `\filter`, `\fold`, and `\scan`
-  apply functions over ranges and collections, keeping the collection's kind
-  (docs/grammar.md, `## Composition and partial application`).
+## Names and notation
 
-- Custom infix operators: `\infix(11) \blend, ⊕(a,b) = a+b` gives an ordinary
-  function a declared precedence and an optional paired glyph. Declarations persist
-  in the REPL and stay local to each script or imported module. See
-  [custom operators](operators.md) for allowed levels and examples.
+A bare identifier is one ASCII or Unicode letter, optionally subscripted:
+`x`, `x₁`, `xᵢ`. ASCII subscripts such as `x_1` also work. Longer names use a
+backslash: `\fact`, `\bar`, `\my_var`. Juxtaposition multiplies: `ab` means
+`a * b`, and `2x` means `2 * x`.
 
-- Python interop converts collections both ways: lists, sets, and numpy arrays come back
-  as arrays, sets, and tensors, and tensors, arrays, and sets go in as lists and
-  frozensets (docs/numerics.md).
+Names follow LaTeX spellings where available. `ad` supports math notation;
+it has no TeX layout or document commands. See [notation](notation.md) for
+superscripts, radicals, factorials, comparisons and their ASCII spellings.
 
-## Not yet implemented
+```text
+\bar = 100
+\foo = 200
+\foobar = \foo\bar
+```
 
-Graphing. See `ROADMAP.md` and the tracker for status.
+Aliases give one name several spellings. `Σ` and `\sum` refer to the same name.
+`\alias \sum, σ` adds a session spelling; `\dual \alpha, α = 3.14` defines a
+name and its alias together. Declare aliases before use, at top level.
+Diagnostics and fresh binding echoes retain the spelling you write.[^names]
 
-## The `\` sigil, briefly
+## Bindings and scope
 
-Every name longer than one character is written with a `\` prefix — `\pi`, `\sum`, `\sin`,
-`\solve`. This falls out of a single rule: identifiers are one letter (with an optional subscript), so `ab`
-unambiguously means `a * b`; anything spelled with more than one character needs a marker to
-avoid colliding with that. The `\` names are chosen to match LaTeX commands where one exists,
-so `ad` source reads like the ASCII you'd already type to write the same expression in LaTeX —
-see `README.md`. This is a naming convention, not a claim that `ad` parses TeX: there are no
-layout or document commands, and the set of `\`-names with language-defined meaning is small
-and closed.
+`x = 1` binds a fresh name. Repeating `x = 1` compares with its existing value
+and prints `true` or `false`. Bindings are immutable. `\let x = 1` requires a
+fresh name; `\let f(x) = body` is the top-level fresh-only function form.
+See [assignment semantics](grammar.md#assignment-semantics).
 
-The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
-same way. Meaning comes from the parser's closed set of special forms
-(`\sum`/`\prod`/`\lim` binders,
-`\py`, statement-shaped
-`\import`/`\pyimport`, the lambda heads `\λ`/`\fn`),
-the session alias map that normalizes short spellings to canonical
-names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`),
-the custom infix registry ([custom operators](operators.md)), and
-the prelude scope of
-built-in constants and function builtins (see docs/grammar.md, `## The prelude`).
-Everything else lexes cleanly and fails at evaluation as an unbound name, so later
-phases add bindings without touching the lexer.
+The prelude supplies protected constants and functions, including `π`/`\pi`,
+`e`, `i`/`\i`, `\true`, `\false`, `\inf` and `\nan`. Prelude names cannot be
+rebound or shadowed, except `i`, which also serves as a parameter or loop name.
+Unicode and ASCII aliases share protection and identity.
 
-## Known limitations (not bugs)
+## Numbers and display
 
-- Custom operators omit punctuation sequences and sections — see
+Arithmetic supports `+ - * / ^`, unary minus, parentheses and implicit
+multiplication. Exact values stay exact; float operands select inexact arithmetic.
+
+| Kind | Example | Result or behavior |
+|---|---|---|
+| Integer and rational | `1/3 + 1/3 + 1/3` | Exactly `1` |
+| Decimal | `0.1 + 0.2` | Exactly `3/10` |
+| Float spelling | `1.`, `5e-1` | Explicitly inexact |
+| Symbolic closed form | `√2 * √2` | Exactly `2` |
+| Algebraic | `2^(1/3)` | Exact; displays `1.25992104989487...` |
+| Recursive Real Arithmetic (RRA) | `π + 1` | Exact; displays `4.14159265358979...` |
+| Exact complex | `(2+3i)(2-3i)` | Exactly `13` |
+| Complex float | `1. + i` | `1.0+1.0i` |
+
+Negative bases use the real odd-root branch for exact odd-denominator exponents:
+`(-8)^(1/3)` is `-2`. Other fractional powers use the complex principal value:
+`(-2)^(1/2)` is `√2·i`. Complex values are not ordered.
+
+`\complex(re, im)` builds a complex value; `\re` and `\im` project its components.
+`\sqrt(-2)`, `\ln(-1)` and `\sin(1+i)` stay exact. See
+[numerics](numerics.md) for the numeric tiers and [standard library](stdlib.md)
+for rounding, number theory, elementary and special functions.
+
+Rationals print as fractions: `1/2` displays `1/2`. Symbolic and algebraic values
+print 15 significant digits followed by an ellipsis. RRA display uses the session
+precision: `\prec(5)` shows `π + 1` as `4.1416...`. `\prec` accepts an integer
+from 1 to 1000 and returns it. The ellipsis marks approximate displayed digits;
+the stored value remains exact.[^display]
+
+`\isnan`, `\isinf` and `\isfinite` inspect numeric values. Exact values are finite;
+non-numeric arguments produce typed errors.
+
+## Functions and application
+
+Define functions with `f(x) = x^2` or `\fact(n) = body`. Functions are first-class,
+support recursion, and accept positional parameters. Every call has local
+parameters and bindings; reads fall through to enclosing scopes. A nested
+function definition binds locally and returns its callable when it ends the body.
+
+| Form | Meaning |
+|---|---|
+| `f(x)` | Apply a callable |
+| `x(y+1)` with numeric `x` | Multiply `x * (y+1)` |
+| `2(x+1)` | Implicit multiplication |
+| `f()` | Zero-argument call |
+| `\fn(x) x + 1`, `\λ(x) x + 1` | Anonymous function |
+| `x ↦ x^2`, `x -> x^2`, `x \mapsto x^2` | Arrow lambda |
+| `(x, y) ↦ x + y` | Several lambda parameters |
+
+Lambdas are eager, have fixed arity and capture their defining scope. Their bodies
+extend greedily unless bounded by parentheses. A parenthesized lambda can be
+applied directly: `(\fn(x) x)(5)` returns `5`.
+
+Parenthesized statement groups give functions, lambdas and conditional branches
+multi-line bodies. A group uses the current scope and returns its last statement.
+At top level, its statements each produce their own output.
+
+```text
+f(x) = (
+y = x^2
+y + 1
+)
+f(3)
+```
+
+See [functions](grammar.md#functions-and-conditionals),
+[groups](grammar.md#groups-parenthesized-statement-sequences) and
+[application](grammar.md#application-dynamic-name-headed-parens).
+
+## Booleans and conditionals
+
+Comparisons return booleans. Arithmetic rejects booleans, and conditions require
+them: `0 ? 1 : 2` is a typed error. The ternary `c ? a : b` evaluates only the
+selected branch, associates right and has the loosest expression precedence.
+A parenthesized group supplies a branch with several statements.
+
+| Form | Purpose |
+|---|---|
+| `∧ ∨ ¬ → ↔` | Boolean logic, with short-circuit evaluation |
+| `\and \or \not \implies \iff` | ASCII logic spellings |
+| `∀(x∈s) body`, `∃(x∈s) body` | Quantification over ranges or collections; `x=s` also works |
+| `{x < 0: -x; x}` | Piecewise expression |
+
+See [logic](notation.md#logic) and [conditionals](grammar.md#conditionals-the-ternary).
+
+## Collections and higher-order functions
+
+| Collection | Example | Operations |
+|---|---|---|
+| Tensor | `[1, 2; 3, 4]` | Uniform numeric entries; 1-based indexing, transpose, scalar broadcast and elementwise arithmetic |
+| Array | `⟨1, [1, 2], "a"⟩` | Ordered values of any kind; ragged nesting, indexing and length |
+| Set | `{3, 1, 3, 2}` | Deduplication; equality ignores order; `∪ ∩ ∖ ∈ ⊆` |
+| Range | `1..10`, `1,3..10`, `1..` | Lazy progression; inclusive endpoint when reached; inferred step or infinite extent |
+
+Tensors nest to higher orders. `m[2, 1]` indexes a matrix; `m'` transposes it.
+`@`/`\contract` contracts, `×` crosses 3-vectors, and `⊗` forms a tensor product.
+The prelude provides `\len`, `\shape`, `\transpose`, `\det`, `\inv` and `\linsolve`.
+
+Arrays also use `#[...]` or `\arr(...)`. They support chained indexing (`a[i][j]`)
+and have no elementwise algebra. Sets accept any values and support
+[set-builders](grammar.md#set-builder), such as `{x ∈ 1..10 | x^2 < 50}`.
+
+`(f ∘ g)(2)` composes functions. `f(10, ·)` fixes an argument; `⋅` and `_` are
+also placeholders. Operator sections `(+ 1)` and `(2 ^)` fix one operand.
+`\map`, `\filter`, `\fold` and `\scan` work over ranges and collections,
+preserving collection kind where applicable. See
+[higher-order functions](grammar.md#higher-order-functions).
+
+## Folds, limits and calculus
+
+| Form | Behavior |
+|---|---|
+| `\sum(i=1..10) i^2` | Exact finite sum: `385`; `Σ` is an alias |
+| `\prod(j=1..5) j` | Exact finite product: `120`; `Π` is an alias |
+| `\sum(i=1..) 1/i^2` | Approximate limit of partial sums |
+| `\lim(x=0) x/x` | Numeric limit: `1.0`; never evaluates at the anchor |
+| `\diff(x=a) body`, `∂(x=a) body` | Derivative |
+| `\int(x=a..b) body`, `∫(x=a..b) body` | Integral |
+| `f'`, `f''` | Derivative functions |
+
+Binders keep their variable local; other reads use the enclosing scope. Folds
+also iterate collections, including a tensor's outer slices. Infinite folds use
+float arithmetic, tolerance checks and an iteration cap; infinite sums may stop
+on a confirmed tail estimate. Failure to converge is a typed error.
+
+Limits probe shrinking steps on both sides. Disagreeing sides report
+`limit does not exist`. Complex bodies and anchors work; complex anchors use
+eight rays at golden-angle spacing. See [convergence](numerics.md#convergence)
+and [calculus](calculus.md) for methods and limitations.
+
+## Quotes and symbolic operations
+
+| Form | Result |
+|---|---|
+| `q = \expr(x^2 - 4)` or ``q = `(x^2 - 4)`` | Store syntax without evaluating it |
+| `\eval(q, x=3)` | Evaluate the quote: `5` |
+| `\body(f)` | Reflect a user function or lambda body |
+| `\reduce(\expr((\fn(x) x + 1)(2)))` | Beta-reduce to `\expr((2 + 1))` |
+| `\solve(\expr(x^2 - 4))` | Solve symbolically: `{-2, 2}` |
+| `\tex(q)` | Return LaTeX text |
+
+Evaluation bindings use the caller's scope and remain local; other names resolve
+where `\eval` runs. Errors retain the quoted source span. Multi-statement bodies
+print as `\expr((...))` and return their last statement.
+
+Reduction leaves arithmetic unevaluated, named functions unexpanded and free
+names free. It rejects statement quotes. [Symbolic rewriting](symbolic.md)
+provides `\simplify`, `\expand`, `\factor`, `\solve`, `\deriv` and `\grad` for
+quotes and functions. See [LaTeX output](tex.md) for rendering.
+
+## Strings, imports and Python
+
+Strings bind and concatenate with `+`: `"data" + ".csv"`. Other arithmetic
+operators reject them. `--` starts a line comment; a bare string statement serves
+as a note and produces no output.
+
+| Form | Purpose |
+|---|---|
+| `\import("lib")` | Import top-level names from `lib.ad` |
+| `\import("lib": f, \fact)` | Select ad module members |
+| `\pyimport("math": \hypot, \tau)` | Select Python module members |
+| `\py("math.sqrt")(2)` | Call a Python function: `1.4142135623730951` |
+| `\py("int")("ff", \base=16)` | Pass Python keyword arguments: `255` |
+
+Imports are silent statements. Each ad file evaluates once per session in its
+own root environment; imported functions retain that environment as their
+closure. Resolution searches the importing file's directory, then the working
+directory. Cycles are typed errors. Python imports require selected members;
+there are no module values or dotted attribute access.
+
+`\py` resolves dotted callable paths with the same power as Python itself.
+Strings can compose paths: `\py(n + ".sqrt")`. Python keyword arguments use
+ordinary single-letter or backslash names; user functions accept positional
+arguments only. Lists, sets and NumPy arrays convert to arrays, sets and tensors;
+ad collections convert to Python lists or frozensets. See
+[imports](grammar.md#modules-and-imports) and the
+[conversion matrix](numerics.md#the-python-boundary-conversion-matrix).
+
+## Custom operators
+
+`\infix(11) \blend, ⊕(a,b) = a+b` declares a function as an infix operator with
+an optional glyph. Declarations persist in the REPL and stay local to each
+script or module. See [custom operators](operators.md) for precedence and examples.
+
+## Limitations
+
+- Graphing is not implemented. See [the roadmap](../ROADMAP.md).
+- Custom operators omit punctuation sequences and sections; see
   [operator limitations](operators.md#limitations).
+- Collections have no range slicing (`v[2..3]`):
+  [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
+- Set construction and membership compare elements pairwise; construction is
+  quadratic in set size: [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
+- Numeric derivatives stop at order 2. Integrals support finite and
+  upper-infinite bounds. Function inversion returns one branch; see
+  [calculus limitations](calculus.md#limitations).
+- Tensor `/` is elementwise. Use `\inv` or `\linsolve` for matrix division.
+- Exact irrational values display approximate digits; see
+  [display](numerics.md#display). Decimal literals are exact; use `1.` or `5e-1`
+  to request floats.
+- Caret columns count characters rather than terminal display width. Full-width
+  or combining characters can offset a caret; ordinary letters such as `π` work.
 
-- Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
-- Set construction and membership compare elements pairwise, quadratic in the set size —
-  [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
-- Numeric derivatives stop at order 2; integrals support finite and upper-infinite
-  bounds — see docs/calculus.md, `## Limitations`.
-- `f⁻¹` on a user function gives one branch — see docs/calculus.md, `## Limitations`.
-- `/` is elementwise on tensors; matrix division is `\inv` or `\linsolve` (docs/stdlib.md).
+[^names]: The lexer accepts backslash names without a name table. Meaning comes
+    from parser special forms, the session alias map, custom operator declarations
+    and prelude bindings. Other names fail at evaluation when unbound. See
+    [name aliases](grammar.md#name-aliases).
 
-- Symbolic and algebraic values display 15 significant digits plus a trailing
-  ellipsis (`π` is `3.14159265358979...`, `2^(1/3)` is
-  `1.25992104989487...`); RRA values display the `\prec` session precision
-  instead (default 15: `π + 1` is `4.14159265358979...`). Each value is exact;
-  only the digits are approximate —
-  the ellipsis says so (docs/numerics.md). A complex value prints each side
-  under the same truncation.
-- Decimal literals are exact by design: `0.1` is the rational `1/10`, not the
-  float — an exact decimal read through binary-float machinery and back would
-  not be its own digits. When inexactness is wanted, the float spellings are
-  visible on purpose (`1.`, `5e-1`).
-- Caret columns are counted in *characters*, not terminal display width. A genuinely
-  full-width or combining-mark identifier character will make the caret land a column or two
-  off; ordinary unicode letters like `π` are unaffected (1 character, 1 column). Not worth a
-  `unicode-width` dependency for a case that essentially never arises in a calculator.
+[^display]: RRA display compares successive approximations. If they do not agree
+    at the requested precision, it prints their longest agreed prefix. Complex
+    values use the same policy for each component.

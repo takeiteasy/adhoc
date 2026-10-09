@@ -1,436 +1,354 @@
-# Numerics: the numeric seam
+# Numerics
 
-`adhoc/runtime.py` defines an opaque value type (`int | Fraction | float | Gaussian |
-Symbolic | Algebraic | RRA`) and a fixed set of operations (`nadd`, `nsub`, `nmul`,
-`ndiv`, `npow`, `nneg`, `neq`, `nshow`). Nothing above the seam calls arithmetic
-operators directly on a value derived from user input — it only calls through this seam.
+`ad` keeps finite numbers exact unless an operation uses a float operand or an
+approximate iteration method. Exact values may display approximate digits;
+that does not change the stored value.
 
-Tensors (`adhoc/tensor.py`) sit beside the tiers rather than in them: a tensor holds
-scalars of any tier, and every `nadd`/`nsub`/`nmul`/`ndiv`/`npow`/`nneg` call with a tensor
-operand applies the scalar operation elementwise, broadcasting a scalar operand. `@`
-contracts through `nmul` and `nadd`, so entries keep their exact tiers.
+## Numeric tiers
 
-## Why a seam
+Arithmetic chooses the lowest tier that can represent the result exactly.
 
-The design's full tower — bignum integers, bignum rationals, symbolic closed forms (`π`,
-`√n`, ...), algebraic numbers, and a Recursive Real Arithmetic (RRA) fallback, see
-`DESIGN.md` — has no single builtin covering it. If evaluation called `+`/`*` directly,
-adding the upper tiers later would mean retrofitting arithmetic dispatch through code that
-was never written expecting it. Putting the seam in from the start costs a little now and
-avoids that later.
+| Tier | Representation | Examples |
+|---|---|---|
+| Integer | Python `int` | `3`, arbitrary precision |
+| Rational | Normalized `Fraction` | `1/3`, `0.5` is exactly `1/2` |
+| Gaussian rational | `Gaussian` | `2+3i`, rational real and imaginary components |
+| Symbolic closed form | `Symbolic` | `π`, `√2`, `π·i` |
+| Algebraic | `Algebraic` | `2^(1/3)`, `1+√2·i` |
+| Recursive Real Arithmetic | `RRA` | `π+1`, `1/π`, `2^√2`, `\sin(1+i)` |
+| Float | Python `float` | `1.`, `5e-1`, `Inf`, `NaN` |
+| Complex float | Python `complex` | `1. + i`, `\complex(1., 2.)` |
 
-## Backing
+A rational with denominator 1 collapses to an integer. A complex value with zero
+imaginary part collapses to its real component. Exact tiers contain no infinity.
+A float operand selects float or complex float arithmetic, including equality.
+Complex values are not ordered.[^dispatch]
 
-Values are Python natives plus four tier types:
+Tensors contain scalars from any tier. Scalar arithmetic applies elementwise,
+with scalar broadcasting; contraction uses the same exact scalar operations.
+See [tensors](grammar.md#tensors).
 
-- `int` — arbitrary precision natively.
-- `fractions.Fraction` — arbitrary-precision rational, always normalized; a denominator of
-  `1` collapses back to `int` at every constructor (`_normalize`), so display never prints
-  `"1/1"` instead of `"1"` (or rather `1`, since a collapsed rational *is* an int).
-- `adhoc/gauss.py`'s `Gaussian` — an exact complex number with rational components
-  (`2+3i`), the complex analogue of `Fraction`: ordinary exact rational component
-  arithmetic, no sympy. The imaginary part never vanishes — a vanishing one collapses
-  back to `int`/`Fraction` at every constructor (`make`), so display never prints
-  `"2+0i"`.
-- `adhoc/symbolic.py`'s `Symbolic` — a rational coefficient times exactly one recognized
-  closed-form atom, stored as the canonical sympy expression (see below); the atom may
-  be pure-imaginary (`√2·i`, `π·i`).
-- `adhoc/algebraic.py`'s `Algebraic` — an algebraic number with no symbolic closed form
-  (`2^(1/3)`, `2^(1/4)`, `√2 + 2^(1/3)`, `1 + √2·i`), stored as the canonical sympy
-  expression (see below).
-- `adhoc/rra.py`'s `RRA` — every other finite number, real or complex (`π + 1`, `π·√2`,
-  `1/π`, `2^√2`, `sin(1)`, `sin(1+i)`), stored as the canonical sympy expression and
-  approximated on demand as a `tolerance -> rational` function (see below).
-- `float` — the explicitly-inexact tier: a float *spelling* (the trailing-dot marker
-  `1.` or an exponent form `5e-1` — plain decimals are exact now), a float-argument
-  call, or an IEEE non-finite value. Any float operand demotes the result to
-  `float` (the fast path); no exact tier ever produces it. gmpy2 types can
-  slot behind the same functions later without touching anything above the
-  seam.
-- complex float — a Python `complex` from a float meeting a complex value (`2.∠1`,
-  `1. + i`), `\complex(1., 2.)`, or a complex `\py` return. The imaginary part is never
-  zero: a zero part collapses to `float`, so `(1.+i)(1.-i)` is `2.0`. Functions of a
-  real float with a non-real principal value (`\sqrt(-2.)`, `\asin(2.)`) and of a
-  complex float use `cmath` (`\gamma`, `\erf` use `mpmath`). Complex values are not
-  ordered. Infinite `\sum`/`\prod`, `\fold` and `\lim` take them (see Convergence).
+## Powers and roots
 
-Arithmetic stays at the lowest tier that remains exact: any `float` operand demotes the
-result to `float`, or to a complex float when the other operand is complex
-(`1. + i` is `1.0+1.0i`); otherwise any `Symbolic`, `Algebraic` or `RRA` operand dispatches into the
-exact tiers (symbolic tried first, then algebraic, then RRA; a real value of undecided
-reality demotes to `float` in turn, an undecided complex one to a complex float);
-otherwise any `Gaussian` operand routes into the exact complex arithmetic
-(`adhoc/gauss.py`); otherwise any `Fraction` promotes both operands to exact rationals;
-otherwise plain integer arithmetic.
+Integer exponents preserve exactness, including negative exponents: `2^-1` is
+`1/2`. Zero raised to a negative exponent gives a typed division-by-zero error.
 
-`npow` keeps an exact base exact for integer exponents (including negative ones — `2^-1`
-is the exact rational `1/2`, and `0^-n` raises the typed division-by-zero failure, the
-same failure as `1/0`, not a separate untyped error); a non-integer exponent on a
-negative real base takes the **odd-root split** first — an exponent `p/q` in lowest
-terms with `q` odd is the real branch via sign extraction (`(-8)^(1/3)` is `-2`,
-`(-8)^(2/3)` is `4`), anything else the complex principal (`(-2)^(1/2)` is `√2·i`) —
-and then tries the symbolic tier (`2^(1/2)` is `√2`, `8^(1/3)` collapses to `2`),
-then the algebraic tier (`2^(1/3)` stays `2^(1/3)`, `(√2)^(1/2)` arrives as `2^(1/4)`,
-`(1+i)^(1/2)` is algebraic complex), then the RRA tier (`2^√2` stays exact). A float
-base takes the same odd-root split for an exact exponent (`(-8.)^(1/3)` is `-2.0`) and the
-complex principal otherwise (`(-2.)^(1/2)` is `1.4142135623730951i`).
+For a negative real base, an exact exponent `p/q` in lowest terms selects the
+real branch when `q` is odd. Other fractional exponents select the complex
+principal value.
 
-Every failure mode in this module is a typed `NumError`, not a generic exception — that's
-what lets the REPL and script driver catch "arithmetic failed" specifically and attach the
-offending expression's span to it, rather than the whole run aborting.
+| Expression | Result |
+|---|---|
+| `(-8)^(1/3)` | `-2` |
+| `(-8)^(2/3)` | `4` |
+| `(-2)^(1/2)` | Exact `√2·i` |
+| `2^(1/2)` | Exact `√2` |
+| `8^(1/3)` | `2` |
+| `2^(1/3)` | Exact algebraic value |
+| `(√2)^(1/2)` | Exact `2^(1/4)` |
+| `(1+i)^(1/2)` | Exact complex algebraic value |
+| `2^√2` | Exact RRA value |
+| `(-8.)^(1/3)` | `-2.0` |
+| `(-2.)^(1/2)` | `1.4142135623730951i` |
+
+`√x` parses as `\sqrt(x)`. Exact arguments pass through the symbolic, algebraic
+and RRA tiers as needed; float arguments stay inexact. Real floats with non-real
+principal results and complex floats use `cmath`; `\gamma` and `\erf` use
+`mpmath` for complex float results.
 
 ## Symbolic closed forms (tier 3)
 
-`adhoc/symbolic.py` implements the first tier above exact rationals (DESIGN.md,
-`## exact arithmetic (internals)`): common irrationals are kept exact as a **rational
-coefficient times one recognized atom** instead of being approximated:
+A symbolic value is a rational coefficient times one recognized atom. A
+pure-imaginary value remains symbolic when its imaginary component has this form.
 
-| Atom | Form | Examples |
+| Atom | Allowed form | Examples |
 |---|---|---|
-| πⁿ | `π` and positive integer powers | `π`, `π·π` = `π²` |
-| √r | square root of a positive rational, normalized | `√2`, `√8` = `2√2`, `√(1/2)` = `√2/2` |
-| eʳ | e to a nonzero rational power | `e`, `e²` |
-| ln r | natural log of a positive rational ≠ 1 | `ln 2` |
-| trig | `sin(π·r)`, `cos(π·r)`, `tan(π·r)` for rational r | `sin(π/2)` = `1`, `sin(π/3)` = `√3/2`, `sin(π/7)` stays symbolic |
+| πⁿ | Positive integer powers of π | `π`, `π²` |
+| √r | Square root of a positive rational | `√8 = 2√2`, `√(1/2) = √2/2` |
+| eʳ | Nonzero rational exponent | `e`, `e²` |
+| ln r | Positive rational argument other than 1 | `\ln(2)` |
+| Trigonometric | `sin(πr)`, `cos(πr)`, `tan(πr)` for rational r | `\sin(π/3) = √3/2` |
 
-The backing is **sympy**, and it does the algebra: its automatic simplification produces
-exactly these canonical forms (`√2·√3` = `√6`, `(√2)²` = `2`, `π − π` = `0`,
-`e^(1/2)·e^(1/2)` = `e`, `sin(π/2)` = `1`), and `classify` is the tier's only admission
-gate — a rational result collapses back to `int`/`Fraction`, a coefficient×atom result is
-admitted, anything else raises. Because the stored forms are canonical, structural
-equality decides the tier's equalities exactly (`√2 = 2^(1/2)` is `true`), and ordering
-across exact + symbolic values is decided exactly too (`π < 22/7` is `true` — sympy
-settles relational expressions between explicit numbers, not float-compares them).
+SymPy simplification supplies canonical forms. Rational results collapse to
+integers or fractions. Structural equality decides symbolic equality; real
+ordering uses exact SymPy relations, such as `π < 22/7`.[^symbolic]
 
-The **strict single-term shape** is deliberate: a value like `π + 1`, `π·√2` or `1/π`
-has no coefficient×atom form and is transcendental (not algebraic either), so the gate
-rejects it and the seam tries the algebraic tier next, then the RRA tier, which
-holds every finite number (`π + 1` is `4.14159265358979...`). A pure-imaginary
-value whose imaginary side has a recognized real shape stays symbolic too
-(`√2·i`, `π·i` — `\sqrt(-2)` is `1.4142135623731...i`, `\ln(-1)` is `π·i`); a
-Gaussian rational collapses back to exact. A real value of undecided
-reality is the only thing that still reaches the float tier. Algebraic
-results without a closed form (`2^(1/3)`, `√2 + 2^(1/3)`) stay exact in the
-algebraic tier instead.
+Values outside the single-atom form pass to the algebraic or RRA tier:
+`√2 + 2^(1/3)` is algebraic; `π + 1`, `π·√2` and `1/π` are RRA values.
 
-Domain failures are typed `NumError`s — the exact tiers have no infinity (complex
-results are values now, not failures):
-
-| Input | Exact tier | Float tier (unchanged) |
+| Input | Exact argument | Float argument |
 |---|---|---|
-| `\sqrt(-1)`, `(-2)^(1/2)` | the exact value `i` / `√2·i` | the complex float `1.0i` / `1.4142135623730951i` |
-| `\ln(-1)` | the exact value `π·i` | the complex float `3.141592653589793i` |
-| `\ln(0)`, `\tan(π/2)` | typed error — "defined only for positive numbers" / "odd multiples of pi/2" | ValueError / huge finite float |
-| `0^(-1/2)` | typed division-by-zero (same failure as `1/0`) | `Inf` |
-
-The `√` prefix operator rewrites to a `\sqrt(...)` application at parse time
-(docs/grammar.md), so the prelude builtins carry all of this: exact arguments go through
-the gate (`\sqrt(2)` stays `√2`, `\ln(2)` stays exact, `\sqrt(-2)` is `√2·i`),
-algebraic `√` arguments
-through the algebraic gate (`\sqrt(2^(1/3))` is `2^(1/6)`, `\sqrt(√2)` is
-`2^(1/4)`), arguments with no lower-tier form through the RRA gate (`\sin(1)`
-stays exact, complex results included), and float arguments stay
-entirely on the float tier (`\sqrt(2.)` is `1.4142135623730951`).
+| `\sqrt(-1)` | `i` | `1.0i` |
+| `\ln(-1)` | `π·i` | `3.141592653589793i` |
+| `\ln(0)` | Typed domain error | Wrapped `ValueError` |
+| `\tan(π/2)` | Typed domain error | A float approximation to π/2 gives a huge finite value |
+| `0^(-1/2)` | Typed division-by-zero error | `Inf` |
 
 ## Algebraic numbers (tier 4)
 
-`adhoc/algebraic.py` implements the tier above symbolic closed forms (DESIGN.md,
-`## exact arithmetic (internals)`): algebraic numbers with no recognized closed
-form are kept exact as the canonical sympy expression — sympy holds the classic
-minimal-polynomial + isolating-interval representation behind the seam, so this
-module never inspects it directly.
+Algebraic values have no recognized symbolic closed form and remain exact as
+canonical SymPy expressions. Examples include `2^(1/3)`, `2^(1/4)` and
+`√2 + 2^(1/3)`. Complex algebraic values use the same representation.
 
-The seam tries the symbolic tier first and this tier second: `2^(1/3)` and
-`2^(1/4)` stay exact, `(√2)^(1/2)` arrives as `2^(1/4)`, multi-term sums like
-`√2 + 2^(1/3)` stay exact, and integer powers collapse back down
-(`2^(1/3)^3` is the integer `2`). Complex algebraics are held the same way
-(`(1+i)^(1/2)` is `1.09868411346781...+0.455089860562227...i`, displayed as
-each side truncated; negative algebraic bases take the odd-root real branch or
-the complex principal per `npow`'s split). Transcendental results
-(`π + 2^(1/3)`, `2^√2`) are not algebraic and fall to the RRA tier. Equality is
-exact: structural identity is the fast path, with a minimal-polynomial fallback
-for the pairs sympy never canonicalizes (`(1+√2)^2` vs `3+2√2` — the difference
-of two algebraics is algebraic, so `minpoly(a-b) == x` decides it, complex
-differences included); ordering is exact like the symbolic tier's (real values
-only — complex ones are a typed "complex values are not ordered" failure). Only
-`\sqrt` routes algebraic arguments through the gate (`\sqrt(2^(1/3))` is
-`2^(1/6)` — `\sin`/`\ln` of a nonzero algebraic are transcendental, so those go
-to the RRA tier). Display reuses the symbolic policy — 15 significant digits
-plus a trailing ellipsis, each side for a complex value.
+Every operation tries lower tiers again: `(2^(1/3))^3` collapses to `2`.
+Transcendental results such as `π + 2^(1/3)` and `2^√2` pass to RRA.
+Equality uses structural identity, then an exact minimal-polynomial fallback.
+Real ordering is exact; complex ordering is a typed error.[^algebraic]
+
+Square roots can remain algebraic: `\sqrt(2^(1/3))` is `2^(1/6)`.
+Transcendental function results such as `\sin(2^(1/3))` pass to RRA.
 
 ## Recursive Real Arithmetic (tier 5)
 
-`adhoc/rra.py` implements the fallback above the algebraic tier (DESIGN.md,
-`## exact arithmetic (internals)`): every other finite number, real or complex —
-multi-term transcendental sums (`π + 1`, `π·√2`), reciprocals of atoms (`1/π`),
-transcendental powers (`2^√2`), closed-form-free function results (`sin(1)`),
-and their complex kin (`sin(1+i)`) — is kept exact as the canonical sympy
-expression, the same Expr-wrapper pattern as the symbolic and algebraic tiers.
-Equality for any RRA-involved pair is the Richardson–Fitch heuristic (DESIGN.md
-`## exact arithmetic`): structural identity first, an exact shortcut when the
-difference simplifies to a rational (or its modulus does, for a complex
-difference), otherwise escalating `approximate` probes on the difference — on
-its modulus when complex — (`1e-12`, `1e-30`, `1e-50`) — equal while
-indistinguishable from zero at every probe, unequal at the first
-distinguishable one. This proves hidden identities sympy never simplifies
-(`\sin(1)^2 + \cos(1)^2` equals `1`, including across the tiers and on the
-complex plane), and it is what statement-level `=` inherits. It is a heuristic
-relying on Schanuel's conjecture — an accepted limitation, not a proof: values
-closer than the tightest probe would miscompare, and ordering stays on the
-exact sympy-relational path, never the heuristic (complex values are not
-ordered at all). A float operand never reaches it: any float side demotes
-equality to the float tier first, and a float/complex pair compares `false` —
-a float is real, a complex value's imaginary part never vanishes.
+RRA holds other finite real and complex values as canonical SymPy expressions.
+Examples include `π + 1`, `1/π`, `2^√2`, `\sin(1)` and `\sin(1+i)`.
+Results simplify back to lower tiers when possible: `(π + 1) - π` is `1`.
 
-The ticket's spelling — a real as a function `tolerance -> rational` — is
-`approximate`/`to_function`: the stored expression evaluated at escalating
-sympy precision until two successive evaluations agree within half the
-requested tolerance, returning the agreed value's exact decimal expansion as a
-`Fraction`. The series, continued fractions and iterative methods behind that
-evaluation are sympy's, never hand-rolled at the seam; no separate
-interval-refinement machinery exists. Pointwise sympy evaluation re-gates from
-the top on every operation, so exact results collapse back down (`(π + 1) − π`
-is the integer `1`, never an RRA value), and only `\sqrt` of a symbolic
-argument additionally routes through the algebraic gate (`\sqrt(√2)` is
-`2^(1/4)`) — every other closed-form-free builtin result is transcendental and
-goes straight here. Display prints the session precision's significant digits
-plus a trailing ellipsis (default 15: `π + 1` is `4.14159265358979...`),
-tightened iteratively (below); a complex value tightens and truncates each
-side (`sin(1+i)` is `1.29845758141598...+0.634963914784736...i`).
+Approximation accepts a tolerance and returns a rational approximation. It raises
+precision until successive evaluations agree within half that tolerance;
+exhaustion gives an error.[^approximation]
 
-Display tightening shares the convergence shape with a caller-supplied
-target: successive `approximate` observations at tightening tolerances (each
-~1000x tighter, from a 2-digit guard, up to six rounds) must render
-identically to the full target before those digits print; when no two
-successive observations agree, the longest agreed prefix prints instead —
-degrade, never a display error. `\prec(n)` sets the session target
-(significant digits, 1..1000, RRA tier only — symbolic and algebraic display
-stay fixed at 15, floats keep shortest-round-trip, exact rationals keep
-`a/b`); it returns the new value, is protected like every prelude name, and
-reaches display through the single `nshow` path, so REPL and script mode
-agree.
+RRA equality uses the Richardson–Fitch heuristic. Structural identity and exact
+rational differences are checked first; otherwise progressively tighter probes
+check whether the difference is distinguishable from zero. Complex comparisons
+probe the modulus. Statement-level `=` uses this policy. See
+[limitations](#limitations) for its accuracy ceiling.[^rra-equality]
 
-## Convergence: one mechanism, two riders, one estimator
+Real ordering uses exact SymPy relations rather than the equality heuristic.
+A float operand selects float equality first. A real float compares unequal to a
+complex value with a nonzero imaginary part.
 
-Approximate iteration has a single shape (DESIGN.md "convergence over a lazy range"):
-advance until successive observations differ by at most `CONVERGENCE_TOLERANCE`
-(`1e-12`, relatively scaled for large magnitudes — see below), otherwise error at the cap
-rather than return a possibly-misleading partial
-result. Three knobs live at the top of `runtime.py`:
+## Convergence
 
-| Knob | Value | Role |
+Infinite folds and numeric limits return approximate float or complex float
+results. They stop when consecutive observations stabilize within tolerance,
+or produce a typed error at their iteration cap. Non-finite partials and anchors
+are rejected.
+
+| Setting in `runtime.py` | Value | Purpose |
 |---|---|---|
-| `CONVERGENCE_TOLERANCE` | `1e-12` | plateau test shared by both features (`EXACT_CONVERGENCE_TOLERANCE = 1/10^12` mirrors it for exact-tier comparisons). The float branch scales relatively — `|Δ| <= tol · max(1, |prev|, |cur|)` — so O(1) and near-zero iteration behaves exactly as before while large-magnitude iteration (whose float64 ulps dwarf an absolute tolerance) can still settle |
-| `MAX_TERMS` | `2_000_000` | fold-term budget before `` `\sum did not converge within … terms `` |
-| `MAX_PROBES` | `200` | per-side `\lim` probe budget |
-| `DIFF_TOLERANCE` / `DIFF2_TOLERANCE` | `1e-9` / `1e-6` | Ridders error estimate accepted by `\diff` / `f'` and by `f''`; `f'` uses it for float points and non-symbolic bodies |
-| `MAX_INTERVALS` | `2000` | adaptive `\int` subintervals before `did not converge` |
+| `CONVERGENCE_TOLERANCE` | `1e-12` | Fold and limit plateau test[^plateau] |
+| `MAX_TERMS` | `2_000_000` | Infinite-fold term budget |
+| `MAX_PROBES` | `200` | Limit probe budget per side |
+| `DIFF_TOLERANCE` | `1e-9` | First-derivative error estimate |
+| `DIFF2_TOLERANCE` | `1e-6` | Second-derivative error estimate |
+| `MAX_INTERVALS` | `2000` | Adaptive integral subinterval budget |
 
-RRA approximation (`approximate` in `adhoc/rra.py`) shares the shape with a
-caller-supplied tolerance rather than the fixed knob: escalate precision until
-two successive evaluations agree within half the tolerance, otherwise error
-rather than return a possibly-misleading partial. No second mechanism exists.
+### Infinite folds
 
-The two riders:
+Finite folds accumulate at the lowest exact tier. Infinite `\sum`, `\prod`
+and `\fold` over ranges or lazy sequences accumulate in the float tier.
+Complex partials use complex floats and modulus comparisons.
 
-- **Infinite-range folds** (`\sum(i=1..) 1/i^2`, and `\fold` over an infinite range or lazy
-  sequence) accumulate partial sums/products in the
-  **float tier** (a complex value as a complex float, compared by modulus). Exact tiers are wrong for this job twice over: rationals with
-  exponentially growing denominators stall plateau detection long before the tolerance is
-  meaningful, and the tail remaining when a plateau triggers (~tolerance-sized) only makes
-  sense compared in floating point. Consequences, pinned: results print as floats.
-  Infinite **sums** additionally get a tail-estimated early exit (`_FoldTailEstimator`
-  in `adhoc/runtime.py`): monotone `k^-p` terms (decay exponent read from consecutive
-  ratios, tail from the integral-test form, partial-plus-tail returned) and strictly
-  alternating shrinking terms (Leibniz bound with the midpoint correction) propose a
-  limit with a claimed error, and the proposal returns only after a confirmation window
-  honors it — verify-before-return, with the raw plateau always winning ties and the cap
-  error untouched. `\sum(i=1..) 1/i^2` now stops around one hundred thousand terms at
-  ~1e-10-grade instead of around one million at ~1e-6; monotone divergence, the harmonic
-  tail (`p = 1`) and NaN partials still abstain and error immediately or at the cap.
-  Infinite **products** keep the plateau only: their log-space decay ratios inherit the
-  body's own float-cancellation noise, which can bias the estimate invisibly to every
-  local check — so slow-tail products like `\prod(i=1..) (1 + 1/i^2)` stay slow (~1e-6
-  grade) rather than risk a misleading partial; the two heavyweight tests carry the
-  `slow` pytest mark so the default suite stays fast.
-  Complex infinite sums run one estimator per component (`_ComplexTailEstimator`): a
-  component whose terms are all exactly zero is settled at its partial, and a shapeless
-  component whose last eight terms have vanished is settled too, so `\sum(n=1..) i/n^2`
-  and `\sum(n=1..) (1/2)^n + i/n^2` both get the tail-estimated exit.
-- **`\lim(x=a)`** coerces its anchor to float (or complex float), probes at `a ± h` with `h` halving from
-  ~0.8% of `max(|a|, 1)`, and never evaluates at `a` itself — a step that would round back
-  onto the anchor ends the side first. Each side stops on the same plateau test; sides
-  further apart than *twice* the (relatively scaled) tolerance report `` limit does not
-  exist `` (each side legitimately plateaus up to one tolerance-radius away, so two
-  matching estimates may sit
-  2× apart). A complex anchor probes eight rays (four at multiples of the golden angle, and their
-  opposites) that
-  must all agree; a body value may be complex either way, and a complex result drops a
-  part below the tolerance (scaled by the modulus), so `\lim(x=i) x^2` is `-1.0`. Eight rays
-  are a heuristic, not a proof of the two-dimensional limit (see
-  [Limitations](stdlib.md#limitations)).
+Infinite sums can also return a confirmed tail estimate. Recognized shapes are
+monotone power-law decay and strictly alternating shrinking terms. Divergent or
+unrecognized shapes retain plateau detection and the cap error.[^tails]
 
-`\diff` and `\int` (`docs/calculus.md`) reuse the float tier and the typed-error-at-the-cap rule,
-with their own estimators (Ridders extrapolation, adaptive Gauss–Kronrod) in place of the
-plateau test.
+Products use plateau detection only. Slow-tail products can require many terms
+and retain roughly `1e-6` accuracy. The two heavyweight product tests carry the
+`slow` pytest mark.
 
-Known sharp edges (not bugs): series whose terms change sign irregularly have no
-boundable tail shape, so they keep the plateau's best effort — near zero that stays
-absolute-floored rather than relative (a strictly alternating run provably cannot sum
-to exactly zero, so exact-zero limits outside the recognized shapes remain unsupported);
-cancellation-prone spellings of removable singularities lose float precision as steps
-shrink and usually fail to stabilize. Richardson extrapolation for `\lim` probes would
-tighten the remaining slow cases if it ever matters.
+```text
+\sum(i=1..10) i^2       ->  = 385
+\sum(i=1..) 1/i^2       -- approximate infinite sum
+\sum(i=1..) i           -- convergence error
+```
+
+### Limits
+
+`\lim(x=a)` converts the anchor to float or complex float and probes shrinking
+steps without evaluating at the anchor. Real anchors use both sides; estimates
+must agree within twice the scaled tolerance. Disagreement reports
+`limit does not exist`. A side that does not stabilize exhausts its probe budget.
+
+Complex anchors use eight rays at golden-angle spacing. All rays must agree.
+A complex result drops a component below the scaled tolerance:
+`\lim(x=i) x^2` returns `-1.0`.[^limit-probes]
+
+`\diff` and `\int` also use float iteration and typed cap errors, with Ridders
+extrapolation and adaptive Gauss–Kronrod estimators. See [calculus](calculus.md).
 
 ## Float semantics
 
-A float value arises only from a float *spelling* — the trailing-dot marker
-(`1.` is the float 1.0) or an exponent form (`5e-1`, `1.5e3`) — from a
-float-argument call, or from an IEEE non-finite value. A plain decimal
-(`0.5`) is an exact rational; the float spellings exist so the inexact tier
-stays reachable and visually marked.
+A trailing dot (`1.`) or exponent (`5e-1`, `1.5e3`) selects a float literal.
+Plain decimals such as `0.5` are exact rationals. Python returns, float-argument
+calls, non-finite constants and approximate iteration also produce floats.
 
-CPython floats deviate from MPFR in five places; the seam pins each deliberately rather
-than inheriting the Python default:
+| Operation | ad behavior | Python default |
+|---|---|---|
+| `x / ±0.0` | Signed infinity; `NaN` for `0/0` | `ZeroDivisionError` |
+| Float power overflow | Signed infinity | `OverflowError` |
+| Negative base, fractional exponent | Real odd-root branch for an exact odd-denominator exponent; otherwise complex principal value | Complex principal value |
+| Complex float power overflow | Signed infinity per component | `OverflowError` |
+| Complex float division by zero | Signed infinity or `NaN` per component | `ZeroDivisionError` |
+| `x % 0.0` | `NaN`; exact `x % 0` is a typed error | `ZeroDivisionError` |
+| `\round(2.675e0, 2)` | `2.68`; half away from zero on the shortest decimal representation | `2.67`; rounds the binary value |
 
-| Situation | MPFR/rug behavior | Python default | Seam behavior |
-|---|---|---|---|
-| `x / ±0.0` | signed infinity (`NaN` only for `0/0`) | raises `ZeroDivisionError` | signed infinity / `NaN` |
-| float power overflow | unbounded exponent range | raises `OverflowError` | saturates to signed infinity |
-| negative base, fractional exponent | `NaN` | returns a `complex` | odd-root real branch for an exact odd-denominator exponent, else the complex principal (a complex float) |
-| complex float power overflow | unbounded exponent range | raises `OverflowError` | saturates per component to signed infinity |
-| complex float `÷ 0` | — | raises `ZeroDivisionError` | signed infinity / `NaN` per component |
-| `x % 0.0` | `NaN` | raises `ZeroDivisionError` | `NaN` (exact `x % 0` is a typed `division by zero`) |
-| `\round(x, n)` of a float | decimal rounding of the shortest repr | rounds the binary value (`round(2.675, 2)` is `2.67`) | half away from zero on the shortest repr (`2.68`) |
+### Standard library exactness
 
-Exactness of the standard library ([`stdlib.md`](stdlib.md)):
+| Operation | Exact behavior |
+|---|---|
+| `%` | Floored remainder on rationals; symbolic reals use `a - b⌊a/b⌋` |
+| `\floor`, `\ceil`, `\trunc`, `\round` | Exact integers for exact inputs |
+| `\log(b, x)` | Exact for positive rationals with proportional prime factorizations; otherwise symbolic or RRA |
+| Negative or complex logarithm | Complex principal value; complex `\log(b, x)` uses `\ln(x)/\ln(b)` |
+| `\atan2` | Real arguments only; use `\arg` for a complex angle |
+| Half-integer `\gamma(x)` and `x!` | Multiples of `√π`; other non-integers use RRA |
+| `r∠θ` | RRA for non-special angles; `\abs(2∠1)` simplifies to `2`, `\arg(2∠3)` to `3` |
 
-- `%` is floored and exact on rationals; on symbolic reals it is `a - b⌊a/b⌋` through the
-  seam. `⌊ ⌋`, `\ceil`, `\trunc` and `\round` return exact integers for every exact tier.
-- `\log(b, x)` is exact when both are positive rationals with proportional prime
-  factorizations (`\log(1/2, 8)` is `-3`); otherwise it is the symbolic or RRA value.
-  Negative or complex-valued cases give the complex principal value, like `\ln(-1)`.
-  Complex arguments compute `\ln(x)/\ln(b)` (`\log(2, i)` stays exact);
-  `\atan2` takes real arguments only — `\arg` is the angle of a complex value.
-- `\gamma(x)` and `x!` of a half-integer are `√π` multiples; other non-integers are held
-  to arbitrary precision (RRA).
-- `r∠θ` of a non-special angle is RRA; `\abs` and `\arg` simplify their result, so
-  `\abs(2∠1)` is `2` and `\arg(2∠3)` is `3`.
+For example, `\log(1/2, 8)` is `-3` and `\log(2, i)` stays exact.
+See [standard library](stdlib.md) for the complete function reference.
 
 ## Non-finite values
 
-The float tier carries IEEE non-finite values under the pinned semantics above:
-`0./0.` → `NaN`, `1./0.` → signed `Inf`, float overflow saturates. `\inf` and
-`\nan` name them as protected prelude constants (`-\inf` is unary minus on `\inf`).
-They are ordinary float values — they bind, propagate through arithmetic, and are
-rejected anywhere a finite number is required:
+`\inf` and `\nan` are protected float constants. `-\inf` is unary negation.
+Non-finite values bind and propagate through arithmetic, but operations requiring
+finite inputs reject them.
 
-- Assign-or-check `=` is IEEE-strict: NaN never equals itself, so `x = \nan` always
-  prints `false` even when `x` is NaN (matching MPFR/rug). Comparisons are all
-  `false` on NaN, also per IEEE. Use `\isnan(x)`, `\isinf(x)`, and `\isfinite(x)`
-  to inspect the float tier: exact-tier values are finite, so `\isnan` and `\isinf`
-  are false and `\isfinite` is true for them.
-- Conditions must be booleans — no numeric truthiness. `\nan ? 1 : 2` is a typed
-  error exactly like `0 ? 1 : 2` (docs/grammar.md, `## Conditionals`).
-- Range bounds must be finite and real: `1..\inf` and `\inf..3` are typed errors —
-  `a..` is the language's infinite range form — and a complex bound is a typed
-  "range bounds must be real numbers" error (complex values are not ordered, so a
-  range over them cannot exist). A non-finite endpoint in the finite-range loop
-  would iterate forever, or exact-accumulate rationals that never converge.
-- The convergence riders reject non-finite partials (`\sum`) and anchors (`\lim`),
-  as before.
+| Context | Rule |
+|---|---|
+| Existing binding check with NaN | `false`, even when the existing value is NaN |
+| Numeric comparisons with NaN | `false` |
+| `\isnan`, `\isinf`, `\isfinite` | Inspect float states; exact values are finite |
+| Conditional | Requires a boolean; `\nan ? 1 : 2` is a typed error |
+| Range bound | Must be finite and real; use `a..` for an infinite range |
+| Infinite fold partial or limit anchor | Non-finite values are rejected |
 
 ## Display
 
-Exact rationals display as `a/b` (`1/3` prints `1/3`, not `0.333...`) — the collapse step
-above means `nshow` only ever sees a genuinely non-integer rational there. Gaussian
-rationals print whole, both sides, with the imaginary part first when the real part
-vanishes (`2+3i`, `2-3i`, `3i`, `-3i`, `i`, `-i`, `1/2-1/3i`) — a vanishing imaginary
-part is the real itself, never `2+0i`. Decimal display
-is reserved for values that are already inexact or truncated: showing an *exact* rational
-through decimal machinery would be a category error — `1/3` never leaves the rational
-tier, per the tower's own "stay at the lowest tier that remains exact" rule.
+| Value | Display policy | Example |
+|---|---|---|
+| Integer | Whole number | `2` |
+| Rational | Fraction | `1/3` |
+| Gaussian rational | Exact components | `2-3i`, `i`, `1/2-1/3i` |
+| Symbolic or algebraic | 15 significant digits and ellipsis | `√2` → `1.4142135623731...` |
+| RRA | Session precision and ellipsis; default 15 | `π + 1` → `4.14159265358979...` |
+| Float | Shortest round-trip decimal, expanded positionally | `1.0`, `0.0000001` |
+| Non-finite float | Named state | `NaN`, `Inf`, `-Inf` |
 
-Symbolic and algebraic values print as **15 significant digits, expanded
-positionally, plus a trailing ellipsis** (`π` is `3.14159265358979...`, `√2` is
-`1.4142135623731...`, `-π` is `-3.14159265358979...`) — the DESIGN display
-examples verbatim. A complex value prints each side under the same truncation
-(`√2·i` is `1.4142135623731...i`, `1 + √2·i` is
-`1+1.4142135623731...i`). RRA values print the same way at the session precision
-(default 15: `π + 1` is `4.14159265358979...`; `\prec(5)` makes it
-`4.1416...`), except the digits are proven stable first: successive
-`approximate` observations at tightening tolerances must agree to the full
-target, otherwise the longest agreed prefix prints (both sides tightened as a
-pair for a complex value). The value is exact; the digits are a truncation,
-and the ellipsis says so.
+Complex values display each component with its tier's policy. A zero imaginary
+part collapses to the real value; a zero real part is omitted.
+`1 + √2·i` prints `1+1.4142135623731...i`.
 
-Floats print via Python's shortest-round-trip `repr` (`"1.0"`, `"1.4142135623730951"`),
-with two adjustments so output matches `f64` `Display`: scientific notation is expanded
-positionally (`10000000000000000.0`, `0.0000001`), and a bare integer-looking value gets a
-trailing `.0`. Non-finite values print `NaN`, `Inf`, `-Inf`. A complex float prints each
-part the same way (`1.0+2.0i`, `2.0i`, `1.0-1.0i`, `1.0+Infi`).
+`\prec(n)` sets RRA display precision from 1 to 1000 significant digits and
+returns the new setting. It is protected and applies to both REPL and script
+output. Symbolic and algebraic display stays at 15 digits; rationals and floats
+retain their own policies.
+
+RRA display compares successive approximations before printing the requested
+digits. If they do not agree, it prints the longest agreed prefix. The ellipsis
+marks approximate displayed digits; the value remains exact.[^display-tightening]
 
 ## The Python boundary: conversion matrix
 
-The seam is also where the `\py` escape hatch converts (docs/grammar.md). Values crossing
-*into* Python convert only for collections (below) — ad numbers already are native
-`int`/`Fraction`/`float`, and a string argument arrives as the native `str` it already is.
-Values coming *back* go through `_to_ad`:
+`\py` and `\pyimport` convert Python results through `_to_ad`.
 
 | Python value | ad result |
 |---|---|
-| `None` | rejected — "the call returned nothing" |
-| `bool` | `int` (`True` → `1`; bool is an int subclass, checked first) |
-| `int`, `float`, `Fraction` | pass through |
-| `decimal.Decimal` | exact `Fraction`/`int` via its string-exact value |
-| any other `numbers.Rational` | normalized `Fraction`/`int` (constructed from numerator/denominator explicitly — py3.12+'s single-Rational-arg constructor copies them unnormalized) |
-| `Symbolic`/`Algebraic`/`RRA`/`Gaussian` (an ad value passed through Python) | passes through |
-| a sympy expression (`\py("sympy.sqrt")(2)`) | recognized closed forms convert through the symbolic tier's gate (`sympy.sqrt(2)` arrives as `√2`), algebraic values through the algebraic tier's (`sympy.cbrt(2)` arrives exact), every other finite number through the RRA tier's (`sympy.pi + 1` arrives exact); sympy rationals convert exactly via the row above; anything else rejected |
-| any other `numbers.Real` (incl. numpy floats) | widened to `float` |
-| `str` | passes through — a full ad value: bindable, displays quoted and round-trippable, concatenates with `+` (`"data" + ".csv"`); every other arithmetic operator rejects it ("strings are not numbers") |
-| `complex` | complex float (`complex(0.5, 0.25)` is `0.5+0.25i`); a zero imaginary part returns the float real; non-finite components are kept |
-| an ad tensor, array, or set (passed through Python) | passes through |
-| `list`, `tuple` | an array; each element converts by this table, recursively |
-| `set`, `frozenset` | a set; each element converts by this table |
-| a numpy `ndarray` | a tensor of its nested entries; 0-d gives the scalar; empty, ragged, and non-numeric arrays are rejected[^ndarray] |
-| anything else (dict, ...) | rejected — names the type, never truncates silently |
+| `None` | Error: “the call returned nothing” |
+| `bool` | Integer: `True` → `1` |
+| `int`, `float`, `Fraction` | Unchanged |
+| `decimal.Decimal` | Exact normalized fraction or integer |
+| Other `numbers.Rational` | Normalized fraction or integer[^rational] |
+| ad numeric or collection value | Unchanged |
+| SymPy expression | Symbolic, algebraic or RRA when admissible; rationals convert exactly; other expressions rejected |
+| Other `numbers.Real`, including NumPy floats | Widened to `float` |
+| `str` | String; quoted display and `+` concatenation |
+| `complex` | Complex float; zero imaginary part collapses to float; non-finite components retained |
+| `list`, `tuple` | Array with recursively converted elements |
+| `set`, `frozenset` | Set with recursively converted elements |
+| NumPy `ndarray` | Tensor; 0-dimensional array becomes a scalar[^ndarray] |
+| Other types, including `dict` | Typed rejection naming the type |
 
-Arguments to a Python callable convert the other way:
+Arguments convert in the other direction:
 
 | ad value | Python argument |
 |---|---|
-| tensor | nested `list`s, row-major |
-| array | `list`, elements converted |
-| set | `frozenset`; a `list` when an element is unhashable |
-| anything else | unchanged |
+| Tensor | Nested row-major lists |
+| Array | List of converted elements |
+| Set | `frozenset`; list when an element is unhashable |
+| Other value | Unchanged |
 
+```text
+\py("sorted")({3, 1, 2})    ->  = ⟨1, 2, 3⟩
+\py("len")([1, 2; 3, 4])    ->  = 2
 ```
-\py("sorted")({3, 1, 2})      ->  = ⟨1, 2, 3⟩
-\py("len")([1, 2; 3, 4])      ->  = 2
-```
 
-Internal prelude callables and user-defined functions already return ad values, so their
-boolean results stay booleans; the `bool` → `int` row applies to Python callables crossing
-`\py`.
+Strings remain native Python strings. Internal prelude functions and user-defined
+functions retain boolean results; conversion to integers applies to Python
+callables at the boundary.
 
-A callee raising maps to a spanned error at the call (`sqrt: ValueError: math domain
-error`), keeping the REPL alive like every other typed failure. Callables themselves are
-bindable values (`s = \py("math.sqrt")` displays `<py math.sqrt>`); arithmetic on one is a
-typed "operands must be numbers" failure at the operator's span.
+Python callables bind as values: `s = \py("math.sqrt")` displays `<py math.sqrt>`.
+Arithmetic on a callable is a typed error. Python exceptions become errors at the
+call's source span, such as `sqrt: ValueError: math domain error`; the REPL stays
+alive.
 
-[^ndarray]: Detected by module name and `tolist`, so numpy is never imported by the
-    runtime. Tests need numpy (`dev` extra) and skip without it.
+## Limitations
 
-## What later phases add here
+- RRA equality is a heuristic relying on Schanuel's conjecture. Distinct values
+  closer than the tightest probe (`1e-50`) can compare equal.
+- Eight-ray complex limits are a heuristic, not a proof of a two-dimensional
+  limit. See [standard library limitations](stdlib.md#limitations).
+- Irregular sign-changing series may have no recognized tail bound and use
+  plateau detection. Near zero the tolerance has an absolute floor; exact-zero
+  limits outside recognized tail shapes are unsupported.
+- Cancellation near removable singularities can prevent numeric limits from
+  stabilizing. Simplify the body before probing.
+- Empty, ragged and non-numeric NumPy arrays cannot become tensors.
 
-The symbolic closed-form tier is in (above), as is the algebraic tier, as is
-the RRA fallback — each becomes a new case in this module's dispatch the same
-way, and the compiler/driver layers above are unaffected by each addition,
-which is the entire point of the seam. The exact complex tower is in too
-(above): the `Gaussian` tier, complex admission through every gate, the
-odd-root split, and the `i`/`\i`/`\complex`/`\re`/`\im` prelude surface.
-Iterative display tightening with the `\prec`
-precision setting is in (above), as is Richardson–Fitch equality for any
-RRA-involved pair and minimal-polynomial fallback equality for the algebraic
-tier — both build on the exact tiers' canonical forms, and statement-level
-`=` inherits them.
+[^dispatch]: `adhoc/runtime.py` exposes the numeric operations (`nadd`, `nsub`,
+    `nmul`, `ndiv`, `npow`, `nneg`, `neq`, `nshow`). Evaluation uses these functions
+    for user values. Dispatch checks floats first, then symbolic/algebraic/RRA,
+    Gaussian, rational and integer arithmetic. Exact expressions of undecided
+    reality fall back to real or complex floats.
+
+[^symbolic]: `adhoc/symbolic.py` uses `classify` as its admission gate. SymPy
+    supplies simplifications such as `√2·√3 = √6`, `(√2)² = 2` and `π - π = 0`.
+    Rational results collapse; coefficient-times-atom results enter this tier;
+    other results pass to higher tiers. Gaussian rationals collapse to their own tier.
+
+[^algebraic]: `adhoc/algebraic.py` stores SymPy expressions without inspecting
+    their internal minimal-polynomial and isolating-interval representation.
+    Equality checks whether `minpoly(a-b) == x`, including complex differences.
+
+[^approximation]: `adhoc/rra.py` exposes `approximate` and `to_function`.
+    Successive SymPy evaluations at escalating precision return the agreed
+    decimal value as an exact `Fraction`. SymPy supplies the series and iterative
+    methods; there is no separate interval-refinement implementation.
+
+[^rra-equality]: Probes use tolerances `1e-12`, `1e-30` and `1e-50`. An exact
+    rational difference, or rational modulus for a complex difference, bypasses
+    the probes. Otherwise equality holds while every probe is indistinguishable
+    from zero; the first distinguishable probe decides inequality.
+
+[^plateau]: Float comparisons use `|Δ| <= tol × max(1, |prev|, |cur|)`.
+    `EXACT_CONVERGENCE_TOLERANCE = 1/10^12` supplies the exact-tier counterpart.
+    RRA approximation uses a caller-supplied tolerance rather than this fixed setting.
+
+[^tails]: `_FoldTailEstimator` infers a power-law exponent from consecutive
+    term ratios and estimates the tail with the integral-test form. Alternating
+    terms use the Leibniz bound and midpoint correction. A confirmation window
+    checks the proposed error before returning; raw plateaus win ties. Harmonic
+    tails (`p = 1`), monotone divergence and non-finite partials do not get a tail
+    estimate. `\sum(i=1..) 1/i^2` typically stops around 100,000 terms at roughly
+    `1e-10` accuracy. `_ComplexTailEstimator` estimates each component separately;
+    identically zero components, or shapeless components whose last eight terms
+    vanish, settle at their partial value.
+
+[^limit-probes]: The step starts around 0.8% of `max(|a|, 1)` and halves each
+    probe. A side stops before a step rounds back onto the anchor. Complex probes
+    use four golden-angle directions and their opposites. Components below the
+    modulus-scaled tolerance are dropped from complex results.
+
+[^display-tightening]: RRA display starts with a two-digit guard and tightens
+    tolerances by about 1000×, for up to six rounds. Complex components tighten
+    as a pair. Float formatting starts from Python `repr`, expands scientific
+    notation positionally and adds `.0` to integer-looking finite values.
+
+[^rational]: Construction uses numerator and denominator explicitly; Python
+    3.12's single-rational-argument `Fraction` constructor can copy unnormalized
+    components. Python booleans are checked before integers because `bool`
+    subclasses `int`.
+
+[^ndarray]: Detection uses the module name and `tolist`; the runtime does not
+    import NumPy. Tests use the `dev` extra and skip without NumPy.

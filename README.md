@@ -1,5 +1,7 @@
 # adhoc
 
+> **Work in progress.** This project is under development; expect missing features and breaking changes.
+
 `ad` is executable LaTeX for arithmetic — a calculator language where the ASCII you'd already
 type to *write* a piece of math is the thing that *runs* it.
 
@@ -17,46 +19,8 @@ Two rules produce that:
   (`\pi`, `\sum`, `\sqrt`, `\sin`, `\in`, ...) — so `2\pi r` means what it looks like it means.
 
 `ad` isn't a TeX parser and has no layout or document commands — the overlap is notation, not
-compatibility. See [`docs/language.md`](docs/language.md) for what's real today, and
+compatibility. See [`docs/language.md`](docs/language.md) for supported features, and
 [`docs/grammar.md`](docs/grammar.md) for the full grammar.
-
-## Status
-
-Core phase 0 plus phase-1 language: a REPL and script runner that evaluate arithmetic exactly
-(`1/3 + 1/3 + 1/3` is `1`, not `0.999...`; `0.1 + 0.2` is exactly `3/10` — decimal
-literals are exact, with `1.`/`5e-1` the explicit float spellings), with assignment,
-caret-pointing error diagnostics, postfix application (`f(x)`), functions with local
-scoping, the lazy
-ternary conditional (`c ? a : b` — a parenthesized statement group is its multi-statement
-branch), real booleans with `\true`/`\false`,
-immutable bindings (`x = 1` binds once and compares thereafter; `\let x = 1`
-marks a fresh binding), name aliases (`Σ` is `\sum`; declare your
-own with `\alias`, or define both spellings at once with `\dual \alpha, α = 3.14`;
-diagnostics and fresh echoes keep the spelling you wrote),
-a protected prelude scope (`π`, `\sqrt`, `\sin`, `\isnan`, `\isinf`, `\isfinite`, ... — `π` and `√2` stay exact as
-symbolic reals, and `√2 * √2` collapses back to the integer `2`),
-and the `\py("math.sqrt")(2)` escape
-hatch into Python — full trust, native conversion
-both ways, with keyword arguments at any application site (`\py("int")("ff", \base=16)`)
-(docs/numerics.md). Strings are values: they bind, concatenate with `+` (`"data" + ".csv"`),
-name Python paths, and double as comment-like statements; any other string operator is a
-typed error (docs/grammar.md). Imports are statement-level:
-`\import("lib")` shares ad source files and `\pyimport("math": \hypot)` binds Python
-module members (docs/grammar.md). The implementation is pure Python:
-`ad` lowers to Python's own AST and runs on CPython. Ranges are lazy and support finite/infinite
-and inferred-step forms, and folds consume them: `\sum(i=1..10) i^2` → `385`, infinite ranges as
-limits of partial sums (`\sum(i=1..) 1/i^2`), and numeric `\lim(x=a)` — all sharing one
-tolerance-based convergence mechanism (docs/numerics.md). The numeric tower is complete:
-exact complex arithmetic (`(2+3i)(2-3i)` is `13`, `\ln(-1)` is `π·i`,
-`(-8)^(1/3)` is `-2`), algebraic numbers (`2^(1/3)` stays exact), and the RRA
-fallback (`π + 1`, `\sin(1+i)` — every finite value stays exact, with
-Richardson–Fitch equality). Unevaluated expressions can be quoted with `\expr(...)` or
-`` `(...) `` and evaluated with `\eval(...)`; `\body(f)` reflects a user-defined
-function's body; `\reduce` beta-reduces quoted lambda terms
-([language guide](docs/language.md)). Tensors (`[1, 2; 3, 4]`, `m'`, `m @ m`) arrays (`⟨1, "a", [2]⟩`), and sets (`{1, 2} ∪ {3}`) are built, as are composition (`f ∘ g`), partial application (`f(1, ·)`),
-and `\map`/`\filter`/`\fold`;
-symbolic rewriting is implemented ([guide](docs/symbolic.md)); graphing is on the roadmap.
-See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it
 
@@ -93,25 +57,23 @@ Heavyweight tests are marked `slow`;
 
 ## Docs
 
-See [`docs/`](docs/) for the language reference, grammar, notation glyphs, standard library, custom operators, calculus, symbolic rewriting, LaTeX output, architecture, and numerics notes.
+| Guide | Contents |
+|---|---|
+| [Language guide](docs/language.md) | Values, bindings, functions, collections and interop |
+| [Grammar](docs/grammar.md) | Syntax, lexical rules and precedence |
+| [Formal grammar](docs/grammar-ebnf.md) | EBNF parser productions |
+| [Notation](docs/notation.md) | Math glyphs and ASCII spellings |
+| [Custom operators](docs/operators.md) | Infix declarations, precedence and scope |
+| [Calculus](docs/calculus.md) | Derivatives and integrals |
+| [Symbolic rewriting](docs/symbolic.md) | Simplification, expansion, factoring and solving |
+| [LaTeX output](docs/tex.md) | Rendering quotes, functions and values |
+| [Standard library](docs/stdlib.md) | Prelude constants and functions |
+| [Numerics](docs/numerics.md) | Exact arithmetic, convergence, display and Python conversions |
+| [Architecture](docs/architecture.md) | Package layout and evaluation pipeline |
+| [Runtime lowering](docs/lowering.md) | Engine calls, scope and error mapping |
+
+See [the roadmap](ROADMAP.md) for planned work.
 
 ## License
 
-```text
-adhoc
-
-Copyright (C) 2025 George Watson
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-```
+Copyright © 2025 George Watson. Licensed under [GPLv3 or later](LICENSE).

@@ -1,7 +1,10 @@
 # Notation
 
-Paper-math glyphs and their ASCII spellings. Every glyph parses to an ordinary operator or
-call, so quotes print the canonical form and every glyph has an ASCII spelling.
+Math glyphs have ASCII spellings and parse to ordinary operators or calls.
+Quoted expressions display canonical syntax. See the [grammar](grammar.md)
+for parsing rules and the [standard library](stdlib.md) for functions.
+
+## Powers, names and roots
 
 | Glyph | ASCII | Meaning | Level |
 |---|---|---|---|
@@ -10,23 +13,33 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 | `Aᵀ` | `A'` | transpose | postfix |
 | `\sin²(x)` `f²(x)` | `\sin(x)^2` | function power[^funcpow] | postfix |
 | `\sin⁻¹(x)` `\cos⁻¹` `\tan⁻¹` | `\asin(x)` `\acos` `\atan` | inverse trig[^funcpow] | postfix |
-| `x₁` `a₂₃` `xᵢⱼ` | `x_1` `a_23` `x_ij` `x_b` `x_A` | a distinct name[^subscript] | name |
+| `x₁` `a₂₃` `xᵢⱼ` | `x_1` `a_23` `x_ij` | Distinct name[^subscript] | name |
 | `n!` | — | factorial[^factorial] | postfix |
 | `n‼` | `n!!` | double factorial | postfix |
-| `∛x` `∜x` | `\root(x, 3)` | cube and fourth root[^root] | prefix, like `√` |
+| `∛x` `∜x` | `\root(x, 3)` `\root(x, 4)` | Cube and fourth root[^root] | prefix, like `√` |
+
+## Comparisons, logic and calculus
+
+| Glyph | ASCII | Meaning | Level |
+|---|---|---|---|
 | `≤` `≥` | `<=` `>=` | ordering | comparison |
-| `≠` | `\neq` | not equal (negated `=` check) | comparison |
+| `≠` | `\neq` | Not equal; uses numeric-tier equality | comparison |
 | `≈` | `\approx` | approximately equal[^approx] | comparison |
 | `∉` | `\notin` | not a member | comparison |
 | `⊂` `⊇` `⊃` | `\subset` `\supseteq` `\supset` | proper subset, superset, proper superset | comparison |
 | `∅` | `\emptyset` | the empty set (prelude constant) | name |
-| `∧` `∨` `→` `↔` | `\and` `\or` `\implies` `\iff` | connectives[^logic] | see `## Logic` |
+| `∧` `∨` `→` `↔` | `\and` `\or` `\implies` `\iff` | connectives[^logic] | see [Logic](#logic) |
 | `¬` | `\not` | negation | prefix |
 | `∀` `∃` | `\forall` `\exists` | quantifiers over a range or collection | special form |
-| `r∠θ` | `\angle` `\polar(r, θ)` | polar form: modulus and angle | above `+`, below comparison |
+| `r∠θ` | `\angle` `\polar(r, θ)` | polar form: modulus and angle | looser than `+`, tighter than comparison |
 | `∫(x=a..b)` `∂(x=a)` | `\int` `\diff` | numeric integral and derivative ([calculus](calculus.md)) | special form |
 | `f'` `f''` | — | derivative of a function (exact where symbolic); `'` on a tensor stays the transpose | postfix |
 | `x ↦ body` | `x -> body` `x \mapsto body` | lambda; `(x, y) ↦ body` for several parameters | loosest, greedy body |
+
+## Delimiters and products
+
+| Glyph | ASCII | Meaning | Level |
+|---|---|---|---|
 | `⌊x⌋` `⌈x⌉` | `\floor(x)` `\ceil(x)` | floor and ceiling | atom |
 | `\|x\|` | `\abs(x)` | absolute value, complex modulus | atom |
 | `‖v‖` `∥v∥` | `\norm(v)` | 2-norm of a vector, Frobenius norm of a matrix | atom |
@@ -43,7 +56,8 @@ call, so quotes print the canonical form and every glyph has an ASCII spelling.
 {1} ⊂ {1, 2}   ->  = true
 3 ∉ ∅          ->  = true
 n = 3; 2ⁿ⁻¹    ->  = 4
-f(x) = x + 1; f²(2)  ->  = 9
+f(x) = x + 1
+f²(2)          ->  = 9
 x_1 = 2; x₁    ->  = 2
 3 ∈ 1..5        ->  = true
 \sin⁻¹(1/2)    ->  = 0.523598775598299...
@@ -103,14 +117,24 @@ keep `..` looser, so `3 < 1..5` is `(3 < 1)..5`:
 
 ## Operator values
 
-`(!)`, `(‼)`, `(∛)`, `(∜)`, `(≠)`, `(≈)`, `(∉)`, `(⊂)`, `(⊇)`, `(⊃)`, `(%)`, `(∠)`, `(∧)`, `(∨)`, `(→)`, `(↔)`, `(¬)` are function values
-like the other operators (`docs/grammar.md`, `## Operator values`). Postfix operators and
-radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
+Parentheses turn operators into function values:
+
+| Group | Examples |
+|---|---|
+| Factorials and roots | `(!)`, `(‼)`, `(∛)`, `(∜)` |
+| Comparisons and sets | `(≠)`, `(≈)`, `(∉)`, `(⊂)`, `(⊇)`, `(⊃)` |
+| Modulo and polar form | `(%)`, `(∠)` |
+| Logic | `(∧)`, `(∨)`, `(→)`, `(↔)`, `(¬)` |
+
+Postfix operators and radicals have no sections. `(∛)` is `\root(·, 3)`.
+See [operator values](grammar.md#operator-values) for application rules.
 
 ## Limitations
 
 - `|A|` on a square matrix is an error, not the determinant — [#100](https://todo.sr.ht/~takeiteasy/adhoc/100).
-- Bars in set-builder notation `{x ∈ s | p}` are not read yet — [#79](https://todo.sr.ht/~takeiteasy/adhoc/79).
+- Set-builder separators and absolute-value bars share `|`. Write `{a*|b|}`
+  for a product; `{a |b|}` is read as a set-builder:
+  [#79](https://todo.sr.ht/~takeiteasy/adhoc/79).
 - `f⁻¹` gives one branch — [#117](https://todo.sr.ht/~takeiteasy/adhoc/117).
 - `\tex` of function powers: `\sin²(x)` and non-callable heads render as a power of the call — [#116](https://todo.sr.ht/~takeiteasy/adhoc/116).
 
@@ -128,12 +152,12 @@ radicals have no sections. `(∛)` is the partial `\root(·, 3)`.
 [^funcpow]: After a name or a parenthesised head: a lambda, `f ∘ g` or `f⁻¹` (`(x ↦ 2x)⁻¹(6)`,
     `(f⁻¹)(6)`). A callable head gives `f(x)^n`; any other head gives
     `(f^n)(x)`, so `x²(2)` on a number is `18` when `x = 3`. A negative exponent on a
-    callable is a typed error unless it is exactly `⁻¹` on `\sin \cos \tan \exp \sinh \cosh \tanh` or
-    their inverses, which give the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other
-    function gives its numeric inverse (`docs/calculus.md`), and `\sin⁻²(x)` is an error.
+    callable must be exactly `⁻¹`. On `\sin \cos \tan \exp \sinh \cosh \tanh` or
+    their inverses, this gives the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other
+    function gives its numeric inverse ([calculus](calculus.md)), and `\sin⁻²(x)` is an error.
 [^logic]: `∧` `∨` and `→` skip their right operand once the left decides (`false ∧ …`,
     `true ∨ …`, `false → …`); a non-boolean operand is a typed error at that operand. `∀` and
-    `∃` are special forms like `\sum` (docs/grammar.md, `## Special forms`) and use the same
+    `∃` are special forms like `\sum` ([special forms](grammar.md#special-forms-folds-and-limits)) and use the same
     `(x=domain) body` or `(x∈domain) body` binder.
 [^factorial]: An exact non-negative integer up to 100,000 gives the exact product. Any other
     real is `\gamma(x + 1)` (`(1/2)!` is `√π/2`); negative integers and complex values are

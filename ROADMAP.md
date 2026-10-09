@@ -1,170 +1,80 @@
-## roadmap
+# Roadmap
 
-This document is mirrored into the sr.ht tracker: one ticket per phase bullet, and unresolved
-`DESIGN.md` audit items as their own tickets. This file stays the source of reasoning; the
-tracker is the source of status.
+The tracker records ticket status. This page groups the implementation by phase
+and lists planned or unscheduled work. See the [language guide](docs/language.md)
+for supported features and [design](DESIGN.md) for the language model.
 
-Phased implementation plan derived from `DESIGN.md`, ordered by value and dependency rather
-than by section order in the design doc. The lowering pipeline (`adhoc/compiler.py` executing
-on CPython) is the durable evaluation engine; later phases add language surface on top of it,
-they don't replace it. The interaction-net engine and parallel rewriting recorded in
-`DESIGN.md` are retired from this roadmap (see future directions).
+## Implementation phases
 
-### phase 0 — foundations
+| Phase | Scope | Current reference |
+|---|---|---|
+| 0: Foundations | Python package, lexer, parser, spans, diagnostics, REPL and script runner | [Architecture](docs/architecture.md) |
+| 1: Language semantics | Functions, recursion, immutable bindings, booleans, conditionals, ranges, folds and limits | [Language guide](docs/language.md) |
+| 2: Exact arithmetic | Rational, Gaussian, symbolic, algebraic and RRA tiers; precision and equality | [Numerics](docs/numerics.md) |
+| 3: Collections | Tensors, arrays and sets | [Collection syntax](docs/grammar.md#tensors) |
+| 4: Symbolic and higher-order operations | Quotes, evaluation, reflection, beta reduction, rewriting, composition and custom operators | [Symbolic rewriting](docs/symbolic.md), [operators](docs/operators.md) |
+| 5: Graphing | Sampling, terminal rendering and export | [Planned graphing](#graphing) |
 
-- Implementation language: **Python**. Numeric backing via stdlib `int`/`Fraction`/`float`
-  behind the numeric seam (see `docs/numerics.md`; gmpy2/sympy can slot behind the same
-  seam later).
-- Lexer: whitespace-insensitive, single-char ascii/unicode identifiers, `--` comments,
-  case-sensitivity, byte-offset spans on every token.
-- Parser: core grammar — literals, arithmetic (`+ - * / ^`, parens), assignment/equality-check
-  `=` (bind-or-check; globals are single-assignment). AST as frozen dataclasses, spans on every node.
-- Diagnostics: caret-pointing error rendering with source spans, per-node span narrowing.
-- REPL: multi-line continuation, history, line editing.
-- Script mode: `adhoc run script.ad` — the same grammar fed a whole file instead of
-  line-by-line, sharing the REPL's diagnostic rendering.
-- Evaluator: lowering of the adhoc AST to Python's own AST, executed on CPython through a
-  span-tracking runtime seam.
+### Foundations and semantics
 
-### phase 1 — core language semantics
+The durable engine lowers frozen language AST nodes to Python AST and executes
+on CPython. Later phases extend the language and runtime operations.
 
-- Functions: `f(a, b) = ...` definition, application, local scoping, and `;`-sequenced bodies.
-  Definitions lower into the same callable world as interop values.
-- Recursion: function's own name is bound within its own body scope.
-- Conditionals: the ternary `c ? a : b` — the one lazy conditional, right-associative,
-  loosest expression precedence. A parenthesized statement group is the multi-statement
-  branch form.
-- Comparisons: `<`, `>`, `<=`, `>=`; the logical operators are built (docs/notation.md, `## Logic`).
-- Ranges: `a..b`, `a..` (lazy infinite), `a,c..b` / `a,c..` (step-inferred).
-- `Σ`/`\sum`, `Π`/`\prod`, `\lim` — fold over a range; infinite-range `Σ`/`Π` as limit of partial
-  sums.
-- Globals/constants: `=` assign-or-check rules; every binding is immutable. `\let` is
-  the explicit fresh-binding spelling, including top-level function definitions.
-  - Prelude constants (`π`, `e`, `\sin`, `\isnan`, `\isinf`, `\isfinite`, ...) are
-    protected everywhere, not shadowable (decided).
-- Non-converging infinite `Σ`/`Π`: error after a tolerance/iteration cap, reusing the phase-2
-  RRA tier's tolerance-based shape rather than a separate mechanism (decided).
+Functions and binders use local frames. Bindings are immutable; `=` binds or
+checks, and `\let` requires a fresh name. Prelude names are protected except `i`.
+The ternary is lazy; parenthesized statement groups provide multi-statement
+bodies. Numeric convergence errors at its budget instead of returning an
+unconfirmed partial result.
 
-### phase 2 — exact arithmetic tower
+### Exact arithmetic
 
-The calculator's actual differentiator; the numeric seam already routes every operation, so
-symbolic/algebraic backends (sympy being an obvious candidate) slot in without touching
-anything above the seam — no reason to wait on phase 3's collection types, which are
-independent of it.
+Exact decimals, complex arithmetic, symbolic closed forms, algebraic values and
+RRA approximation are implemented. Results simplify into lower tiers when
+possible. RRA equality uses the Richardson–Fitch heuristic; see
+[numeric limitations](docs/numerics.md#limitations).
 
-- Symbolic closed-form irrationals (`π`, `√n`, `eⁿ`, `ln(n)`, `sin(πn)`, `tan(πn)`, ...).
-  **Done** — rational coefficient × one recognized atom behind the seam (adhoc/symbolic.py,
-  backed by sympy), with `cos(πn)` and integer powers of `π` added to the recognizer, `√`
-  as the prefix-operator spelling of `\sqrt(...)`, exact equality/ordering on canonical
-  forms, and fallback to the upper tiers for values with no single
-  coefficient×atom form.
-- Algebraic numbers (roots of rational-coefficient polynomials).
-  **Done** — algebraic values beyond the closed-form shape stay exact behind
-  the seam (adhoc/algebraic.py, backed by sympy; symbolic tried first), with exact
-  equality/ordering on canonical forms and fallback to the RRA tier
-  for transcendental results; complex algebraics are held the same way, and
-  odd roots of negatives take the real branch (below).
-- Recursive Real Arithmetic (RRA) fallback: `tolerance -> rational` functions.
-  **Done** — every other real stays exact behind the seam (adhoc/rra.py, backed
-  by sympy; symbolic tried first, then algebraic), with pointwise arithmetic
-  that collapses back down when a result fits a lower tier (`(π + 1) − π` is
-  the integer `1`), on-demand `tolerance -> rational` approximation sharing the
-  convergence shape, exact equality/ordering on canonical forms, and the float
-  tier remaining only for explicitly-inexact values (float spellings,
-  float-argument calls, IEEE non-finite values).
-- Display precision via iterative tolerance tightening (RRA tier only — exact rationals
-  already display as `a/b`, decided and implemented in phase 0).
-  **Done** — successive approximations must agree to the session target before
-  those digits print (longest agreed prefix otherwise), with `\prec(n)` setting
-  the target (significant digits, 1..1000, default 15) through the single
-  `nshow` path for REPL and script mode.
-- Equality testing: exact for rational/algebraic tiers (structural identity with a
-  minimal-polynomial fallback for unexpanded algebraic forms); Richardson-Fitch
-  heuristic (Schanuel's conjecture) for any RRA-involved pair — accepted
-  limitation, not a bug to fix.
-  **Done** — `rra.equal` probes the difference at escalating tolerances
-  (`1e-12`, `1e-30`, `1e-50`) via `approximate`, and statement-level
-  check-assignment inherits it; float operands keep float-tier rules.
-- Numeric type surface: `int`, `real`, `rational`, `complex` literal syntax and
-  promotion/coercion rules.
-  **Done** — decimal literals are exact rationals (`0.5` is `1/2`; the float
-  spellings are the trailing-dot marker `1.` and any exponent form `5e-1`),
-  `int/int` stays the exact rational, and the exact complex tower is in: the
-  Gaussian tier (adhoc/gauss.py), complex admission through every exact gate,
-  the odd-root real branch for negative bases (`(-8)^(1/3)` is `-2`), the
-  complex principal otherwise (`(-2)^(1/2)` is `√2·i`), no complex-float tier
-  (float/complex mixing is a typed error), complex values unordered, and the
-  prelude surface `i`/`\i` (the one shadowable prelude name — scoped
-  shadowing resolves the loop-binder collision), `\complex`, `\re`, `\im`.
+`\prec` sets RRA display precision from 1 to 1000 significant digits. Explicit
+float spellings and float operands select real or complex float arithmetic.
 
-### phase 3 — collection types
+### Collections and symbolic operations
 
-Independent of phases 1-2; nothing else depends on it.
+Tensors use 1-based indexing, scalar broadcasting, elementwise algebra,
+`@` contraction and transpose. Arrays hold heterogeneous ordered values;
+sets deduplicate and provide set operations.
 
-- Tensor (`[...]`): implemented — vector (1D) / matrix (2D) as special cases, `,`/`;`
-  separators, 1-indexing, elementwise `+ - * / ^` with scalar broadcast, `·`/`\cdot`
-  contraction (dot and matrix products), `'` transpose, rank ≥ 3 by nesting.
-- Array (`⟨...⟩` / `#[...]` / `\arr(...)`): implemented — ragged, heterogeneous, ordered,
-  indexing/iteration only, no implied algebra.
-- Set (`{...}`): implemented — unordered, deduplicated, `∪ ∩ ∈ ∖ ⊆`.
+Expression quotes support `\eval`, `\body` and `\reduce`. Symbolic operations
+rewrite supported quotes and functions with a time limit. Composition, partial
+application, higher-order collection functions and custom infix declarations
+use first-class functions.
 
-### phase 4 — symbolic algebra & metaprogramming
+## Graphing
 
-No longer gated on a future evaluation engine — the mechanism is quoting and rewriting the
-AST enum directly (`match`-and-rebuild), the same way any other Rust code manipulates a typed
-tree.
+Graphing depends on numeric evaluation and is not implemented.
 
-- `\expr(...)` / `` `(...) `` quoting and `\eval(e, binding...)` are implemented.
-- `\solve`, `\simplify`, `\expand`, `\factor` and `\deriv` are implemented over expression
-  quotes and single-expression functions, backed by sympy with a time limit
-  (docs/symbolic.md); `f'` is exact on such functions.
-- Function composition (`∘`), `\map`/`\fold`/`\filter`, and partial application (`f(a, _)`)
-  and operators as function values (`\fold(+, xs)`, `(+)`) are implemented.
-- Reflection: `\body(f)` is implemented for user-defined functions and lambdas.
-- Lambda term reduction: `\reduce(e)` beta-reduces expression quotes.
-- Custom infix operators are implemented with declared precedence and optional paired glyphs
-  ([reference](docs/operators.md), [limitations](docs/operators.md#limitations)).
+| Area | Proposed behavior | Open decision |
+|---|---|---|
+| Domain | `\graph(f, x=a..b)` samples a function over a range | Fixed resolution or adaptive sampling |
+| Terminal output | Sixel or Kitty graphics, with Unicode braille fallback | Protocol detection and rendering details |
+| Export | Python calls with ordinary strings, such as `\py("matplotlib.pyplot.savefig")("plot.svg")` | Integration with generated plots |
+| Overlays | Several functions on shared axes | Syntax |
 
-### phase 5 — graphing
+## Future directions
 
-Depends on phase 2 (numeric evaluation); pairs naturally with script mode for saved plots,
-but doesn't depend on it.
+These ideas are unscheduled. Their syntax and semantics require design decisions
+before implementation.
 
-- `\graph(f, x=a..b)` — domain sampling over a function.
-  - Open: fixed-resolution vs. adaptive sampling near discontinuities/high-curvature regions.
-- Terminal-native rendering: sixel/kitty graphics protocol detection, Unicode braille-pattern
-  ASCII fallback.
-- File export (`out="plot.svg"` etc.) — the old scoped-path-literal idea is dead: export goes
-  through `\py` (e.g. matplotlib's `savefig`) with an ordinary string-literal argument, since
-  interop v1. No special argument syntax.
-- Open: multi-function overlay syntax (plotting more than one function on shared axes).
+| Direction | Scope or open question |
+|---|---|
+| Literate script mode | Markdown or LaTeX transcripts with results beside source; bare string notes already work |
+| Congruence notation | Possible `a ≡ b (mod n)` form; `≡` is reserved |
+| Exactness introspection | Query a value's numeric tier, with proposed `\exact(v)` |
+| Multi-clause definitions | First matching clause; distinguish clauses from repeated binding checks |
+| Recurrence-defined lazy sequences | Memoized recurrence values that ranges and folds can consume |
+| Units and dimensional analysis | Unit notation and dimension checks at numeric operations |
+| Arbitrary-precision float tier | MPFR or gmpy2 behind numeric operations; precision API remains open |
+| Module system | Module namespaces, Python attribute access and protection of imported bindings |
+| Interaction-net backend | Native numeric agents and local graph reduction; separate from the CPython engine |
 
-### future directions (unscheduled)
-
-Not committed to a phase, ordered roughly by weight. The interaction-net engine and parallel
-active-pair rewriting from earlier drafts are retired: `DESIGN.md` keeps the design thinking,
-but nothing builds toward them unless an HVM-style engine is ever actually adopted as a real
-backend.
-
-- **Literate script mode** — strings are already comment-like statements; a script-mode flag
-  emits a Markdown/LaTeX transcript with each result inline. Half the feature exists.
-- **Number-theory prelude + postfix `!`** — `\gcd`, `\mod`, `\choose`, and factorial as a
-  postfix operator (the precedence table already reserves postfix slots). Wrinkle to settle
-  first: `a ≡ b (mod n)` congruence notation collides with `≡`-as-const.
-- **Exactness introspection** — ask which tier a value lives on (`\exact(v)`), control RRA
-  display precision. Small, and it makes the numerics story visible.
-- **Textbook multi-clause definitions** — `f(0) = 1; f(n) = n·f(n-1)` as one definition,
-  first matching clause winning; generalizes the current piecewise ternary form.
-  Design tension: a clause sequence must read as one definition, not successive rebinding,
-  to coexist with the immutability rules.
-- **Recurrence-defined lazy sequences** — `a(n) = a(n-1) + a(n-2)` memoized and lazy,
-  foldable over `a(1)..`. The natural consumer of the existing lazy/convergence machinery.
-- **Units and dimensional analysis** — `9.8 \m \per \s^2` with dimension errors at the
-  numeric seam. The exact tower loves it and prelude protection gives unit names a home;
-  costly, high ceiling — positions `ad` as the physics quick-calc tool.
-- **Arbitrary-precision float tier** — MPFR/gmpy2 behind the numeric seam with a `\prec(n)`
-  directive (docs/numerics.md already anticipates the slot); makes RRA display tunable.
-- **Module system growth** — `\import`/`\pyimport` exist (ad files and Python members,
-  statement-level, cached per session); what remains: imported module bindings joining
-  the protected set on import, dotted attribute access on bound Python objects, and module
-  namespaces as values.
+Number-theory functions and postfix factorials are in the
+[standard library](docs/stdlib.md#number-theory). RRA display precision uses
+`\prec`; it is separate from the proposed arbitrary-precision float tier.
