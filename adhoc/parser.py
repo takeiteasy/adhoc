@@ -106,6 +106,7 @@ from .lexer import (
     RParen,
     Semi,
     InfixOp,
+    CustomOp,
     Slash,
     Star,
     Str,
@@ -177,7 +178,7 @@ class IncompleteInput(ParseError):
 
 
 _ATOM_STARTERS = (Number, Ident, Backslash, Backtick, LParen, LBracket, LAngle, LBrace,
-                  HashBracket, Str, Radical, NthRoot)
+                  HashBracket, Str, Radical, NthRoot, CustomOp)
 
 _DELIMITED = {"⌊": ("⌋", "floor"), "⌈": ("⌉", "ceil"), "|": ("|", "abs"), "‖": ("‖", "norm")}
 _BARS = frozenset({"|", "‖"})
@@ -227,9 +228,11 @@ _INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | f
 # without the paren the head is an ordinary unbound name (the `\py` usage-error pattern).
 _LAMBDA_HEADS = ("λ", "fn")
 
-# Seed of the session alias map (short spelling → canonical name): the unicode
-# fold heads and π, expressed as ordinary `\alias`-mechanism entries instead of
-# hardcoded parser/prelude special cases (docs/grammar.md, `## Name aliases`).
+INFIX_LEVELS = frozenset({3, 4, 5, 6, 9, 10, 11, 12, 15})
+OperatorRegistry = dict[str, tuple[str, int]]
+
+
+# Seed spellings for the session alias map.
 ALIAS_SEED: dict[str, str] = {"Σ": "sum", "Π": "prod", "π": "pi", "∅": "emptyset",
                               "∀": "forall", "∃": "exists", "∫": "int", "∂": "diff"}
 
@@ -242,10 +245,11 @@ def _spelling(tok: Ident | Backslash) -> str:
 
 class _Parser:
     def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None,
-                 source: str = ""):
+                 source: str = "", operators: OperatorRegistry | None = None):
         self.tokens = tokens
         self.source = source
         self.pos = 0
+        self.operators = dict(operators or {})
         # Working alias map: the session's map (if given) layered over the seed.
         # `\alias`/`\dual` declarations mutate this dict; parse_program merges it
         # back into the caller's map only on a fully successful parse.
@@ -331,6 +335,8 @@ class _Parser:
 
     def _is_atom_starter(self) -> bool:
         tok = self.peek()
+        if self._custom_operator() is not None:
+            return False
         if isinstance(tok, Backslash) and tok.name in _INFIX_NAMES:
             return False
         if isinstance(tok, Delim):
@@ -395,6 +401,8 @@ class _Parser:
     # on one line. Mid-statement, expression parsing continues across lines.
     def statement(self, allow_let_function: bool = False) -> Node:
         tok = self.peek()
+        if isinstance(tok, Backslash) and tok.name == "infix":
+            return self._infix_statement()
         if isinstance(tok, Str) and isinstance(self.peek2(), Semi | Eof | Newline):
             # A string alone is a statement — ignored like a comment (docs/grammar.md).
             # A string followed by anything else (`"a" + "b"`) is an ordinary
@@ -437,6 +445,90 @@ class _Parser:
                     return defn
                 self.pos = saved  # not the def shape after all — reparse as an application
         return self.expr()
+
+    def _custom_operator(self) -> tuple[str, int] | None:
+        tok = self.peek()
+        spelling = (f"\\{tok.name}" if isinstance(tok, Backslash)
+                    else tok.ch if isinstance(tok, CustomOp) else None)
+        return self.operators.get(spelling)
+
+    def _infix_statement(self) -> Node:
+        head = self.advance()
+        if self.depth:
+            raise ParseError("`\\infix` declarations are top-level only", head.span)
+        self.expect(LParen, "`(`")
+        level = self.expect(Number, "an integer precedence")
+        level_text = level.text.lstrip("0")
+        if level_text not in {str(n) for n in INFIX_LEVELS}:
+            raise ParseError("infix precedence must be one of 3, 4, 5, 6, 9, 10, 11, 12, 15", level.span)
+        precedence = int(level_text)
+        self.expect(RParen, "`)`")
+        self._skip_newlines()
+        name = self.peek()
+        if not isinstance(name, (Backslash, CustomOp)):
+            raise self.error_at_current("expected a backslash name or unused mathematical glyph")
+        self.advance()
+        canonical = name.name if isinstance(name, Backslash) else name.ch
+        spellings = [f"\\{canonical}" if isinstance(name, Backslash) else canonical]
+        if (canonical in self.protected or canonical in self.aliases
+                or canonical in self.aliases.values()
+                or canonical in {"alias", "dual", "import", "pyimport", "fn", "λ"}):
+            raise ParseError(f"`{spellings[0]}` is protected or already aliased", name.span)
+        if isinstance(self.peek(), Comma):
+            if not isinstance(name, Backslash):
+                raise self.error_at_current("a paired declaration starts with a backslash name")
+            self.advance()
+            glyph = self.expect(CustomOp, "one unused mathematical glyph")
+            spellings.append(glyph.ch)
+        for spelling in spellings:
+            if spelling in self.operators or spelling in self.aliases:
+                raise ParseError(f"`{spelling}` is already declared", name.span)
+        self.expect(LParen, "`(`")
+        params, param_spellings = self._func_params()
+        if len(params) != 2 or len(set(params)) != 2:
+            raise ParseError("an infix function needs exactly two distinct parameters", name.span)
+        self.expect(Eq, "`=`")
+        for spelling in spellings:
+            self.operators[spelling] = (canonical, precedence)
+        body = self._func_body()
+        return FuncDef(name=canonical, params=params, body=body,
+                       spelling=spellings[0], param_spellings=param_spellings,
+                       span=head.span.to(body.span))
+
+    def _binary(self, level, operand, symbols, names, keys, association="left", right=None):
+        lhs = operand()
+        previous_nonassoc = False
+        consumed = False
+        while True:
+            if self._section(lhs, keys):
+                if consumed and association == "none":
+                    raise self.error_at_current("unexpected token: this operator does not chain; parenthesize one side")
+                break
+            custom = self._custom_operator()
+            op = symbols.get(type(self.peek())) or names.get(self._infix_name())
+            if custom is not None and custom[1] == level:
+                op = custom
+            elif op is None:
+                break
+            nonassoc = not isinstance(op, tuple) and association == "none"
+            if consumed and (previous_nonassoc or nonassoc):
+                raise self.error_at_current("unexpected token: this operator does not chain; parenthesize one side")
+            token = self.advance()
+            self._skip_newlines()
+            read_rhs = right if not isinstance(op, tuple) and association == "right" else operand
+            rhs = read_rhs()
+            if isinstance(op, tuple):
+                spelling = f"\\{token.name}" if isinstance(token, Backslash) else token.ch
+                head = BackslashRef(name=op[0], spelling=spelling, span=token.span)
+                lhs = Call(head=head, args=(lhs, rhs), span=lhs.span.to(rhs.span))
+            else:
+                if op in (CompareOperator.IN, CompareOperator.NOTIN):
+                    rhs = self._range_from(rhs, self.additive)
+                node = Compare if isinstance(op, CompareOperator) else BinOp
+                lhs = node(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+            consumed = True
+            previous_nonassoc = nonassoc
+        return lhs
 
     # import-stmt ::= "\\import" "(" string (":" member ("," member)*)? ")" ;
     # pyimport-stmt ::= "\\pyimport" "(" string ":" member ("," member)* ")" ;
@@ -512,7 +604,7 @@ class _Parser:
                 "`\\let` is a reserved statement form",
                 canonical_tok.span,
             )
-        if canonical in _INFIX_NAMES:
+        if canonical in _INFIX_NAMES or f"\\{canonical}" in self.operators:
             raise ParseError(
                 f"`\\{canonical}` is an infix operator and cannot be aliased",
                 canonical_tok.span)
@@ -783,39 +875,17 @@ class _Parser:
 
     # iff ::= implies ("↔" implies)? ; non-associative.
     def iff(self) -> Node:
-        lhs = self.implies()
-        if self._section(lhs, frozenset({"iff"})) or self._infix_name() != "iff":
-            return lhs
-        self.advance()
-        rhs = self.implies()
-        if self._infix_name() == "iff":
-            raise ParseError("`↔` does not chain; parenthesize one side", self.peek().span)
-        return BinOp(op=BinOperator.IFF, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+        return self._binary(3, self.implies, {}, {"iff": BinOperator.IFF}, frozenset({"iff"}), "none")
 
-    # implies ::= or ("→" implies)? ; right-associative.
     def implies(self) -> Node:
-        lhs = self.disjunction()
-        if self._section(lhs, frozenset({"implies"})) or self._infix_name() != "implies":
-            return lhs
-        self.advance()
-        rhs = self.implies()
-        return BinOp(op=BinOperator.IMPLIES, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+        return self._binary(4, self.disjunction, {}, {"implies": BinOperator.IMPLIES},
+                            frozenset({"implies"}), "right", self.implies)
 
-    # or ::= and ("∨" and)* ;
     def disjunction(self) -> Node:
-        return self._logic_chain("or", self.conjunction)
+        return self._binary(5, self.conjunction, {}, {"or": BinOperator.OR}, frozenset({"or"}))
 
-    # and ::= not ("∧" not)* ;
     def conjunction(self) -> Node:
-        return self._logic_chain("and", self.negation)
-
-    def _logic_chain(self, name: str, operand) -> Node:
-        lhs = operand()
-        while not self._section(lhs, frozenset({name})) and self._infix_name() == name:
-            self.advance()
-            rhs = operand()
-            lhs = BinOp(op=_LOGIC_INFIX[name], lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
-        return lhs
+        return self._binary(6, self.negation, {}, {"and": BinOperator.AND}, frozenset({"and"}))
 
     # not ::= "¬" not | range ;
     def negation(self) -> Node:
@@ -947,71 +1017,23 @@ class _Parser:
 
     # comparison ::= angle (("<" | ">" | "<=" | ">=" | "∈" | "⊆") additive)? ;
     def comparison(self) -> Node:
-        lhs = self.angle()
-        if self._section(lhs, _COMPARE_KEYS):
-            return lhs
-        ops = {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
-               Greater: CompareOperator.GT, GreaterEq: CompareOperator.GE}
-        if type(self.peek()) in ops:
-            op = ops[type(self.advance())]
-        elif self._infix_name() in _COMPARE_INFIX:
-            op = _COMPARE_INFIX[self._infix_name()]
-            self.advance()
-        else:
-            return lhs
-        rhs = self.angle()
-        if op in (CompareOperator.IN, CompareOperator.NOTIN):
-            rhs = self._range_from(rhs, self.additive)
-        return Compare(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+        return self._binary(9, self.angle,
+                            {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
+                             Greater: CompareOperator.GT, GreaterEq: CompareOperator.GE},
+                            _COMPARE_INFIX, _COMPARE_KEYS, "none")
 
-    # angle ::= additive ("∠" additive)? ; the polar form `r∠θ`, non-associative.
     def angle(self) -> Node:
-        lhs = self.additive()
-        if self._section(lhs, _ANGLE_KEYS) or self._infix_name() not in _ANGLE_INFIX:
-            return lhs
-        op = _ANGLE_INFIX[self._infix_name()]
-        self.advance()
-        rhs = self.additive()
-        return BinOp(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+        return self._binary(10, self.additive, {}, _ANGLE_INFIX, _ANGLE_KEYS, "none")
 
-    # additive ::= multiplicative (("+" | "-" | "∪" | "∖") multiplicative)* ;
     def additive(self) -> Node:
-        lhs = self.multiplicative()
-        while True:
-            if self._section(lhs, _ADDITIVE_KEYS):
-                break
-            if isinstance(self.peek(), Plus):
-                op = BinOperator.ADD
-            elif isinstance(self.peek(), Minus):
-                op = BinOperator.SUB
-            elif self._infix_name() in _ADDITIVE_INFIX:
-                op = _ADDITIVE_INFIX[self._infix_name()]
-            else:
-                break
-            self.advance()
-            rhs = self.multiplicative()
-            lhs = BinOp(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
-        return lhs
+        return self._binary(11, self.multiplicative,
+                            {Plus: BinOperator.ADD, Minus: BinOperator.SUB},
+                            _ADDITIVE_INFIX, _ADDITIVE_KEYS)
 
-    # multiplicative ::= juxtaposed (("*" | "/" | "@" | "∩") juxtaposed)* ;
     def multiplicative(self) -> Node:
-        lhs = self.juxtaposed()
-        while True:
-            tok = self.peek()
-            if self._section(lhs, _MULTIPLICATIVE_KEYS):
-                break
-            if isinstance(tok, Star):
-                op = BinOperator.MUL
-            elif isinstance(tok, Slash):
-                op = BinOperator.DIV
-            elif self._infix_name() in _MULTIPLICATIVE_INFIX:
-                op = _MULTIPLICATIVE_INFIX[self._infix_name()]
-            else:
-                break
-            self.advance()
-            rhs = self.juxtaposed()
-            lhs = BinOp(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
-        return lhs
+        return self._binary(12, self.juxtaposed,
+                            {Star: BinOperator.MUL, Slash: BinOperator.DIV},
+                            _MULTIPLICATIVE_INFIX, _MULTIPLICATIVE_KEYS)
 
     # juxtaposed ::= unary unary* ; — `-` is deliberately excluded from the starter set,
     # so `a - b` always parses as subtraction, never as `a * (-b)`. A Newline is not a
@@ -1034,14 +1056,13 @@ class _Parser:
 
     # power ::= postfix ("^" unary)? ; right-associative; exponent recurses into `unary`.
     def power(self) -> Node:
-        base = self.postfix()
-        if self._section(base, frozenset({"pow"})):
-            return base
-        if isinstance(self.peek(), Caret):
-            self.advance()
-            exp = self.unary()
-            return BinOp(op=BinOperator.POW, lhs=base, rhs=exp, span=base.span.to(exp.span))
-        return base
+        return self._binary(15, self._power_operand, {Caret: BinOperator.POW}, {},
+                            frozenset({"pow"}), "right", self.unary)
+
+    def _power_operand(self) -> Node:
+        if isinstance(self.peek(), Minus):
+            return self.unary()
+        return self.postfix()
 
     # postfix ::= atom ("(" args ")")* ;
     # Static application: a trailer attaches only to name-ish heads (Var/BackslashRef/
@@ -1184,7 +1205,7 @@ class _Parser:
 
     # superscript ::= "²" | "⁻¹" | "ⁿ⁺¹" | ... — the run's ASCII form read as an expression.
     def _exponent(self, tok: Superscript) -> Node:
-        sub = _Parser(list(tok.tokens), self.aliases, self.source)
+        sub = _Parser(list(tok.tokens), self.aliases, self.source, self.operators)
         exponent = sub.expr()
         sub.expect(Eof, "end of superscript")
         return exponent
@@ -1579,6 +1600,12 @@ class _Parser:
                 return self._array_literal(RAngle, "`⟩`")
             case HashBracket():
                 return self._array_literal(RBracket, "`]`")
+            case CustomOp():
+                self.advance()
+                declaration = self.operators.get(tok.ch)
+                if declaration is None:
+                    raise ParseError(f"undeclared operator `{tok.ch}`; declare it with `\\infix`", tok.span)
+                return BackslashRef(name=declaration[0], spelling=tok.ch, span=tok.span)
             case Backslash():
                 if tok.name in _INFIX_NAMES:
                     kind = "prefix" if tok.name == "not" else "infix"
@@ -1663,7 +1690,8 @@ class _Parser:
                 raise self.error_at_current(f"unexpected token {tok.describe}")
 
 
-def parse_program(src: str, aliases: dict[str, str] | None = None) -> Node:
+def parse_program(src: str, aliases: dict[str, str] | None = None,
+                  operators: OperatorRegistry | None = None) -> Node:
     """Tokenize and parse a complete program from source text.
 
     `aliases` is the session alias map (short spelling → canonical name); the parse
@@ -1671,7 +1699,8 @@ def parse_program(src: str, aliases: dict[str, str] | None = None) -> Node:
     the caller's dict only after a fully successful parse, so a failed or incomplete
     input leaves the session map untouched. `None` means a throwaway seed-only map —
     the right choice for scripts and imported modules, which do not inherit or export
-    session aliases (docs/grammar.md, `## Name aliases`)."""
+    session aliases (docs/grammar.md, `## Name aliases`). `operators` uses the same
+    registration rules for custom infix spellings and precedence."""
     try:
         tokens = tokenize(src)
     except UnterminatedString as e:
@@ -1680,8 +1709,10 @@ def parse_program(src: str, aliases: dict[str, str] | None = None) -> Node:
         raise IncompleteInput(e.msg, e.span) from e
     except LexError as e:
         raise ParseError(e.msg, e.span) from e
-    parser = _Parser(tokens, aliases, src)
+    parser = _Parser(tokens, aliases, src, operators)
     node = parser.program()
     if aliases is not None:
         aliases.update(parser.aliases)
+    if operators is not None:
+        operators.update(parser.operators)
     return node

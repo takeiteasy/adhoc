@@ -195,6 +195,11 @@ target language, see `DESIGN.md`. For the formal grammar, see `docs/grammar.md`.
   apply functions over ranges and collections, keeping the collection's kind
   (docs/grammar.md, `## Composition and partial application`).
 
+- Custom infix operators: `\infix(11) \blend, ⊕(a,b) = a+b` gives an ordinary
+  function a declared precedence and an optional paired glyph. Declarations persist
+  in the REPL and stay local to each script or imported module. See
+  [custom operators](operators.md) for allowed levels and examples.
+
 - Python interop converts collections both ways: lists, sets, and numpy arrays come back
   as arrays, sets, and tensors, and tensors, arrays, and sets go in as lists and
   frozensets (docs/numerics.md).
@@ -215,12 +220,13 @@ layout or document commands, and the set of `\`-names with language-defined mean
 and closed.
 
 The lexer itself carries no name table: any `\`+letters/underscores sequence tokenizes the
-same way, and meaning comes from three places — the parser's closed set of special forms
+same way. Meaning comes from the parser's closed set of special forms
 (`\sum`/`\prod`/`\lim` binders,
 `\py`, statement-shaped
 `\import`/`\pyimport`, the lambda heads `\λ`/`\fn`),
 the session alias map that normalizes short spellings to canonical
-names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`), and
+names (`Σ`→`\sum`, seeded and extended by `\alias`; docs/grammar.md, `## Name aliases`),
+the custom infix registry ([custom operators](operators.md)), and
 the prelude scope of
 built-in constants and function builtins (see docs/grammar.md, `## The prelude`).
 Everything else lexes cleanly and fails at evaluation as an unbound name, so later
@@ -228,10 +234,14 @@ phases add bindings without touching the lexer.
 
 ## Known limitations (not bugs)
 
+- Custom operators omit punctuation sequences and sections — see
+  [operator limitations](operators.md#limitations).
+
 - Collections have no range slicing (`v[2..3]`) — [#62](https://todo.sr.ht/~takeiteasy/adhoc/62).
 - Set construction and membership compare elements pairwise, quadratic in the set size —
   [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
-- Numeric calculus stops at finite bounds and order 2 — see docs/calculus.md, `## Limitations`.
+- Numeric derivatives stop at order 2; integrals support finite and upper-infinite
+  bounds — see docs/calculus.md, `## Limitations`.
 - `f⁻¹` on a user function gives one branch — see docs/calculus.md, `## Limitations`.
 - `/` is elementwise on tensors; matrix division is `\inv` or `\linsolve` (docs/stdlib.md).
 

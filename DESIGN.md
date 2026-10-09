@@ -289,7 +289,7 @@ The language extends beyond pure numeric evaluation: expressions can exist as un
 > g = f(a, _)                -- partial application: `_` is the placeholder
 > \body(f)                    -- reflection: returns f's underlying expression value
 < = a * b
-> \infix(7) ⊕(a, b) = a + b    -- user-defined infix operator, explicit precedence
+> \infix(11) ⊕(a, b) = a + b    -- user-defined infix operator, explicit precedence
 > 3 ⊕ 4
 < = 7
 ```
@@ -297,7 +297,7 @@ The language extends beyond pure numeric evaluation: expressions can exist as un
 - Function composition (`∘`/`\circ`, infix), higher-order functions (`\map`/`\fold`/`\filter`), and partial application (`f(a, _)`; `·` stays the contraction operator) all follow directly from functions already being first-class values.
 - Anonymous function literals are in the language today — `\λ(params) body` (ASCII `\fn(params) body`), with a parenthesized statement group as the explicit multi-statement body form; see docs/grammar.md, `## Lambdas`. They are the primitives composition, `\map`/`\fold`, and partial application build on.
 - `\body(f)` reflection returns a function's expression value (same type as `\expr(...)` produces) — a function is, under the hood, a bound parameter list plus an expression value.
-- Custom infix operators declare an explicit precedence per operator (`\infix(N) ⊕(a, b) = ...`) rather than sharing one fixed tier, trading a little more ceremony for Haskell-style fixity flexibility. The operator symbol itself (`⊕` here) is entirely the author's choice — nothing stops it from being ASCII (e.g. `\infix(7) <+>(a, b) = ...`); the `\`-sigil rule applies to *language-defined* operators/names, not user-defined ones. TODO: precedence numbering scheme (range, relation to built-in operators) not yet decided.
+- Custom infix operators use declared precedence and ordinary function semantics; see [the operator reference](docs/operators.md).
 
 ## exact arithmetic (internals)
 

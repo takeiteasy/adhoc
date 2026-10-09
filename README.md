@@ -55,8 +55,8 @@ Richardson–Fitch equality). Unevaluated expressions can be quoted with `\expr(
 function's body; `\reduce` beta-reduces quoted lambda terms
 ([language guide](docs/language.md)). Tensors (`[1, 2; 3, 4]`, `m'`, `m @ m`) arrays (`⟨1, "a", [2]⟩`), and sets (`{1, 2} ∪ {3}`) are built, as are composition (`f ∘ g`), partial application (`f(1, ·)`),
 and `\map`/`\filter`/`\fold`;
-symbolic rewriting and graphing are on the roadmap, not
-yet built. See [`ROADMAP.md`](ROADMAP.md).
+symbolic rewriting is implemented ([guide](docs/symbolic.md)); graphing is on the roadmap.
+See [`ROADMAP.md`](ROADMAP.md).
 
 ## Running it
 
@@ -88,12 +88,12 @@ statement to stderr — a window into the lowering.
 .venv/bin/python -m pytest
 ```
 
-The two heavyweight convergence tests are marked `slow`;
+Heavyweight tests are marked `slow`;
 `.venv/bin/python -m pytest -m "not slow"` runs the fast subset.
 
 ## Docs
 
-See [`docs/`](docs/) for the language reference, grammar, notation glyphs, standard library, calculus, symbolic rewriting, LaTeX output, architecture, and numerics notes.
+See [`docs/`](docs/) for the language reference, grammar, notation glyphs, standard library, custom operators, calculus, symbolic rewriting, LaTeX output, architecture, and numerics notes.
 
 ## License
 

@@ -10,16 +10,18 @@ anything unexpected is mapped back through the line table defensively.
 import traceback
 
 from .compiler import Compiled, compile_program
-from .parser import parse_program
+from .parser import OperatorRegistry, parse_program
 from .runtime import Engine, EvalError
 from .span import Span
 
 
-def compile_source(src: str, aliases: dict[str, str] | None = None) -> Compiled:
+def compile_source(src: str, aliases: dict[str, str] | None = None,
+                   operators: OperatorRegistry | None = None) -> Compiled:
     """Frontend + lowering in one step: source text → executable unit. `aliases` is
     the session alias map threaded through to `parse_program` (docs/grammar.md,
-    `## Name aliases`); scripts and imported modules pass None — seed aliases only."""
-    return compile_program(parse_program(src, aliases), src)
+    `## Name aliases`). `operators` carries custom infix declarations. Scripts and
+    imported modules use independent parsing declarations."""
+    return compile_program(parse_program(src, aliases, operators), src)
 
 
 def execute(compiled: Compiled, env: dict, modules: dict | None = None,
@@ -59,10 +61,12 @@ def _map_unexpected(e: Exception, compiled: Compiled) -> EvalError:
 def run_source(src: str, env: dict | None = None,
                modules: dict | None = None,
                base_dir: str | None = None,
-               aliases: dict[str, str] | None = None) -> list[str]:
+               aliases: dict[str, str] | None = None,
+               operators: OperatorRegistry | None = None) -> list[str]:
     """Convenience for callers that just want text in, strings out. `aliases` threads
     the session alias map across calls so `\\alias`/`\\dual` spellings persist, exactly
-    as the REPL keeps them alongside `env`."""
+    as the REPL keeps them alongside `env`. Pass the same `operators` registry to
+    preserve custom infix syntax across calls."""
     if env is None:
         env = {}
-    return execute(compile_source(src, aliases), env, modules, base_dir)
+    return execute(compile_source(src, aliases, operators), env, modules, base_dir)

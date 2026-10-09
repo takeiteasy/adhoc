@@ -22,6 +22,7 @@ unclosed parenthesis.
 """
 
 from dataclasses import dataclass, field, replace
+from unicodedata import category
 
 from .span import Span
 from .syntax import ASCII_SUBSCRIPTS, SUBSCRIPTS, is_ascii_subscript_char
@@ -320,6 +321,15 @@ class InfixOp(Token):
     @property
     def describe(self) -> str:
         return f"`{_GLYPH_SYMBOLS[self.name]}`"
+
+
+@dataclass(frozen=True)
+class CustomOp(Token):
+    ch: str
+
+    @property
+    def describe(self) -> str:
+        return f"`{self.ch}`"
 
 
 @dataclass(frozen=True)
@@ -761,6 +771,11 @@ def tokenize(src: str) -> list[Token]:
         if cls is not None:
             end = pos + len(c.encode("utf-8"))
             tokens.append(cls(span=Span(pos, end)))
+            i += 1
+            continue
+
+        if not c.isascii() and c != "≡" and category(c) == "Sm":
+            tokens.append(CustomOp(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
             i += 1
             continue
 

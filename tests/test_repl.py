@@ -164,3 +164,19 @@ def test_unclosed_set_literal_continues(tmp_path):
     out = run_repl("{1,\n2}\n", tmp_path).stdout
     assert "... " in out
     assert "< = {1, 2}" in out
+
+
+def test_infix_declarations_persist_and_continue(tmp_path):
+    result = run_repl('\\infix(11) \\blend, ⊕(a,b)=\na+b\n2 ⊕ 3\nf=⊕\nf(4,5)\n', tmp_path)
+    assert result.returncode == 0
+    assert '... ' in result.stdout
+    assert '< = 5' in result.stdout
+    assert '< = 9' in result.stdout
+    assert not result.stderr
+
+
+def test_cancelled_infix_declaration_leaves_no_syntax(tmp_path):
+    result = run_repl('\\infix(11) ⊕(a,b)=\n\n2 ⊕ 3\n4+5\n', tmp_path)
+    assert '-- input cancelled' in result.stdout
+    assert 'undeclared operator `⊕`' in result.stdout
+    assert '< = 9' in result.stdout

@@ -122,8 +122,8 @@ tree.
   and operators as function values (`\fold(+, xs)`, `(+)`) are implemented.
 - Reflection: `\body(f)` is implemented for user-defined functions and lambdas.
 - Lambda term reduction: `\reduce(e)` beta-reduces expression quotes.
-- Custom infix operators: `\infix(N) ⊕(a, b) = ...` with declared precedence.
-  - Open: precedence numbering scheme (range, relation to built-in operators).
+- Custom infix operators are implemented with declared precedence and optional paired glyphs
+  ([reference](docs/operators.md), [limitations](docs/operators.md#limitations)).
 
 ### phase 5 — graphing
 

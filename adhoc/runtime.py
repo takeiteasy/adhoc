@@ -232,7 +232,7 @@ _NUMERIC_TYPES = (int, float, complex, Fraction, Gaussian, Symbolic, Algebraic, 
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"let", "expr", "eval", "contract", "times", "otimes", "arr", "cup", "cap", "setminus",
+RESERVED_NAMES = frozenset({"infix", "let", "expr", "eval", "contract", "times", "otimes", "arr", "cup", "cap", "setminus",
                            "in", "subseteq", "circ", "mod", "angle", "and", "or", "not", "implies",
                            "iff", "neq", "approx", "notin", "subset",
                            "supseteq", "supset"})
@@ -3190,6 +3190,9 @@ class Engine:
         if name == "pyimport":
             self._fail(f"`{label}` binds Python members: "
                        "\\pyimport(\"math\": \\sqrt)", sid)
+        if name == "infix":
+            self._fail(f"`{label}` declares an operator at top level: "
+                       "\\infix(11) \\blend(a,b) = a+b", sid)
         if name == "alias":
             self._fail(f"`{label}` declares short spellings at top level: "
                        "\\alias \\sum, σ", sid)

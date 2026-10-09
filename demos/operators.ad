@@ -1,0 +1,17 @@
+"Custom operators are ordinary two-argument functions"
+\infix(11) \blend, ⊕(a,b) = a+b
+2 ⊕ 3*4
+\blend(2,3)
+f = ⊕
+f = \blend
+\map(f(·,2), ⟨1,2,3⟩)
+\eval(\expr(2 ⊕ 3))
+
+"Recursion uses the declared spelling inside the body"
+\infix(12) ⊙(a,b) = b <= 0 ? 0 : a + (a ⊙ (b-1))
+3 ⊙ 4
+
+"Custom operators associate left; exponentiation associates right"
+\infix(15) ⊞(a,b) = a+b
+2 ⊞ 3^2
+2^3 ⊞ 2

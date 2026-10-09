@@ -33,6 +33,8 @@ written against — it should stay in lockstep with the code.
   glyph, and its own name otherwise (`x_b`, `x_ib`). A `_` with no alphanumeric after it is
   the placeholder. A subscript glyph with no letter before it is a lex error. `ab` is still
   `a * b`, and `∅` lexes as an identifier that aliases `\emptyset`. See `docs/notation.md`.
+- An unused non-ASCII Unicode mathematical symbol (`Sm`) is a custom operator glyph.
+  Existing lexical meanings and `≡` stay reserved; see [custom operators](operators.md).
 - A **superscript run** (`²`, `⁻¹`, `ⁿ⁺¹`, `⁽ⁿ⁺¹⁾`: digits, letters, `⁺ ⁻ ⁽ ⁾`) is one token,
   sugar for `^` with the run read as an expression. A run without digits or letters is a lex
   error. `ᵀ` is not part of a run: it is the transpose `'`.
@@ -76,6 +78,7 @@ statement  ::= func-def
              | import-stmt
              | pyimport-stmt
              | spelling-directive
+             | infix-stmt
              | string
              | name "=" expr
              | expr ;
@@ -89,6 +92,10 @@ alias-stmt  ::= "\alias" name "," single-char ("," single-char)* ;
 dual-stmt   ::= "\dual" name "," single-char params? "=" statement (";" statement)* ;
 single-char ::= identifier ;                (* aliases are one-character letters *)
 name        ::= identifier | "\"-name ;
+infix-stmt  ::= "\infix" "(" integer ")" operator-name ("," operator-glyph)?
+                "(" name "," name ")" "=" statement (";" statement)* ;
+operator-name ::= "\"-name | operator-glyph ;
+operator-glyph ::= unused-mathematical-symbol ;
 
 expr       ::= ternary ;
 ternary    ::= iff ("?" ternary ":" ternary)? ;   (* right-associative *)
@@ -233,10 +240,12 @@ A parenthesized composition is a call head: `(f ∘ g)(x)` applies. Unparenthesi
 `f ∘ g(x)` composes `f` with the result of `g(x)`.
 
 `ATOM_STARTERS` (the set of tokens `juxtaposed` treats as "another factor follows") is
-`number`, `string`, `identifier`, `\`-name, `√`, `∛`, `∜`, `(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
+`number`, `string`, `identifier`, `\`-name, a custom operator glyph, `√`, `∛`, `∜`,
+`(`, `[`, `{`, `⟨`, and `#[` — deliberately **not** `-` or `'`, so `a - b` always
 parses as subtraction, never as `a * (-b)`. A string juxtaposed with anything (`"a" "b"`)
 parses as the multiplication it spells and dies as the usual typed "strings are not
 numbers" at evaluation — the same shape as any other string reaching a numeric operator.
+Declared custom operator spellings end a juxtaposition run and parse as infix instead.
 
 ## Delimited forms
 
@@ -680,6 +689,34 @@ forms `(+)(·, 1)` and `(^)(2, ·)`.
 | Radical | `(√ x)`, `(∛ x)` are calls, not sections; postfix `!` `‼` have none either |
 | Quotes | A section is the hole form: `\expr((+ 1))` prints `\expr((+)(·, 1))` |
 
+
+## Custom infix operators
+
+`\infix(N)` defines an ordinary two-argument function with infix syntax:
+
+```text
+\infix(11) \blend, ⊕(a,b) = a+b
+2 ⊕ 3*4                  -- 14
+\blend(2,3)              -- 5
+```
+
+An operator has a backslash name, an unused mathematical glyph, or a backslash
+name paired with one glyph. Parameter names are distinct. Valid integer levels
+are **3, 4, 5, 6, 9, 10, 11, 12, 15**, using the table above. At each selected
+level, the expression grammar also accepts the declared operator.
+
+Custom operators associate left; built-ins retain their own association. Mixed
+chains involving a non-associative built-in at the same level require parentheses.
+Custom calls evaluate both operands and use ordinary function scoping, recursion,
+values, and partial application. Built-in sections keep their existing syntax.
+
+Declarations are top-level and affect their body and later statements. The REPL
+retains them; scripts and imported modules have independent parsing declarations.
+A complete successful parse publishes declarations, including when subsequent
+evaluation fails. Failed or incomplete parses publish nothing.
+
+See [custom operators](operators.md) for spelling rules, examples, API state, and
+[limitations](operators.md#limitations).
 
 ## Conditionals: the ternary
 
@@ -1127,12 +1164,11 @@ non-numeric values never compare equal unless identical — strings by content.
 
 ## Deferred
 
-Symbolic algebra, graphing.
+Graphing.
 `==` and `!=` do not exist: `≠` / `\neq` is the inequality operator, and the binding
 rule's check is the only equality, with tier-aware semantics: exact for
 the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)
 and the Richardson–Fitch heuristic for any RRA-involved pair (docs/numerics.md).
-User-declarable *operator* spellings ride the phase-4 custom
-infix operators — `\alias` covers names only. Name aliases
-and `\dual` are built today (see `## Name aliases`).
-See `ROADMAP.md` and the tracker for the phase each lands in.
+Custom infix declarations are described in [custom operators](operators.md).
+Name aliases cover names only (see `## Name aliases`).
+See `ROADMAP.md` for planned work.
