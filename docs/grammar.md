@@ -205,9 +205,14 @@ Each delimited form is an atom that rewrites to a prelude call over the whole br
 | `\|x\|` | `\abs(x)` |
 | `‖x‖` `∥x∥` | `\norm(x)` |
 
+`|x|` and `\abs(x)` return scalar magnitude or complex modulus. For a square
+matrix they return its signed determinant; other tensor shapes are errors.
+`‖x‖` and `∥x∥` return the norm.
+
 ```
 |1 - |2 - 5||     ->  = 2
 |2||3|            ->  = 6
+|[1, 2; 3, 4]|   ->  = -2
 2⌊3/2⌋            ->  = 2
 ‖[3, 4]‖          ->  = 5
 ```

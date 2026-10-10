@@ -3,6 +3,7 @@ import pytest
 from adhoc.driver import run_source
 from adhoc.parser import IncompleteInput, ParseError, parse_program
 from adhoc.runtime import EvalError
+from adhoc.span import Span
 from adhoc.syntax import BackslashRef, BinOp, BinOperator, Call
 
 
@@ -92,6 +93,42 @@ def test_a_delimited_line_break_continues():
     assert ev("⌊\n3/2\n⌋") == "= 1"
 
 
-def test_bars_of_a_matrix_are_an_error():
-    with pytest.raises(EvalError):
-        run_source("|[1, 2; 3, 4]|", {})
+@pytest.mark.parametrize("matrix, expected", [
+    ("[1, 2; 3, 4]", "= -2"),
+    ("[1, 2; 2, 4]", "= 0"),
+    ("[-5;]", "= -5"),
+    ("[1/2, 1; 1, 3]", "= 1/2"),
+    ("[i, 0; 0, 1]", "= i"),
+    ("[√2, 1; 1, √2]", "= 1"),
+    ("[0, 2.; 1, 0]", "= -2.0"),
+])
+def test_matrix_bars_and_abs_return_the_signed_determinant(matrix, expected):
+    assert ev(f"\\det({matrix})") == expected
+    assert ev(f"|{matrix}|") == expected
+    assert ev(f"\\abs({matrix})") == expected
+
+
+def test_matrix_bars_in_functions_quotes_and_products():
+    env = {}
+    run_source("a = [1, 2; 3, 4]; f(x) = |x|", env)
+    assert ev("|a|", env) == "= -2"
+    assert ev("f(a)", env) == "= -2"
+    assert ev("f(-3)", env) == "= 3"
+    assert ev("|a||a|", env) == "= 4"
+    assert ev("||a||", env) == "= 2"
+    assert ev("\\eval(\\expr(|a|))", env) == "= -2"
+    assert ev("‖a‖ ≈ √30", env) == "= true"
+
+
+@pytest.mark.parametrize("tensor, message", [
+    ("[1, 2]", "needs a matrix"),
+    ("[1, 2, 3; 4, 5, 6]", "square matrix, got shape 2x3"),
+    ("[[1, 2; 3, 4], [5, 6; 7, 8]]", "needs a matrix"),
+])
+@pytest.mark.parametrize("form", ["|{}|", "\\abs({})"])
+def test_abs_rejects_invalid_tensor_shapes_at_the_call(tensor, message, form):
+    call = form.format(tensor)
+    source = f"π + {call}"
+    with pytest.raises(EvalError, match=message) as error:
+        run_source(source, {})
+    assert error.value.span == Span(len("π + ".encode()), len(source.encode()))

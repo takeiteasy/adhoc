@@ -41,7 +41,7 @@ for parsing rules and the [standard library](stdlib.md) for functions.
 | Glyph | ASCII | Meaning | Level |
 |---|---|---|---|
 | `⌊x⌋` `⌈x⌉` | `\floor(x)` `\ceil(x)` | floor and ceiling | atom |
-| `\|x\|` | `\abs(x)` | absolute value, complex modulus | atom |
+| `\|x\|` | `\abs(x)` | scalar magnitude, complex modulus or square-matrix determinant | atom |
 | `‖v‖` `∥v∥` | `\norm(v)` | 2-norm of a vector, Frobenius norm of a matrix | atom |
 | `%` | `\mod` | floored modulo | with `*` |
 | `×` | `\times` `\cross(a, b)` | cross product of 3-vectors; scalar multiple with a scalar operand | with `*` |
@@ -131,7 +131,6 @@ See [operator values](grammar.md#operator-values) for application rules.
 
 ## Limitations
 
-- `|A|` on a square matrix is an error, not the determinant — [#7](https://github.com/takeiteasy/adhoc/issues/7).
 - Set-builder separators and absolute-value bars share `|`. Write `{a*|b|}`
   for a product; `{a |b|}` is read as a set-builder.
 - `f⁻¹` gives one branch — [#17](https://github.com/takeiteasy/adhoc/issues/17).

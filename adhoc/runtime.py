@@ -2606,6 +2606,8 @@ def _simplified(v: AdValue) -> AdValue:
 
 
 def _abs_call(v: AdValue) -> AdValue:
+    if isinstance(v, TensorValue):
+        return _linalg(linalg.det, _SCALARS, v)
     _reject_non_numeric(v)
     if isinstance(v, complex):
         return abs(v)

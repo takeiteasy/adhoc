@@ -45,6 +45,8 @@ m'
 -- linear algebra is exact over the rationals
 a = [2, 1; 1, 3]
 \det(a)
+|a|
+\abs(a)
 \inv(a)
 \linsolve(a, [3, 5])
 \rank([1, 2; 2, 4])

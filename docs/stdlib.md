@@ -165,7 +165,7 @@ Paired functions support `⁻¹` inverses: `\exp⁻¹` is `\ln` and `\sinh⁻¹`
 | `\trunc(x)` | Round toward zero | `\trunc(-5/2)` → `-2` |
 | `\round(x)` | Nearest integer; ties away from zero | `\round(-5/2)` → `-3` |
 | `\round(x, n)` | Round to `n` decimal places; negative `n` allowed | `\round(22/7, 2)` → `157/50` |
-| `\abs(x)`, `\|x\|` | Magnitude or complex modulus | `\|3+4i\|` → `5` |
+| `\abs(x)`, `\|x\|` | Scalar magnitude, complex modulus or [matrix determinant](#matrix-operations) | `\|3+4i\|` → `5` |
 | `\sign(x)` | Sign: `-1`, `0` or `1` | `\sign(-\pi)` → `-1` |
 
 Integer-rounding operations return exact integers for exact inputs.
@@ -182,12 +182,16 @@ Gaussian and symbolic entries. Float matrices choose pivots by magnitude.[^pivot
 
 | Function | Result | Example |
 |---|---|---|
-| `\det(A)`, `\tr(A)` | Determinant or trace of a square matrix | `\det([1, 2; 3, 4])` → `-2` |
+| `\det(A)`, `\abs(A)`, `\|A\|` | Signed determinant of a square matrix | `\|[1, 2; 3, 4]\|` → `-2` |
+| `\tr(A)` | Trace of a square matrix | `\tr([1, 2; 3, 4])` → `5` |
 | `\inv(A)` | Inverse; singular matrices produce an error | `\inv([1, 2; 3, 4])` → `[-2, 1; 3/2, -1/2]` |
 | `\linsolve(A, b)` | Solve `A x = b`; `b` is a vector or matrix of right-hand sides | `\linsolve([2, 1; 1, 3], [3, 5])` → `[4/5, 7/5]` |
 | `\rank(A)`, `\rref(A)` | Rank or reduced row echelon form | `\rank([1, 2; 2, 4])` → `1` |
 | `\eig(A)` | Array of eigenvalue, multiplicity and basis-matrix records | `\eig([5;])` → `⟨⟨5, 1, [1;]⟩⟩` |
 | `\norm(x)`, `‖x‖` | Vector 2-norm, matrix Frobenius norm or scalar magnitude | `\norm([3, 4])` → `5` |
+
+`\abs(A)` and `|A|` reject vectors, nonsquare matrices and higher-order tensors.
+Use `‖A‖` for the matrix Frobenius norm.
 
 `A⁻¹` is elementwise exponentiation. Use `\inv(A)` for matrix inversion.
 See [eigenvalues and eigenvectors](eigen.md) for record indexing and exact/float

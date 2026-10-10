@@ -33,6 +33,7 @@ def test_names():
 def test_functions_and_delimiters():
     assert tex(r"\tex(\expr(\sin(x) + \asin(y)))") == r"\sin\left(x\right) + \arcsin\left(y\right)"
     assert tex(r"\tex(\expr(|x| + ⌊y⌋))") == r"\left| x \right| + \left\lfloor y \right\rfloor"
+    assert tex(r"\tex(\expr(|A|))") == r"\left| A \right|"
     assert tex(r"\tex(\expr(\myfn(x, 1)))") == r"\operatorname{myfn}\left(x, 1\right)"
 
 
