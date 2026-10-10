@@ -191,7 +191,7 @@ import sympy
 import types
 from typing import Any, Callable, NoReturn
 
-from . import algebraic, gauss, linalg, rra, symbolic
+from . import algebraic, eigen, gauss, linalg, rra, symbolic
 from . import tensor as tn
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
@@ -3023,6 +3023,43 @@ def _larger(a: AdValue, b: AdValue) -> bool:
 _SCALARS = linalg.Scalars(nadd, nsub, nmul, ndiv, lambda v: neq(v, 0), _larger, _is_inexact)
 
 
+def _eigen_records(spaces: list[tuple], convert: Callable) -> ArrayValue:
+    records = []
+    for value, multiplicity, columns in spaces:
+        n, k = len(columns[0]), len(columns)
+        basis = TensorValue((n, k), tuple(convert(columns[c][r])
+                                         for r in range(n) for c in range(k)))
+        records.append(ArrayValue((convert(value), int(multiplicity), basis)))
+    return ArrayValue(tuple(records))
+
+
+def _exact_eig(t: TensorValue) -> ArrayValue:
+    rows = linalg._square(t, "\\eig")
+    spaces = eigen.exact([[value_to_sympy(v) for v in row] for row in rows])
+    return _eigen_records(spaces, lambda v: _sympy_to_ad(v, "exact eigenvalue or eigenvector entry"))
+
+
+def _eig_call(*args: AdValue) -> ArrayValue:
+    from . import rewrite
+
+    _takes("eig", args, 1, 1, "1 argument")
+    t = args[0]
+    rows = _linalg(linalg._square, t, "\\eig")
+    _linalg(linalg._size, t.shape)
+    for value in t.items:
+        _reject_non_numeric(value)
+    if any(_is_inexact(value) for value in t.items):
+        try:
+            converted = [[_to_complex(v) for v in row] for row in rows]
+        except (OverflowError, ValueError, TypeError) as error:
+            raise NumError("\\eig cannot convert entries to finite floats") from error
+        return _eigen_records(_linalg(eigen.numerical, converted), _inexact)
+    try:
+        return _linalg(rewrite.run_limited, _exact_eig, t)
+    except rewrite.RewriteError as error:
+        raise NumError(f"\\eig {error}") from None
+
+
 def _norm_call(v: AdValue) -> AdValue:
     if not isinstance(v, TensorValue):
         return _abs_call(v)
@@ -3065,6 +3102,7 @@ def _matrix_fn(name: str, f: Callable, arity: int, scalars: bool = True) -> Prel
 
 
 PRELUDE.update({
+    "eig": PreludeFn("eig", _eig_call),
     "det": _matrix_fn("det", linalg.det, 1),
     "inv": _matrix_fn("inv", linalg.inv, 1),
     "tr": _matrix_fn("tr", linalg.trace, 1),

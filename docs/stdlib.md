@@ -186,10 +186,12 @@ Gaussian and symbolic entries. Float matrices choose pivots by magnitude.[^pivot
 | `\inv(A)` | Inverse; singular matrices produce an error | `\inv([1, 2; 3, 4])` → `[-2, 1; 3/2, -1/2]` |
 | `\linsolve(A, b)` | Solve `A x = b`; `b` is a vector or matrix of right-hand sides | `\linsolve([2, 1; 1, 3], [3, 5])` → `[4/5, 7/5]` |
 | `\rank(A)`, `\rref(A)` | Rank or reduced row echelon form | `\rank([1, 2; 2, 4])` → `1` |
+| `\eig(A)` | Array of eigenvalue, multiplicity and basis-matrix records | `\eig([5;])` → `⟨⟨5, 1, [1;]⟩⟩` |
 | `\norm(x)`, `‖x‖` | Vector 2-norm, matrix Frobenius norm or scalar magnitude | `\norm([3, 4])` → `5` |
 
 `A⁻¹` is elementwise exponentiation. Use `\inv(A)` for matrix inversion.
-See [limitations](#limitations) for float matrices and eigenvalues.
+See [eigenvalues and eigenvectors](eigen.md) for record indexing and exact/float
+behavior, and [limitations](#limitations) for computation limits.
 
 ### Tensor construction and shape
 
@@ -221,7 +223,9 @@ tensors to 1,000,000 entries.
 - Float elimination tests pivots against exact zero. Nearly singular float
   matrices can invert to huge values, and `\rank` can count round-off:
   [#5](https://github.com/takeiteasy/adhoc/issues/5).
-- Eigenvalue computation (`\eig`) is not implemented:
+- Exact `\eig` computations depend on symbolic solvability and the time budget;
+  float eigenpairs do not certify multiplicity or independence. See
+  [eigensystem limitations](eigen.md#limitations):
   [#6](https://github.com/takeiteasy/adhoc/issues/6).
 - Complex-anchor `\lim` probes eight fixed rays. A body that vanishes on those
   angles can pass despite having no limit; finite probes cannot prove a limit.

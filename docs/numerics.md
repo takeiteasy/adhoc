@@ -24,6 +24,9 @@ imaginary part collapses to its real component. Exact tiers contain no infinity.
 A float operand selects float or complex float arithmetic, including equality.
 Complex values are not ordered.[^dispatch]
 
+`\eig(A)` preserves the exact tiers for exact matrices. Any float entry selects
+numerical computation for the whole matrix; see [eigensystems](eigen.md).
+
 Tensors contain scalars from any tier. Scalar arithmetic applies elementwise,
 with scalar broadcasting; contraction uses the same exact scalar operations.
 See [tensors](grammar.md#tensors).
@@ -350,5 +353,5 @@ alive.
     components. Python booleans are checked before integers because `bool`
     subclasses `int`.
 
-[^ndarray]: Detection uses the module name and `tolist`; the runtime does not
-    import NumPy. Tests use the `dev` extra and skip without NumPy.
+[^ndarray]: Array conversion detects the module name and uses `tolist`.
+    NumPy is a runtime dependency and supplies numerical eigenpairs for `\eig`.

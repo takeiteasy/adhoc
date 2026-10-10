@@ -1,0 +1,15 @@
+-- eigen.ad — eigenvalue, multiplicity and basis-column records
+-- run with: adhoc run demos/eigen.ad
+
+a = [1, 1; 0, 1]
+x = \eig(a)
+x[1][2]
+b = x[1][3]
+v = b[..,1]
+w = a @ v
+w = x[1][1] v
+
+\eig(\eye(2))
+\eig([0, -1; 1, 0])
+\eig([\pi, 1; 1, 0])
+\eig([2., 1; 1, 3])

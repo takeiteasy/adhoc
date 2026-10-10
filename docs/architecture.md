@@ -33,6 +33,7 @@ See [runtime lowering](lowering.md) for the operation mapping.
 | `tex` | LaTeX rendering of syntax and values |
 | `tensor` | Tensors, arrays and sets; indexing, slicing and tensor operations |
 | `linalg` | Matrix elimination, constructors and tensor products |
+| `eigen` | SymPy exact eigensystems and NumPy numerical eigenpairs on backend scalars |
 | `runtime` | Numeric dispatch, `Engine`, lazy ranges, Python interop and numeric calculus |
 | `gauss` | Gaussian rationals using exact component arithmetic |
 | `symbolic` | Rational coefficient times one recognized SymPy atom |
