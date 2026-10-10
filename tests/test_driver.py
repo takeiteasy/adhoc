@@ -180,7 +180,7 @@ def test_env_persists_across_executions():
 
 def test_float_literal_display_parity_through_driver():
     # Exact decimals collapse through the tower (`0.5 + 0.5` is the integer 1);
-    # the float spellings keep f64 display parity (ticket #42).
+    # the float spellings keep f64 display parity (ticket #42 (old, not migrated)).
     assert last("0.5 + 0.5") == "= 1"
     assert last("1. + 1.") == "= 2.0"
     assert last("5e-1 + 5e-1") == "= 1.0"
@@ -241,7 +241,7 @@ def test_fold_loop_variable_scopes_like_a_parameter():
     with pytest.raises(EvalError, match="`j` is not bound"):
         run_source("j", {})
     # The conventional binder name `i` shadows the imaginary unit inside the
-    # fold and restores it after (ticket #42's collision rule).
+    # fold and restores it after (ticket #42 (old, not migrated)'s collision rule).
     assert last("\\sum(i=1..3) i*k", env) == "= 594"
     assert last("i") == "= i"
     assert last("i*i") == "= -1"
@@ -260,7 +260,7 @@ def test_infinite_zeta_demo_converges_within_display_precision():
 
 @pytest.mark.slow
 def test_infinite_zeta_tail_estimate_beats_the_plateau(monkeypatch):
-    # Ticket #32: the tail estimator (not the raw plateau) stops zeta(2):
+    # Ticket #32 (old, not migrated): the tail estimator (not the raw plateau) stops zeta(2):
     # with the term budget cut 10x, the corrected value is still ~1e-9
     # accurate — the plateau alone would land ~1e-6 off after ~10^6 terms.
     import adhoc.runtime as runtime
@@ -280,7 +280,7 @@ def test_infinite_neg_and_cubic_sums_converge(monkeypatch):
 
 
 def test_infinite_alternating_sum_uses_the_leibniz_bound(monkeypatch):
-    # Ticket #32: strictly alternating shrinking terms stop on the Leibniz
+    # Ticket #32 (old, not migrated): strictly alternating shrinking terms stop on the Leibniz
     # tail bound with the midpoint correction — provably bounded, and the
     # bound is magnitude-independent (the near-zero attempt: stopping reads
     # the tail, never the partial's size).
@@ -804,7 +804,7 @@ def test_symbolic_domain_errors_are_typed_and_spanned():
 
 def test_symbolic_complex_results_are_values():
     # Fractional powers of negatives and ln of a negative are exact values
-    # now — the odd-root real branch and the complex principal (ticket #42).
+    # now — the odd-root real branch and the complex principal (ticket #42 (old, not migrated)).
     assert last("\\sqrt(-1)") == "= i"
     assert last("√(-2)") == "= 1.4142135623731...i"
     assert last("\\ln(-1)") == "= 3.14159265358979...i"

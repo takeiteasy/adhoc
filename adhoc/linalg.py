@@ -64,7 +64,7 @@ def _eliminate(s: Scalars, rows: list[list], width: int) -> tuple[list[list], li
     rows, the pivot columns, and the product of the pivots with the sign of the row swaps —
     the determinant when every column pivoted."""
     # TODO: float pivots are tested against exact zero; a tolerance for near-singular
-    # float matrices needs a design decision (ticket #98)
+    # float matrices needs a design decision (ticket https://github.com/takeiteasy/adhoc/issues/5)
     rows = [list(row) for row in rows]
     by_size = any(s.inexact(v) for row in rows for v in row)
     pivots: list[int] = []

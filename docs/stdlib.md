@@ -220,9 +220,9 @@ tensors to 1,000,000 entries.
 
 - Float elimination tests pivots against exact zero. Nearly singular float
   matrices can invert to huge values, and `\rank` can count round-off:
-  [#98](https://todo.sr.ht/~takeiteasy/adhoc/98).
+  [#5](https://github.com/takeiteasy/adhoc/issues/5).
 - Eigenvalue computation (`\eig`) is not implemented:
-  [#99](https://todo.sr.ht/~takeiteasy/adhoc/99).
+  [#6](https://github.com/takeiteasy/adhoc/issues/6).
 - Complex-anchor `\lim` probes eight fixed rays. A body that vanishes on those
   angles can pass despite having no limit; finite probes cannot prove a limit.
 

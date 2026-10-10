@@ -131,12 +131,12 @@ See [operator values](grammar.md#operator-values) for application rules.
 
 ## Limitations
 
-- `|A|` on a square matrix is an error, not the determinant — [#100](https://todo.sr.ht/~takeiteasy/adhoc/100).
+- `|A|` on a square matrix is an error, not the determinant — [#7](https://github.com/takeiteasy/adhoc/issues/7).
 - Set-builder separators and absolute-value bars share `|`. Write `{a*|b|}`
   for a product; `{a |b|}` is read as a set-builder:
-  [#79](https://todo.sr.ht/~takeiteasy/adhoc/79).
-- `f⁻¹` gives one branch — [#117](https://todo.sr.ht/~takeiteasy/adhoc/117).
-- `\tex` of function powers: `\sin²(x)` and non-callable heads render as a power of the call — [#116](https://todo.sr.ht/~takeiteasy/adhoc/116).
+  #79 (old, not migrated).
+- `f⁻¹` gives one branch — [#17](https://github.com/takeiteasy/adhoc/issues/17).
+- `\tex` of function powers: `\sin²(x)` and non-callable heads render as a power of the call — [#16](https://github.com/takeiteasy/adhoc/issues/16).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
     spelling: `x⁻¹⁰` is `x^-10`, `2ⁿᵏ` is `2^(n k)`. Glyphs exist for every letter but `q`

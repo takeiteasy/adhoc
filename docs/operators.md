@@ -79,9 +79,9 @@ spelling.
 ## Limitations
 
 - Punctuation sequences such as `<+>` are deferred —
-  [#124](https://todo.sr.ht/~takeiteasy/adhoc/124).
+  [#20](https://github.com/takeiteasy/adhoc/issues/20).
 - Custom operator sections such as `(⊕ 2)` and `(2 ⊕)` are deferred; use
-  `⊕(·,2)` and `⊕(2,·)` — [#125](https://todo.sr.ht/~takeiteasy/adhoc/125).
+  `⊕(·,2)` and `⊕(2,·)` — [#21](https://github.com/takeiteasy/adhoc/issues/21).
 
 [^registry]: The Python APIs `parse_program`, `compile_source`, and `run_source`
     accept `operators=`. Pass the same dictionary across calls to preserve syntax;

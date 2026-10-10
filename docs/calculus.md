@@ -99,10 +99,10 @@ the root with the larger real part wins. For `f(x) = x^2`, `f⁻¹(4)` is `2`;
 
 | Limit | Ticket |
 |---|---|
-| Integral bounds are finite or upper-infinite `a..`; no `-\inf` or whole-line bounds | [#101](https://todo.sr.ht/~takeiteasy/adhoc/101) |
-| Numeric derivatives above order 2 are errors; symbolic derivatives support higher orders | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
-| `f⁻¹` returns one branch; no set-valued inverse | [#117](https://todo.sr.ht/~takeiteasy/adhoc/117) |
-| `\diff` at a kink returns the mean slope: `\diff(x=0) \|x\|` is `0.0` | [#103](https://todo.sr.ht/~takeiteasy/adhoc/103) |
+| Integral bounds are finite or upper-infinite `a..`; no `-\inf` or whole-line bounds | [#8](https://github.com/takeiteasy/adhoc/issues/8) |
+| Numeric derivatives above order 2 are errors; symbolic derivatives support higher orders | [#9](https://github.com/takeiteasy/adhoc/issues/9) |
+| `f⁻¹` returns one branch; no set-valued inverse | [#17](https://github.com/takeiteasy/adhoc/issues/17) |
+| `\diff` at a kink returns the mean slope: `\diff(x=0) \|x\|` is `0.0` | [#10](https://github.com/takeiteasy/adhoc/issues/10) |
 
 [^ridders]: Ridders' method uses central differences with a step shrinking by
     1.4 per row, combined by Richardson extrapolation. It keeps the entry with

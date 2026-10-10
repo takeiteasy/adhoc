@@ -261,7 +261,7 @@ script or module. See [custom operators](operators.md) for precedence and exampl
 - Custom operators omit punctuation sequences and sections; see
   [operator limitations](operators.md#limitations).
 - Set construction and membership compare elements pairwise; construction is
-  quadratic in set size: [#64](https://todo.sr.ht/~takeiteasy/adhoc/64).
+  quadratic in set size: [#4](https://github.com/takeiteasy/adhoc/issues/4).
 - Numeric derivatives stop at order 2. Integrals support finite and
   upper-infinite bounds. Function inversion returns one branch; see
   [calculus limitations](calculus.md#limitations).

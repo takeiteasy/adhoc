@@ -33,7 +33,7 @@ coefficient×atom form in normal operation. Anything transcendental (`π + 1`,
 tries the RRA tier next, which holds every real and every finite complex number.
 The tier holds complex algebraics too (`(-2)^(1/2)` arrives as `√2·i` when the
 symbolic tier has no single-term shape for it); real odd roots of negatives
-take the real branch one layer up, at the seam (ticket #42).
+take the real branch one layer up, at the seam (ticket #42 (old, not migrated)).
 
 ## The gate
 
@@ -51,7 +51,7 @@ Two failure kinds, both internal — the seam converts them:
 ## Display
 
 `show` prints 15 significant digits, expanded positionally, with a trailing
-ellipsis — the same policy as the symbolic tier (ticket #40's iterative
+ellipsis — the same policy as the symbolic tier (ticket #40 (old, not migrated)'s iterative
 tightening and `\\prec(n)` apply to the RRA tier only, never here).
 """
 
@@ -64,7 +64,7 @@ import sympy
 from .gauss import Gaussian, make, to_sympy
 
 # Significant digits shown before the ellipsis — the symbolic tier's policy
-# (DESIGN.md display examples); ticket #40 governs RRA display, not this tier.
+# (DESIGN.md display examples); ticket #40 (old, not migrated) governs RRA display, not this tier.
 DISPLAY_DIGITS = 15
 
 
@@ -151,7 +151,7 @@ def _to_expr(v) -> sympy.Expr:
 
 def _check_domain(expr: sympy.Expr) -> None:
     """Reject non-finite values — zoo/oo/nan have no exact-tier representation.
-    Complex algebraics are admitted (ticket #42)."""
+    Complex algebraics are admitted (ticket #42 (old, not migrated))."""
     if expr.has(sympy.zoo, sympy.nan) or expr.is_finite is False:
         raise DomainError("the exact tiers have no infinity")
 
@@ -190,7 +190,7 @@ def combine(op: str, a, b) -> Fraction | Gaussian | Algebraic:
     Raises DomainError for `1/0`-shaped inputs (`div` by zero, `0⁻ⁿ`) with the
     seam's canonical message. Fractional powers of negative bases take the
     complex path; odd-denominator rationals take the real branch one layer up,
-    at the seam (ticket #42)."""
+    at the seam (ticket #42 (old, not migrated))."""
     x, y = _to_expr(a), _to_expr(b)
     if op == "div" and y == 0:
         raise DomainError("division by zero")

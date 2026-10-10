@@ -119,12 +119,12 @@ path.[^worker]
 
 | Limit | Ticket |
 |---|---|
-| One unknown; no systems of equations | [#112](https://todo.sr.ht/~takeiteasy/adhoc/112) |
-| `\solve(e)` solves `e = 0`; `lhs = rhs` is not equation syntax | [#113](https://todo.sr.ht/~takeiteasy/adhoc/113) |
-| Infinite solution families are errors; no real-domain option | [#114](https://todo.sr.ht/~takeiteasy/adhoc/114) |
-| No time limit on Windows | [#122](https://todo.sr.ht/~takeiteasy/adhoc/122) |
-| Gradients are arrays of quotes without vector algebra | [#121](https://todo.sr.ht/~takeiteasy/adhoc/121) |
-| Numeric derivatives above order 2 are errors | [#102](https://todo.sr.ht/~takeiteasy/adhoc/102) |
+| One unknown; no systems of equations | [#13](https://github.com/takeiteasy/adhoc/issues/13) |
+| `\solve(e)` solves `e = 0`; `lhs = rhs` is not equation syntax | [#14](https://github.com/takeiteasy/adhoc/issues/14) |
+| Infinite solution families are errors; no real-domain option | [#15](https://github.com/takeiteasy/adhoc/issues/15) |
+| No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
+| Gradients are arrays of quotes without vector algebra | [#18](https://github.com/takeiteasy/adhoc/issues/18) |
+| Numeric derivatives above order 2 are errors | [#9](https://github.com/takeiteasy/adhoc/issues/9) |
 
 [^worker]: Each rewrite runs in a forked child that is killed at the limit.
     This also enforces the timeout off the main thread. Forking adds per-call

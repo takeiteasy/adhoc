@@ -1,4 +1,4 @@
-"""The numeric type surface (ticket #42): exact decimals, the trailing-dot
+"""The numeric type surface (ticket #42 (old, not migrated)): exact decimals, the trailing-dot
 float marker, the exact complex tower, and the odd-root real branch — at the
 driver level, the way the language presents them."""
 
@@ -265,7 +265,7 @@ def test_seam_complex_tiers():
     assert isinstance(nmul(PRELUDE["pi"], i), Symbolic)
 
 
-# --- exact modulus and argument of trig-built values (ticket #91) ---
+# --- exact modulus and argument of trig-built values (ticket #91 (old, not migrated)) ---
 
 
 @pytest.mark.parametrize("src, out", [

@@ -243,7 +243,7 @@ def test_string_ordering_is_typed_error():
 
 
 def test_string_display_round_trips_through_lexer():
-    # #28 + #30 together: what binds is what a later literal spells the same way.
+    # #28 (old, not migrated) + #30 (old, not migrated) together: what binds is what a later literal spells the same way.
     env: dict = {}
     assert run_source('x = "a\\"b\\\\c"', env) == ['x = "a\\"b\\\\c"']
 
