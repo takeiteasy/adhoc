@@ -31,6 +31,12 @@ Tensors contain scalars from any tier. Scalar arithmetic applies elementwise,
 with scalar broadcasting; contraction uses the same exact scalar operations.
 See [tensors](grammar.md#tensors).
 
+Matrix elimination preserves exact pivots for exact coefficient matrices.
+Any float or complex-float coefficient selects a relative machine-precision
+pivot cutoff; right-hand sides do not affect that choice. See
+[linear algebra](stdlib.md#linear-algebra) for singularity behavior and examples.
+The cutoff is independent of `\prec` and is not user-configurable.
+
 ## Powers and roots
 
 Integer exponents preserve exactness, including negative exponents: `2^-1` is

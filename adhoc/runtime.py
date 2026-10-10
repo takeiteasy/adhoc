@@ -3022,7 +3022,29 @@ def _larger(a: AdValue, b: AdValue) -> bool:
     return ncompare("gt", _abs_call(a), _abs_call(b))
 
 
-_SCALARS = linalg.Scalars(nadd, nsub, nmul, ndiv, lambda v: neq(v, 0), _larger, _is_inexact)
+def _pivot_zero(rows: list[list], width: int) -> Callable:
+    for row in rows:
+        for value in row:
+            if _is_inexact(value) and not cmath.isfinite(value):
+                raise NumError("matrix elimination needs finite numeric entries")
+    coefficients = [v for row in rows for v in row[:width]]
+    if not any(_is_inexact(v) for v in coefficients):
+        return lambda v: neq(v, 0)
+    scale = 0
+    for value in coefficients:
+        magnitude = _abs_call(value)
+        if ncompare("gt", magnitude, scale):
+            scale = magnitude
+    if neq(scale, 0):
+        return lambda v: neq(v, 0)
+    # TODO: original-scale pivots miss elimination growth; use growth bounds or QR/SVD
+    # (https://github.com/takeiteasy/adhoc/issues/22).
+    tolerance = max(len(rows), width) * sys.float_info.epsilon
+    return lambda v: ncompare("le", ndiv(_abs_call(v), scale), tolerance)
+
+
+_SCALARS = linalg.Scalars(nadd, nsub, nmul, ndiv, lambda v: neq(v, 0), _larger,
+                         _is_inexact, _pivot_zero)
 
 
 def _eigen_records(spaces: list[tuple], convert: Callable) -> ArrayValue:
