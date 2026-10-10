@@ -112,7 +112,7 @@ def test_rra_exact_tier_domain_errors_are_typed():
         ndiv(nadd(PI_SYM, 1), 0)
     # Complex results are values now: ln of a negative RRA stays exact, and
     # fractional powers of negatives take the odd-root real branch or the
-    # complex principal (ticket #42 (old, not migrated)).
+    # complex principal.
     assert isinstance(PRELUDE["ln"](nneg(nadd(PI_SYM, 1))), RRA)
     assert nshow(npow(-2, Fraction(1, 2))) == "1.4142135623731...i"
 

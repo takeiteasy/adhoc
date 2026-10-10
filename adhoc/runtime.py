@@ -134,8 +134,7 @@ are likewise one key reached as a `Var` and as a `BackslashRef`. `√` is not a 
 at all but the prefix-operator spelling of `\\sqrt(...)`. Prelude names
 are permanently protected — they can never be rebound or shadowed, so a parameter,
 local, or binder named like a prelude entry is a redefinition error — with one
-exception: `i` may be bound anywhere, shadowing the unit in that scope (ticket
-#42 (old, not migrated)'s collision rule — the same clash as any other identifier, handled the same
+exception: `i` may be bound anywhere, shadowing the unit in that scope (the collision rule — the same clash as any other identifier, handled the same
 way). Both spellings resolve through the one key, so a shadow covers both: inside
 an `i`-binder body the unit is spelled `\\complex(0, 1)`.
 
@@ -227,7 +226,7 @@ FOLD_LABELS = {"add": "\\sum", "mul": "\\prod", "and": "\\forall", "or": "\\exis
 
 _NUMERIC_TYPES = (int, float, complex, Fraction, Gaussian, Symbolic, Algebraic, RRA)
 
-#: The one shadowable prelude name (ticket #42 (old, not migrated)): `i` may be bound at any binding
+#: The one shadowable prelude name: `i` may be bound at any binding
 #: site, shadowing the imaginary unit in that scope — the collision between the
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
@@ -1459,7 +1458,7 @@ def _quadrature(evaluate: Callable[[float], AdValue], lo: float, hi: float | Non
         add((a + b) / 2, b)
 
 
-# Tail-estimation knobs for infinite-range folds (ticket #32 (old, not migrated)). The raw
+# Tail-estimation knobs for infinite-range folds. The raw
 # consecutive-partial plateau cannot see a slow tail (zeta(2)'s increments drop
 # under the tolerance a million terms before the tail does), so infinite folds
 # get a second, earlier-only exit: estimate the limit from the recent terms'

@@ -214,7 +214,7 @@ def _to_expr(v) -> sympy.Expr:
 
 def _check_domain(expr: sympy.Expr) -> None:
     """Reject non-finite values — zoo/oo/nan have no exact-tier representation.
-    Complex values are admitted (ticket #42 (old, not migrated))."""
+    Complex values are admitted."""
     if expr.has(sympy.zoo, sympy.nan) or expr.is_finite is False:
         raise DomainError("the exact tiers have no infinity")
 
@@ -271,7 +271,7 @@ def combine(op: str, a, b) -> Fraction | Gaussian | RRA:
     Raises DomainError for `1/0`-shaped inputs (`div` by zero, `0⁻ⁿ`) with the
     seam's canonical message. Fractional powers of negative bases take the
     complex path; odd-denominator rationals take the real branch one layer up,
-    at the seam (ticket #42 (old, not migrated))."""
+    at the seam."""
     x, y = _to_expr(a), _to_expr(b)
     if op == "div" and y == 0:
         raise DomainError("division by zero")
@@ -395,7 +395,7 @@ def structurally_equal(a, b) -> bool:
     return _to_expr(a) == _to_expr(b)
 
 
-# Richardson–Fitch probe tolerances (ticket #41 (old, not migrated)): the difference of two
+# Richardson–Fitch probe tolerances: the difference of two
 # RRA-involved values is evaluated at escalating precision and treated as
 # equal while indistinguishable from zero. Three probes from the seam's
 # convergence scale down to 1e-50 balance confidence against cost — a

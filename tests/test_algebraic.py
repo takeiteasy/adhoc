@@ -104,7 +104,7 @@ def test_algebraic_display_is_truncated_digits_plus_ellipsis():
 def test_algebraic_exact_tier_domain_errors_are_typed():
     # The exact tiers have no infinity: `0⁻ⁿ` stays the same failure as
     # `1/0`. Fractional powers of negatives are values now — the odd-root
-    # real branch and the complex principal (ticket #42 (old, not migrated)).
+    # real branch and the complex principal.
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
         npow(0, Fraction(-1, 2))
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
@@ -127,7 +127,7 @@ def test_algebraic_equality_is_exact():
 
 
 def test_algebraic_unexpanded_powers_compare_by_minimal_polynomial():
-    # Ticket #41 (old, not migrated) audit: sympy stores these equal pairs differently (powers
+    # Audit: sympy stores these equal pairs differently (powers
     # left unexpanded), so structural `==` misses them — the
     # minimal-polynomial fallback decides them exactly.
     assert neq(npow(nadd(1, SQRT2), 2), nadd(3, nmul(2, SQRT2)))

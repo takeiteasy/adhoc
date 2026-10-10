@@ -48,7 +48,7 @@ def test_numbers():
 
 def test_trailing_dot_number_is_a_float_marker():
     # `1.` is the explicit float literal (float 1.0); a second dot is still
-    # the range operator (ticket #42 (old, not migrated)).
+    # the range operator.
     tokens = tokenize("1.")
     assert [type(t).__name__ for t in tokens] == ["Number", "Eof"]
     assert tokens[0].text == "1."

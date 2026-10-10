@@ -232,7 +232,7 @@ def combine(op: str, a: int | Fraction | Gaussian | Symbolic,
     Raises DomainError for `1/0`-shaped inputs (`div` by zero, `0⁻ⁿ`) with the
     seam's canonical message. Fractional powers of negative bases now take the
     complex path (`(-2)^(1/2)` is `√2·i`); odd-denominator rationals take the
-    real branch one layer up, at the seam (`ticket #42 (old, not migrated)`)."""
+    real branch one layer up, at the seam."""
     x, y = _to_expr(a), _to_expr(b)
     if op == "div" and y == 0:
         raise DomainError("division by zero")

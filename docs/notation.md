@@ -133,8 +133,7 @@ See [operator values](grammar.md#operator-values) for application rules.
 
 - `|A|` on a square matrix is an error, not the determinant — [#7](https://github.com/takeiteasy/adhoc/issues/7).
 - Set-builder separators and absolute-value bars share `|`. Write `{a*|b|}`
-  for a product; `{a |b|}` is read as a set-builder:
-  #79 (old, not migrated).
+  for a product; `{a |b|}` is read as a set-builder.
 - `f⁻¹` gives one branch — [#17](https://github.com/takeiteasy/adhoc/issues/17).
 - `\tex` of function powers: `\sin²(x)` and non-callable heads render as a power of the call — [#16](https://github.com/takeiteasy/adhoc/issues/16).
 

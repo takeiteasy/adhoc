@@ -179,7 +179,7 @@ def test_small_magnitude_display_expands_positionally():
 def test_parse_literal_tiers_by_dot():
     assert parse_literal("42") == 42
     assert isinstance(parse_literal("42"), int)
-    # Decimals are exact (ticket #42 (old, not migrated)): a dotted literal is a rational read
+    # Decimals are exact: a dotted literal is a rational read
     # from its own digits, collapsing when whole; the float spellings are the
     # trailing-dot marker and any exponent form.
     assert parse_literal("0.5") == Fraction(1, 2)
@@ -318,7 +318,7 @@ def test_settled_float_tier_rejects_non_finite_deltas():
 
 
 def test_settled_float_tier_scales_relatively_at_large_magnitude():
-    # Ticket #32 (old, not migrated): an absolute 1e-12 is below float64 resolution for large
+    # An absolute 1e-12 is below float64 resolution for large
     # values (ulp at 1e9 is ~1e-7), so the plateau scales with magnitude —
     # while O(1) and near-zero values keep the absolute floor.
     assert _settled(1e9, 1e9 + 1e-4)  # relative: 1e-4 <= 1e-12 * 1e9
@@ -335,7 +335,7 @@ def test_agree_allows_two_plateau_radii_but_not_more():
 
 
 def test_agree_scales_with_the_plateau_test():
-    # Ticket #32 (old, not migrated): each side may stop a relative tolerance from the truth, so
+    # Each side may stop a relative tolerance from the truth, so
     # the two-side bound scales the same way — O(1) behavior pinned above is
     # unchanged, large-magnitude sides get the relative bound.
     assert _agree(1e9, 1e9 + 1.5e-3)
@@ -493,14 +493,14 @@ def test_symbolic_without_closed_form_stays_rra():
 def test_symbolic_exact_tier_domain_errors_are_typed():
     # The exact tiers have no infinity: 0⁻ⁿ is a typed NumError (the float
     # tier would yield NaN). Fractional powers of negatives are values now:
-    # the odd-root real branch and the complex principal (ticket #42 (old, not migrated)).
+    # the odd-root real branch and the complex principal.
     with pytest.raises(NumError, match=DIVISION_BY_ZERO):
         npow(0, Fraction(-1, 2))
 
 
 def test_negative_base_rational_powers():
     # Odd-denominator exponents take the real branch; even-denominator ones
-    # the complex principal (ticket #42 (old, not migrated)).
+    # the complex principal.
     assert npow(-8, Fraction(1, 3)) == -2
     assert npow(-8, Fraction(2, 3)) == 4
     assert nshow(npow(-2, Fraction(1, 2))) == "1.4142135623731...i"
@@ -561,8 +561,7 @@ def test_prelude_builtins_recognize_exact_forms():
 
 
 def test_prelude_builtins_domain_errors():
-    # Domain failures stay typed; sqrt of a negative is a value now (ticket
-    # #42 (old, not migrated)), so only ln(0)/tan(π/2) remain domain errors.
+    # Domain failures stay typed; sqrt of a negative is a value now, so only ln(0)/tan(π/2) remain domain errors.
     with pytest.raises(NumError, match="defined only for positive"):
         PRELUDE["ln"](0)
     with pytest.raises(NumError, match="odd multiples of pi/2"):
