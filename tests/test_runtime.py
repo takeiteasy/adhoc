@@ -15,6 +15,7 @@ from adhoc.runtime import (
     _to_ad,
     ndiv,
     neq,
+    ncompare,
     nneg,
     npow,
     nshow,
@@ -34,6 +35,54 @@ from adhoc.runtime import (
 
 def rat(n: int, d: int) -> Fraction:
     return Fraction(n, d)
+
+
+@pytest.mark.parametrize("kind", ["integer", "rational", "symbolic", "algebraic", "rra"])
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_large_exact_float_comparisons(kind, sign):
+    values = {
+        "integer": 10**1000,
+        "rational": Fraction(10**1000, 3),
+        "symbolic": nmul(10**1000, PI_SYM),
+        "algebraic": nmul(10**1000, npow(2, Fraction(1, 3))),
+        "rra": nmul(10**1000, nadd(PI_SYM, 1)),
+    }
+    exact = nmul(sign, values[kind])
+    for floating in (0.0, -0.0, 1.0, -1.0, float.fromhex('0x1.fffffffffffffp+1023'),
+                     -float.fromhex('0x1.fffffffffffffp+1023'), math.inf, -math.inf, math.nan):
+        assert neq(exact, floating) is False
+        assert neq(floating, exact) is False
+        for op in ("lt", "le", "gt", "ge"):
+            if math.isnan(floating):
+                expected = False
+            else:
+                greater = floating == -math.inf or (math.isfinite(floating) and sign > 0)
+                expected = greater if op in ("gt", "ge") else not greater
+            assert ncompare(op, exact, floating) is expected
+            reverse = {"lt": "gt", "le": "ge", "gt": "lt", "ge": "le"}[op]
+            assert ncompare(reverse, floating, exact) is expected
+
+
+def test_mixed_comparisons_preserve_float_rounding():
+    for exact, floating in ((PI_SYM, math.pi), (2**53 + 1, float(2**53)),
+                            (Fraction(1, 10), 0.1), (Fraction(1, 10**1000), 0.0),
+                            (Fraction(10**1000 + 1, 10**1000), 1.0)):
+        for a, b in ((exact, floating), (floating, exact)):
+            assert neq(a, b) is True
+            assert ncompare("le", a, b) is True
+            assert ncompare("ge", a, b) is True
+            assert ncompare("lt", a, b) is False
+            assert ncompare("gt", a, b) is False
+
+
+@pytest.mark.parametrize("a,b", [(math.inf, math.inf), (-math.inf, -math.inf),
+                                  (0, -0.0), (0.0, -0.0)])
+def test_equal_float_states(a, b):
+    assert neq(a, b) is True
+    assert ncompare("le", a, b) is True
+    assert ncompare("ge", a, b) is True
+    assert ncompare("lt", a, b) is False
+    assert ncompare("gt", a, b) is False
 
 
 # --- ports of num.rs's test suite ---

@@ -21,7 +21,8 @@ Arithmetic chooses the lowest tier that can represent the result exactly.
 
 A rational with denominator 1 collapses to an integer. A complex value with zero
 imaginary part collapses to its real component. Exact tiers contain no infinity.
-A float operand selects float or complex float arithmetic, including equality.
+A float operand selects float or complex float arithmetic. Mixed comparisons
+use float rounding when conversion stays finite; see [comparisons](#comparisons).
 Complex values are not ordered.[^dispatch]
 
 `\eig(A)` preserves the exact tiers for exact matrices. Any float entry selects
@@ -124,8 +125,32 @@ probe the modulus. Statement-level `=` uses this policy. See
 [limitations](#limitations) for its accuracy ceiling.[^rra-equality]
 
 Real ordering uses exact SymPy relations rather than the equality heuristic.
-A float operand selects float equality first. A real float compares unequal to a
-complex value with a nonzero imaginary part.
+Mixed float comparisons follow the [comparison rules](#comparisons).
+
+## Comparisons
+
+Equality and ordering with a float operand compare float-rounded values when
+the exact operand converts to a finite float. For example, `π` equals its float
+approximation `3.141592653589793e0`, and `2^53+1` equals `9007199254740992.`.
+Very small exact values can round to zero.
+
+If the exact operand exceeds float range, real comparisons preserve the exact
+value and compare the finite float as an exact binary rational.[^mixed-comparison]
+Every finite exact value is less than `Inf`, greater than `-Inf`, and unequal
+to either. Equality and ordering with `NaN` return `false`.
+
+```text
+10^1000 > 1.                -> = true
+10^1000 < \inf              -> = true
+r = 10^1000; r = 1.         -> false
+```
+
+Complex-float equality uses float-rounded components when conversion stays
+finite. An exact value compares unequal if a component exceeds float range or
+the complex float contains infinity or NaN. Complex floats with matching
+infinity components compare equal; NaN components never compare equal.
+A real float compares unequal to an exact complex value with a nonzero
+imaginary part. Complex values are not ordered.
 
 ## Convergence
 
@@ -304,6 +329,11 @@ alive.
 - Cancellation near removable singularities can prevent numeric limits from
   stabilizing. Simplify the body before probing.
 - Empty, ragged and non-numeric NumPy arrays cannot become tensors.
+
+[^mixed-comparison]: Comparison conversion handles both `OverflowError` and a
+    conversion that silently returns infinity. Finite floats convert with
+    `Fraction`, preserving their binary value; the numeric seam then uses its
+    existing exact-tier equality and ordering dispatch.
 
 [^dispatch]: `adhoc/runtime.py` exposes the numeric operations (`nadd`, `nsub`,
     `nmul`, `ndiv`, `npow`, `nneg`, `neq`, `nshow`). Evaluation uses these functions

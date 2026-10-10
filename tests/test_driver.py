@@ -512,6 +512,25 @@ def test_binding_rule_is_the_tower_not_the_type():
     assert last("t = \\true; t = 1", env) == "true"  # bools compare as Python ints
 
 
+@pytest.mark.parametrize("source,expected", [
+    ("10^1000 > 1.", "= true"),
+    ("1. < 10^1000", "= true"),
+    ("-10^1000 <= -1.", "= true"),
+    ("r = 10^1000; r = 1.", "false"),
+    ("r = 1.; r = 10^1000", "false"),
+    (r"r = 10^1000; r = \inf", "false"),
+    (r"10^1000*π < \inf", "= true"),
+    (r"10^1000 > \nan", "= false"),
+    ("r = 10^1000+i; r = 1.+i", "false"),
+    ("r = ⟨10^1000⟩; r = ⟨1.⟩", "false"),
+    ("r = [10^1000]; r = [1.]", "false"),
+    ("r = {10^1000}; r = {1.}", "false"),
+    ("r = {10^1000, 1.}; r = {1., 10^1000}", "true"),
+])
+def test_large_mixed_comparisons_through_driver(source, expected):
+    assert last(source) == expected
+
+
 def test_let_binds_fresh_and_rejects_duplicates():
     env: dict = {}
     assert last("\\let x = 1", env) == "x = 1"

@@ -8,7 +8,8 @@ import pytest
 from fractions import Fraction
 
 from adhoc.driver import run_source
-from adhoc.runtime import EvalError
+from adhoc.gauss import Gaussian
+from adhoc.runtime import EvalError, PRELUDE, neq, nmul, nadd, npow, ncompare, NumError
 
 
 def last(src: str, env: dict | None = None) -> str:
@@ -167,6 +168,41 @@ def test_complex_float_equality():
     assert last("z = 1+i", env) == "true"
     assert last("z = 1.+2.i", env) == "false"
     assert last("1.+i ≈ 1+i") == "= true"
+
+
+@pytest.mark.parametrize("kind", ["real", "gaussian", "symbolic", "algebraic", "rra"])
+def test_large_exact_complex_float_equality(kind):
+    values = {
+        "real": 10**1000,
+        "gaussian": Gaussian(1, Fraction(10**1000, 3)),
+        "symbolic": nmul(nmul(10**1000, PRELUDE["pi"]), Gaussian(0, 1)),
+        "algebraic": nmul(10**1000, npow(-2, Fraction(1, 4))),
+        "rra": nadd(1, nmul(nmul(10**1000, PRELUDE["pi"]), Gaussian(0, 1))),
+    }
+    exact = values[kind]
+    for floating in (1+1j, complex(math.inf, 1), complex(1, math.inf),
+                     complex(-math.inf, -math.inf), complex(math.nan, 1),
+                     complex(1, math.nan)):
+        assert neq(exact, floating) is False
+        assert neq(floating, exact) is False
+        with pytest.raises(NumError, match="complex values are not ordered"):
+            ncompare("lt", exact, floating)
+
+
+def test_complex_float_nonfinite_equality():
+    for value in (complex(math.inf, 1), complex(1, -math.inf)):
+        assert neq(value, value) is True
+        assert neq(Gaussian(1, 1), value) is False
+        assert neq(value, Gaussian(1, 1)) is False
+    for value in (complex(math.nan, 1), complex(1, math.nan)):
+        assert neq(value, value) is False
+
+
+def test_complex_float_equality_preserves_rounding():
+    exact = Gaussian(2**53 + 1, Fraction(1, 10))
+    floating = complex(2**53, 0.1)
+    assert neq(exact, floating) is True
+    assert neq(floating, exact) is True
 
 
 def test_complex_float_projections():

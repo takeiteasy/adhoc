@@ -628,6 +628,22 @@ def _to_float(v: AdValue) -> float:
     return float(v)
 
 
+def _comparison_pair(a: AdValue, b: AdValue) -> tuple[AdValue, AdValue]:
+    if any(isinstance(v, float) and not math.isfinite(v) for v in (a, b)):
+        # Exact values are finite; zero preserves their relation to NaN and infinities.
+        return (a if isinstance(a, float) else 0,
+                b if isinstance(b, float) else 0)
+    try:
+        fa, fb = float(a), float(b)
+        if math.isfinite(fa) and math.isfinite(fb):
+            return fa, fb
+    except OverflowError:
+        pass
+    # Keep overflowing exact values finite; floats become exact binary rationals.
+    return (Fraction(a) if isinstance(a, float) else a,
+            Fraction(b) if isinstance(b, float) else b)
+
+
 def _to_complex(v: AdValue) -> complex:
     if isinstance(v, complex):
         return v
@@ -1084,12 +1100,25 @@ def neq(a: AdValue, b: AdValue) -> bool:
     if not isinstance(a, _NUMERIC_TYPES) or not isinstance(b, _NUMERIC_TYPES):
         return a is b  # callables and other exotics compare by identity
     if isinstance(a, complex) or isinstance(b, complex):
-        return _to_complex(a) == _to_complex(b)
+        if _is_inexact(a) and _is_inexact(b):
+            return a == b
+        inexact = a if _is_inexact(a) else b
+        if not all(math.isfinite(part) for part in (inexact.real, inexact.imag)):
+            return False
+        try:
+            ca, cb = _to_complex(a), _to_complex(b)
+        except OverflowError:
+            return False
+        return (all(math.isfinite(part) for part in (ca.real, ca.imag, cb.real, cb.imag))
+                and ca == cb)
     if _is_float(a) or _is_float(b):
         if _is_complex(a) or _is_complex(b):
             # A float is real; a complex value's imaginary part never vanishes.
             return False
-        return _to_float(a) == _to_float(b)
+        a, b = _comparison_pair(a, b)
+        if isinstance(a, float) or isinstance(b, float):
+            return a == b
+        return neq(a, b)
     if isinstance(a, RRA) or isinstance(b, RRA):
         # Richardson–Fitch heuristic (DESIGN `## exact arithmetic`): structural
         # identity first, then escalating `approximate` probes on the
@@ -1897,7 +1926,9 @@ def ncompare(op: str, a: AdValue, b: AdValue) -> bool:
     if _is_complex(a) or _is_complex(b):
         raise NumError("complex values are not ordered")
     if isinstance(a, float) or isinstance(b, float):
-        a, b = float(a), float(b)
+        a, b = _comparison_pair(a, b)
+        if not isinstance(a, float) and not isinstance(b, float):
+            return ncompare(op, a, b)
     elif isinstance(a, RRA) or isinstance(b, RRA):
         # Exact ordering across the exact + symbolic + algebraic + RRA
         # tiers (a float operand takes the approximate float branch
