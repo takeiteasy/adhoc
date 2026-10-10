@@ -250,6 +250,7 @@ def reduce_expression(value: ExpressionValue) -> ExpressionValue:
         raise ReduceError("\\reduce needs an expression quote")
     node = _encode(value.node, ())
     # TODO: Each beta step rescans the AST; use a zipper if large terms matter.
+    # https://github.com/takeiteasy/adhoc/issues/3
     for steps in range(STEP_CAP + 1):
         node, changed = _reduce_once(node)
         if not changed:

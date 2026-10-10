@@ -1,6 +1,6 @@
 # Roadmap
 
-The tracker records ticket status. This page groups the implementation by phase
+[GitHub issues](https://github.com/takeiteasy/adhoc/issues) record ticket status. This page groups the implementation by phase
 and lists planned or unscheduled work. See the [language guide](docs/language.md)
 for supported features and [design](DESIGN.md) for the language model.
 
