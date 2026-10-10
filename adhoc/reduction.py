@@ -44,6 +44,10 @@ def _children(node: Node, transform):
     return replace(node, **changes) if changes else node
 
 
+def _diff_order(node: Node, transform) -> dict:
+    return {"order": transform(node.order)} if isinstance(node, Diff) and node.order is not None else {}
+
+
 def _encode(node: Node, context: tuple[str, ...]) -> Node:
     if isinstance(node, _STATEMENTS):
         raise ReduceError("\\reduce needs an expression without statements")
@@ -61,7 +65,8 @@ def _encode(node: Node, context: tuple[str, ...]) -> Node:
                        body=_encode(node.body, (node.var,) + context))
     if isinstance(node, Limit | Diff):
         return replace(node, point=_encode(node.point, context),
-                       body=_encode(node.body, (node.var,) + context))
+                       body=_encode(node.body, (node.var,) + context),
+                       **_diff_order(node, lambda child: _encode(child, context)))
     if isinstance(node, SetBuilder):
         inner = (node.var,) + context
         return replace(node, domain=_encode(node.domain, context),
@@ -82,7 +87,8 @@ def _shift(node: Node, amount: int, depth: int = 0) -> Node:
                        body=_shift(node.body, amount, depth + 1))
     if isinstance(node, Limit | Diff):
         return replace(node, point=_shift(node.point, amount, depth),
-                       body=_shift(node.body, amount, depth + 1))
+                       body=_shift(node.body, amount, depth + 1),
+                       **_diff_order(node, lambda child: _shift(child, amount, depth)))
     if isinstance(node, SetBuilder):
         return replace(node, domain=_shift(node.domain, amount, depth),
                        element=None if node.element is None
@@ -108,7 +114,8 @@ def _substitute(node: Node, args: tuple[Node, ...], depth: int = 0) -> Node:
                        body=_substitute(node.body, args, depth + 1))
     if isinstance(node, Limit | Diff):
         return replace(node, point=_substitute(node.point, args, depth),
-                       body=_substitute(node.body, args, depth + 1))
+                       body=_substitute(node.body, args, depth + 1),
+                       **_diff_order(node, lambda child: _substitute(child, args, depth)))
     if isinstance(node, SetBuilder):
         return replace(node, domain=_substitute(node.domain, args, depth),
                        element=None if node.element is None
@@ -241,7 +248,8 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
                            body=_reify(node.body, inner, fresh))
         return replace(node, var=name, var_spelling=spelling,
                        point=_reify(node.point, context, fresh),
-                       body=_reify(node.body, inner, fresh))
+                       body=_reify(node.body, inner, fresh),
+                       **_diff_order(node, lambda child: _reify(child, context, fresh)))
     return _children(node, lambda child: _reify(child, context, fresh))
 
 

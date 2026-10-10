@@ -96,6 +96,6 @@ These forms bind a name rather than accepting an ordinary first argument.
 fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident ("=" | "∈") expr ")" expr ;
 quantifier ::= ("\forall" | "∀" | "\exists" | "∃") "(" ident ("=" | "∈") expr ")" expr ;
 limit      ::= "\lim" "(" ident "=" expr ")" expr ;
-diff       ::= ("\diff" | "∂") "(" ident "=" expr ")" expr ;
+diff       ::= ("\diff" | "∂") "(" ident "=" expr ("," expr)? ")" expr ;
 integral   ::= ("\int" | "∫") "(" ident "=" expr ")" expr ;
 ```

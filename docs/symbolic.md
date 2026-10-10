@@ -124,7 +124,6 @@ path.[^worker]
 | Infinite solution families are errors; no real-domain option | [#15](https://github.com/takeiteasy/adhoc/issues/15) |
 | No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
 | Gradients are arrays of quotes without vector algebra | [#18](https://github.com/takeiteasy/adhoc/issues/18) |
-| Numeric derivatives above order 2 are errors | [#9](https://github.com/takeiteasy/adhoc/issues/9) |
 
 [^worker]: Each rewrite runs in a forked child that is killed at the limit.
     This also enforces the timeout off the main thread. Forking adds per-call

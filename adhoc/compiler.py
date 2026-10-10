@@ -339,13 +339,14 @@ class _Lowerer:
                 return _call("limit", [pyast.Constant(var), self.expr(point),
                                        pyast.Constant(sid), pyast.Constant(spelling),
                                        pyast.Constant(var_spelling)])
-            case Diff(var=var, point=point, body=body, spelling=spelling,
+            case Diff(var=var, point=point, body=body, order=order, spelling=spelling,
                       var_spelling=var_spelling, span=span):
                 sid = self._push(span)
                 self.definitions[sid] = _compile_body(body, self.source)
                 return _call("diff", [pyast.Constant(var), self.expr(point),
                                       pyast.Constant(sid), pyast.Constant(spelling),
-                                      pyast.Constant(var_spelling)])
+                                      pyast.Constant(var_spelling),
+                                      pyast.Constant(1) if order is None else self.expr(order)])
             case Integral(var=var, bound=bound, body=body, spelling=spelling,
                           var_spelling=var_spelling, span=span):
                 sid = self._push(span)

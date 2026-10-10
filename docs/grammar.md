@@ -785,6 +785,7 @@ and a user `\alias` onto those names gets the same treatment for free.
 Σ(k=1,3..7) k                ->  = 16           -- stepped ranges bind too
 \lim(x=0) x/x                ->  = 1.0          -- numeric limit; anchor never evaluated
 \diff(x=1) \sin(x)          ->  = 0.5403…      -- numeric derivative (∂ is the same name)
+∂(x=1, 3) x^4              ->  approximately 24.0 -- third derivative
 ∫(x=0..π) \sin(x)            ->  = 2.0          -- numeric integral (∫ is the same name)
 ∀(x=1..5) x > 0              ->  = true         -- quantifiers bind like \sum
 ∀(x∈1..5) x > 0              ->  = true         -- `∈` reads the same as `=`
@@ -817,7 +818,9 @@ shapes with a bounded claimed error). The cap produces a typed error rather
 than returning a possibly-misleading partial result; so does any non-finite partial.
 
 `\diff` and `\int` bind `x` the same way and evaluate the body in a fresh frame per probe;
-`\int` takes a range binder. Their methods and tolerances are in [calculus](calculus.md), and `\diff`
+`\diff(x=a, n)` takes an optional positive integer order, evaluated outside the body's
+binder scope; omitted order means one. `\int` takes a range binder.
+Their methods and tolerances are in [calculus](calculus.md), and `\diff`
 and `\int` (`∂`, `∫`) join `Σ` and `Π` in the alias table.
 
 **Limits are numeric only** — this is a calculator, not a CAS. `\lim(x=a) body` probes

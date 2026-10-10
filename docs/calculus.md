@@ -7,21 +7,22 @@ supports them, otherwise numeric methods. Failure to converge is a typed error.
 | Form | Meaning |
 |---|---|
 | `\diff(x=a) body`, `∂(x=a) body` | Numeric derivative at a real point |
+| `\diff(x=a, n) body`, `∂(x=a, n) body` | Numeric derivative of positive integer order `n` |
 | `\int(x=a..b) body`, `∫(x=a..b) body` | Numeric integral over `[a, b]` |
 | `\int(x=a..) body` | Numeric integral over `[a, ∞)` |
 | `\int(x=-\inf..b) body` | Numeric integral over `(-∞, b]` |
 | `\int(x=-\inf..\inf) body`, `\int(x=-\inf..) body` | Numeric integral over the whole real line |
 | `\int(x=r) body` | Integral over stored range or interval bounds |
-| `f'`, `f''`, `f'''`, … | Derivative function; exact to any order, numeric to order 2 |
+| `f'`, `f''`, `f'''`, … | Derivative function; exact or numeric, subject to numeric convergence and resource limits |
 | `f⁻¹` | Inverse function, returning one branch |
 
 ```text
-\diff(x=1) \sin(x)          ->  = 0.5403023058681385
+\diff(x=1) \sin(x)          -> approximately 0.5403023058681387
 ∫(x=0..π) \sin(x)           ->  = 2.0
 ∫(x=0..) e^(-x)             ->  = 1.0
 f(x) = x^3
 f'(2)                       ->  = 12
-f'(2.)                      ->  = 11.999999999999986
+f'(2.)                      -> approximately 12.0
 f⁻¹(8)                      ->  = 2
 (x ↦ 2x)⁻¹(6)               ->  = 3
 ```
@@ -40,9 +41,38 @@ Numeric methods return floats or complex floats. The body may be complex;
 
 ### Numeric binder
 
-`\diff(x=a)` probes `a ± h` without evaluating at `a`. It shrinks the step and
-extrapolates until the relatively scaled error estimate is within `1e-9`, or
-reports `did not converge`.[^ridders]
+`\diff(x=a, n)` differentiates to order `n`; omitting `n` means the first
+derivative. The point and order evaluate once in the surrounding scope, before
+the body binds `x`. The order must be a positive integer; booleans and float
+orders such as `3.` are errors.
+
+```text
+\diff(x=1, 3) x^4           -> approximately 24.0
+∂(x=0, 6) x^6              -> approximately 720.0
+\diff(x=0) |x|             -> error: derivative does not exist
+\diff(x=0, 2) x*|x|        -> error: derivative does not exist
+```
+
+Numeric differentiation compares independent left and right estimates of nearby
+value limits and every derivative through order `n`. A converged disagreement
+reports `derivative does not exist`; insufficient precision reports
+`did not converge`. Central and one-sided estimates must also agree.[^ridders]
+
+| Order | Relatively scaled tolerance | Evaluates at the anchor? |
+|---|---|---|
+| 1 | `1e-9` | No |
+| 2 | `1e-6` | Yes |
+| 3 and higher | `1e-3` | Even orders only |
+
+These are numerical error estimates, not proofs of differentiability. Near-only
+first-order probes cannot detect a value changed solely at the anchor. Oscillatory
+bodies and rounding-sensitive higher derivatives may fail to converge even when
+the mathematical derivative exists.
+
+Each stencil has at most 32 points, and each numeric call allows at most 2,000 body
+evaluations. One-sided stencils use `n+3` points, so numeric orders above 29 report
+a typed resource-limit error before evaluating the body. Exact symbolic derivatives
+are unaffected by these budgets.
 
 ### Function derivatives
 
@@ -53,9 +83,7 @@ and displays as `<fn f′>`.
 | Function and argument | Method |
 |---|---|
 | One-parameter definition or lambda with a supported symbolic body; exact integer, rational or Gaussian point | Exact derivative, cached per function, to any order |
-| Other function or float point, first derivative | Numeric differences; tolerance `1e-9` |
-| Other function or float point, second derivative | Numeric second differences; tolerance `1e-6`; evaluates at the anchor |
-| Numeric derivative above order 2 | Typed error |
+| Other function or float point | Numeric differences with the same tolerances, agreement checks and budgets as `\diff` |
 
 For `f(x) = x^3`, `f'(1/2)` is exactly `3/4`.
 See [symbolic rewriting](symbolic.md) for supported bodies and `\deriv`.
@@ -115,13 +143,16 @@ the root with the larger real part wins. For `f(x) = x^2`, `f⁻¹(4)` is `2`;
 
 | Limit | Ticket |
 |---|---|
-| Numeric derivatives above order 2 are errors; symbolic derivatives support higher orders | [#9](https://github.com/takeiteasy/adhoc/issues/9) |
 | `f⁻¹` returns one branch; no set-valued inverse | [#17](https://github.com/takeiteasy/adhoc/issues/17) |
-| `\diff` at a kink returns the mean slope: `\diff(x=0) \|x\|` is `0.0` | [#10](https://github.com/takeiteasy/adhoc/issues/10) |
 
-[^ridders]: Ridders' method uses central differences with a step shrinking by
-    1.4 per row, combined by Richardson extrapolation. It keeps the entry with
-    the smallest error estimate. The initial step is `0.1·|a|`, or `0.1` at zero.
+[^ridders]: Cached finite-difference weights define symmetric central stencils
+    and separate one-sided stencils without the anchor. Richardson extrapolation
+    uses each stencil's error powers over ten rows, shrinking the step by 1.4
+    per row. Each estimate retains the entry with the smallest error, including
+    a floating-point rounding estimate. Agreement allows twice the applicable
+    tolerance, scaled by `max(1, |left|, |right|)`; nearby value limits use `1e-9`.
+    The initial step is `0.1·|a|`, or `0.1` at zero, doubled above order two.
+    Samples are shared within a call; function bodies should be deterministic.
 
 [^quadrature]: Globally adaptive Gauss–Kronrod uses 7- and 15-point rules and
     bisects the panel with the largest error estimate. Upper-infinite bounds map

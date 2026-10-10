@@ -267,7 +267,8 @@ script or module. See [custom operators](operators.md) for precedence and exampl
   [operator limitations](operators.md#limitations).
 - Set construction and membership compare elements pairwise; construction is
   quadratic in set size: [#4](https://github.com/takeiteasy/adhoc/issues/4).
-- Numeric derivatives stop at order 2. Function inversion returns one branch; see
+- Numeric derivatives use [order-dependent tolerances and resource budgets](calculus.md#derivatives).
+  Function inversion returns one branch; see
   [calculus limitations](calculus.md#limitations).
 - Tensor `/` is elementwise. Use `\inv` or `\linsolve` for matrix division.
 - Exact irrational values display approximate digits; see

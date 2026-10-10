@@ -42,6 +42,8 @@ def test_binders():
     assert tex(r"\tex(\expr(\lim(x=0) \sin(x)/x))") == r"\lim_{x \to 0} \frac{\sin\left(x\right)}{x}"
     assert tex(r"\tex(\expr(∫(x=0..) e^(-x)))") == r"\int_{0}^{\infty} e^{-x} \, dx"
     assert tex(r"\tex(\expr(∂(x=1) x^2))") == r"\left.\frac{d}{dx}\left(x^{2}\right)\right|_{x=1}"
+    assert tex(r"\tex(\expr(∂(x=1, 3) x^4))") == r"\left.\frac{d^{3}}{dx^{3}}\left(x^{4}\right)\right|_{x=1}"
+    assert tex(r"\tex(\expr(∂(x=a, n) x))") == r"\left.\frac{d^{n}}{dx^{n}}\left(x\right)\right|_{x=a}"
     assert tex(r"\tex(\expr(∀(x∈S) x > 0))") == r"\forall x \in S,\ x > 0"
     assert tex(r"\tex(\expr(2 * Σ(i=1..3) i))") == r"2 \left(\sum_{i=1}^{3} i\right)"
 

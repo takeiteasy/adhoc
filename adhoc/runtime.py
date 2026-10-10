@@ -220,6 +220,9 @@ MAX_TERMS = 2_000_000
 MAX_PROBES = 200
 DIFF_TOLERANCE = 1e-9  # Ridders error estimate for `\\diff` and `f'`, relatively scaled
 DIFF2_TOLERANCE = 1e-6  # the same for `f''`: second differences amplify rounding noise
+DIFF_HIGHER_TOLERANCE = 1e-3
+MAX_DIFF_POINTS = 32
+MAX_DIFF_SAMPLES = 2000
 MAX_INTERVALS = 2000  # adaptive quadrature subintervals for `\\int`
 
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod", "and": "\\forall", "or": "\\exists"}
@@ -1376,50 +1379,125 @@ def _agree(left: float | complex, right: float | complex) -> bool:
     return math.isfinite(scale) and abs(left - right) <= 2 * CONVERGENCE_TOLERANCE * scale
 
 
+def _diff_tolerance(order: int) -> float:
+    if order < 2:
+        return DIFF_TOLERANCE
+    return DIFF2_TOLERANCE if order == 2 else DIFF_HIGHER_TOLERANCE
+
+
+@functools.lru_cache(maxsize=32)
+def _diff_weights(order: int, points: tuple[int, ...]) -> tuple[tuple[float, ...], ...]:
+    weights = sympy.finite_diff_weights(order, points, 0)
+    return tuple(tuple(float(w) for w in derivative[-1]) for derivative in weights)
+
+
+class _DiffEstimate:
+    def __init__(self, accuracy: int, increment: int):
+        self.accuracy, self.increment = accuracy, increment
+        self.table: list[list[tuple[float | complex, float]]] = []
+        self.best: float | complex = 0.0
+        self.error = math.inf
+
+    def append(self, value: float | complex, noise: float) -> None:
+        row = [(value, noise)]
+        for j in range(1, len(self.table) + 1):
+            factor = 1.4 ** (self.accuracy + self.increment * (j - 1))
+            current, current_noise = row[j - 1]
+            previous, previous_noise = self.table[-1][j - 1]
+            estimate = (current * factor - previous) / (factor - 1)
+            rounding = (current_noise * factor + previous_noise) / (factor - 1)
+            row.append((estimate, rounding))
+            error = max(abs(estimate - current), abs(estimate - previous), rounding)
+            if cmath.isfinite(estimate) and error <= self.error:
+                self.best, self.error = estimate, error
+        self.table.append(row)
+
+    def converged(self, order: int) -> bool:
+        return self.error <= _diff_tolerance(order) * max(1.0, abs(self.best))
+
+
 def _ridders(evaluate: Callable[[float], AdValue], anchor: float, order: int,
              label: str) -> float | complex:
-    """Ridders' extrapolation of central differences (order 1) or second differences
-    (order 2) at `anchor`, in the float tier. The step halves geometrically; the answer
-    is the tableau entry with the smallest error estimate, accepted within
-    DIFF_TOLERANCE (DIFF2_TOLERANCE for order 2), relatively scaled. Order 1 never
-    evaluates at the anchor itself."""
-    if order > 2:
-        raise NumError(f"{label}: derivatives above the second order are not supported")
+    """Extrapolate central and near-only one-sided stencils; all orders through
+    the requested derivative must agree on both sides of the anchor."""
+    if not isinstance(order, int) or isinstance(order, bool) or order < 1:
+        raise NumError(f"{label} needs the order to be a positive integer")
+    if order + 3 > MAX_DIFF_POINTS:
+        raise NumError(f"{label}: derivative stencil exceeds the {MAX_DIFF_POINTS}-point resource limit")
+    radius = (order + 1) // 2
+    points = tuple(range(-radius, radius + 1))
+    central_weights = _diff_weights(order, points)[order]
+    active = tuple((p, w) for p, w in zip(points, central_weights) if w)
+    active_weights = tuple(w for _, w in active)
+    side_points = tuple(range(1, order + 4))
+    side_weights = _diff_weights(order, side_points)
+    central = _DiffEstimate(2, 2)
+    sides = [[_DiffEstimate(len(side_points) - k, 1) for k in range(order + 1)]
+             for _ in range(2)]
+    samples: dict[float, float | complex] = {}
 
-    def sample(t: float) -> float | complex:
-        value = _as_inexact(evaluate(t))
-        if not cmath.isfinite(value):
-            raise NumError(f"{label}: the body is not finite near {nshow(anchor)}")
-        return value
+    def sample(offset: int, h: float) -> float | complex:
+        t = anchor + offset * h
+        if not math.isfinite(t) or (offset and t == anchor):
+            raise NumError(f"{label} did not converge: probe spacing is not representable")
+        if t not in samples:
+            if len(samples) >= MAX_DIFF_SAMPLES:
+                raise NumError(f"{label}: derivative exceeds the {MAX_DIFF_SAMPLES}-evaluation resource limit")
+            value = _as_inexact(evaluate(t))
+            if not cmath.isfinite(value):
+                raise NumError(f"{label}: the body is not finite near {nshow(anchor)}")
+            samples[t] = value
+        return samples[t]
 
-    centre = sample(anchor) if order == 2 else 0.0
+    def quotient(values: Sequence[float | complex], weights: Sequence[float],
+                 h: float, degree: int) -> tuple[float | complex, float]:
+        try:
+            denominator = h ** degree
+        except OverflowError:
+            raise NumError(f"{label} did not converge: derivative scale is not representable") from None
+        if denominator == 0 or not math.isfinite(denominator):
+            raise NumError(f"{label} did not converge: derivative scale is not representable")
+        base = values[0] if degree else 0.0
+        try:
+            terms = [w * (v - base) for w, v in zip(weights, values)]
+            result = complex(math.fsum(complex(t).real for t in terms),
+                             math.fsum(complex(t).imag for t in terms)) / denominator
+            noise = 2 * sys.float_info.epsilon * math.fsum(
+                abs(w) * (abs(v) + abs(base)) for w, v in zip(weights, values)) / abs(denominator)
+        except (ArithmeticError, ValueError):
+            raise NumError(f"{label} did not converge: derivative arithmetic overflow") from None
+        return _inexact(result), noise
 
-    def quotient(h: float) -> float | complex:
-        if order == 1:
-            return (sample(anchor + h) - sample(anchor - h)) / (2 * h)
-        return (sample(anchor + h) - 2 * centre + sample(anchor - h)) / (h * h)
-
-    shrink, tableau_size, safe = 1.4, 10, 2.0
     h = 0.1 * abs(anchor) if anchor else 0.1
-    table = [[quotient(h)]]
-    best, error = table[0][0], math.inf
-    for i in range(1, tableau_size):
-        h /= shrink
-        row = [quotient(h)]
-        factor = shrink * shrink
-        for j in range(1, i + 1):
-            row.append((row[j - 1] * factor - table[i - 1][j - 1]) / (factor - 1))
-            factor *= shrink * shrink
-            trial = max(abs(row[j] - row[j - 1]), abs(row[j] - table[i - 1][j - 1]))
-            if trial <= error:
-                best, error = row[j], trial
-        table.append(row)
-        if abs(row[i] - table[i - 1][i - 1]) >= safe * error:
-            break
-    tolerance = DIFF2_TOLERANCE if order == 2 else DIFF_TOLERANCE
-    if not error <= tolerance * max(1.0, abs(best)):
-        raise NumError(f"{label} did not converge: estimated error {error:.1e}")
-    return _drop_stray_parts(best)
+    if order > 2:
+        h *= 2
+    for _ in range(10):
+        values = [sample(p, h) for p, _ in active]
+        value, noise = quotient(values, active_weights, h, order)
+        if order == 1:
+            value = (sample(1, h) - sample(-1, h)) / (2 * h)
+        elif order == 2:
+            value = (sample(1, h) - 2 * sample(0, h) + sample(-1, h)) / (h * h)
+        central.append(value, noise)
+        for sign, estimates in zip((-1, 1), sides):
+            values = [sample(sign * p, h) for p in side_points]
+            for degree, (weights, estimate) in enumerate(zip(side_weights, estimates)):
+                estimate.append(*quotient(values, weights, sign * h, degree))
+        h /= 1.4
+
+    for degree, (left, right) in enumerate(zip(*sides)):
+        if not left.converged(degree) or not right.converged(degree):
+            raise NumError(f"{label} did not converge: one-sided order {degree} estimates")
+        scale = max(1.0, abs(left.best), abs(right.best))
+        if abs(left.best - right.best) > 2 * _diff_tolerance(degree) * scale:
+            raise NumError(f"{label}: derivative does not exist: left and right estimates disagree")
+    if not central.converged(order):
+        raise NumError(f"{label} did not converge: estimated error {central.error:.1e}")
+    for side in sides:
+        estimate = side[order].best
+        if abs(central.best - estimate) > 2 * _diff_tolerance(order) * max(1.0, abs(central.best), abs(estimate)):
+            raise NumError(f"{label} did not converge: central and one-sided estimates disagree")
+    return _drop_stray_parts(central.best)
 
 
 _GK_NODES = (0.991455371120812639206854697526329, 0.949107912342758524526189684047851,
@@ -2165,7 +2243,7 @@ OPERATORS = {name: OperatorFn(OP_SYMBOLS[name], fn, arities)
 
 
 class Derivative:
-    """`f'` / `f''`: the derivative of a one-argument function, as a function. Exact when the
+    """Repeated primes differentiate a one-argument function. Exact when the
     body bridges to sympy and the point is exact; otherwise numeric (`_ridders`)."""
 
     def __init__(self, fn: Any, order: int):
@@ -3581,7 +3659,8 @@ class Engine:
         return _drop_stray_parts(self._binop(ndiv, total, len(estimates), sid))
 
     def diff(self, name: str, point_value: AdValue, sid: int,
-             spelling: str | None = None, var_spelling: str | None = None) -> float | complex:
+             spelling: str | None = None, var_spelling: str | None = None,
+             order: AdValue = 1) -> float | complex:
         """`\\diff(x=a) body`: the numeric derivative at `a` (`_ridders`); the body
         evaluates in a fresh frame holding only the loop variable, like `\\lim`."""
         label = spelling or "\\diff"
@@ -3594,7 +3673,7 @@ class Engine:
             if isinstance(anchor, complex) or not math.isfinite(anchor):
                 raise NumError(f"{label} needs a finite real point")
             return _ridders(lambda t: self._eval_bound(body, {name: t}, label, sid),
-                            anchor, 1, label)
+                            anchor, order, label)
         except NumError as e:
             self._fail(e.args[0], sid)
 

@@ -189,6 +189,7 @@ class Diff(Node):
     var: str
     point: Node
     body: Node
+    order: Node | None = None
     spelling: str | None = field(default=None, compare=False)
     var_spelling: str | None = field(default=None, compare=False)
 

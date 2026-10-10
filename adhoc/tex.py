@@ -222,9 +222,10 @@ def node_tex(node: Node, prec: int = 0) -> str:
             name = _name(var) if is_short_name(var) else _long_name(var)
             return _wrap(rf"\lim_{{{name} \to {node_tex(point)}}} {node_tex(body, 12)}",
                          prec, _LOOSE)
-        case Diff(var=var, point=point, body=body):
+        case Diff(var=var, point=point, body=body, order=order):
             name = _name(var) if is_short_name(var) else _long_name(var)
-            return _wrap(rf"\left.\frac{{d}}{{d{name}}}\left({node_tex(body)}\right)\right|_{{{name}={node_tex(point)}}}",
+            degree = "" if order is None else rf"^{{{node_tex(order)}}}"
+            return _wrap(rf"\left.\frac{{d{degree}}}{{d{name}{degree}}}\left({node_tex(body)}\right)\right|_{{{name}={node_tex(point)}}}",
                          prec, _LOOSE)
         case Integral(var=var, bound=bound, body=body):
             name = _name(var) if is_short_name(var) else _long_name(var)

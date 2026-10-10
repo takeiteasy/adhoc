@@ -125,10 +125,11 @@ def show(node: Node) -> str:
                    var_spelling=var_spelling):
             head = spelling or "\\lim"
             return f"({head}({var_spelling or var}={show(point)}) {show(body)})"
-        case Diff(var=var, point=point, body=body, spelling=spelling,
+        case Diff(var=var, point=point, body=body, order=order, spelling=spelling,
                   var_spelling=var_spelling):
             head = spelling or "\\diff"
-            return f"({head}({var_spelling or var}={show(point)}) {show(body)})"
+            degree = "" if order is None else f", {show(order)}"
+            return f"({head}({var_spelling or var}={show(point)}{degree}) {show(body)})"
         case Integral(var=var, bound=bound, body=body, spelling=spelling,
                       var_spelling=var_spelling):
             head = spelling or "\\int"

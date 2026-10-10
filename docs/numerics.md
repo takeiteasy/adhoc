@@ -166,6 +166,9 @@ are rejected.
 | `MAX_PROBES` | `200` | Limit probe budget per side |
 | `DIFF_TOLERANCE` | `1e-9` | First-derivative error estimate |
 | `DIFF2_TOLERANCE` | `1e-6` | Second-derivative error estimate |
+| `DIFF_HIGHER_TOLERANCE` | `1e-3` | Higher-derivative error estimate |
+| `MAX_DIFF_POINTS` | `32` | Points per derivative stencil |
+| `MAX_DIFF_SAMPLES` | `2000` | Body evaluations per numeric derivative |
 | `MAX_INTERVALS` | `2000` | Adaptive integral subinterval budget per finite interval or infinite tail |
 
 ### Infinite folds

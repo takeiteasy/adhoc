@@ -17,6 +17,20 @@ def test_reduce_beta_and_evaluate_result():
     assert run_source(r"\reduce(\expr((\fn() 7)()))") == [r"= \expr(7)"]
 
 
+def test_diff_order_remains_outside_the_binder_scope():
+    env = {}
+    assert run_source(r"q = \reduce(\expr((\fn(x) ∂(x=1, x) x^4)(3)))", env) == [
+        r"q = \expr((∂(x=1, 3) (x ^ 4)))"
+    ]
+    assert float(run_source(r"\eval(q)", env)[-1][2:]) == pytest.approx(24, abs=1e-3)
+    assert run_source(r"\reduce(\expr((\fn(n) ∂(x=1, n) x^4)(x)))") == [
+        r"= \expr((∂(x=1, x) (x ^ 4)))"
+    ]
+    assert run_source(r"\reduce(\expr((\fn(n) \fn(x) ∂(y=1, n) y^4)(x)))") == [
+        r"= \expr((\fn(\reduce_a) (∂(y=1, x) (y ^ 4))))"
+    ]
+
+
 def test_reduce_uses_normal_order_and_reaches_full_normal_form():
     source = r"\reduce(\expr((\fn(x) 1)((\fn(z) z(z))(\fn(z) z(z)))))"
     assert run_source(source) == [r"= \expr(1)"]

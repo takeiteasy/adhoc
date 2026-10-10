@@ -1493,6 +1493,11 @@ class _Parser:
             self.expect(Eq, "`=`")
         with self._list_context(False):
             bound = self.expr()
+        order = None
+        if isinstance(head, BackslashRef) and head.name == "diff" and isinstance(self.peek(), Comma):
+            self.advance()
+            with self._list_context(False):
+                order = self.expr()
         self.expect(RParen, "`)`")
         body = self.expr()
         span = head.span.to(body.span)
@@ -1503,7 +1508,7 @@ class _Parser:
         names = dict(spelling=label, var_spelling=_spelling(var_tok))
         match head.name:
             case "diff":
-                return Diff(var=var, point=bound, body=body, span=span, **names)
+                return Diff(var=var, point=bound, body=body, order=order, span=span, **names)
             case "int":
                 return Integral(var=var, bound=bound, body=body, span=span, **names)
         return Limit(var=var, point=bound, body=body, span=span, **names)
