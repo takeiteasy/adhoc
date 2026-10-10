@@ -79,6 +79,22 @@ def test_values():
     assert tex(r'\tex("a_b")') == r"\text{a\_b}"
 
 
+@pytest.mark.parametrize("bounds, expected", [
+    (r"-\inf..0", r"\left(-\infty, 0\right]"),
+    (r"0..\inf", r"\left[0, \infty\right)"),
+    (r"-\inf..", r"\left(-\infty, \infty\right)"),
+    (r"\inf..-\inf", r"\left(\infty, -\infty\right)"),
+    (r"0..-\inf", r"\left[0, -\infty\right)"),
+])
+def test_interval_values(bounds, expected):
+    assert tex(r"\tex(" + bounds + ")") == expected
+
+
+def test_infinite_integral_quote():
+    assert tex(r"\tex(\expr(∫(x=-\inf..\inf) e^(-x^2)))") == (
+        r"\int_{-\infty}^{\infty} e^{-x^{2}} \, dx")
+
+
 def test_functions_render_with_their_bodies():
     env = {}
     run_source("f(x) = x^2 + 1", env)

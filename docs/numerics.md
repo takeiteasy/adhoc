@@ -166,7 +166,7 @@ are rejected.
 | `MAX_PROBES` | `200` | Limit probe budget per side |
 | `DIFF_TOLERANCE` | `1e-9` | First-derivative error estimate |
 | `DIFF2_TOLERANCE` | `1e-6` | Second-derivative error estimate |
-| `MAX_INTERVALS` | `2000` | Adaptive integral subinterval budget |
+| `MAX_INTERVALS` | `2000` | Adaptive integral subinterval budget per finite interval or infinite tail |
 
 ### Infinite folds
 
@@ -245,7 +245,7 @@ finite inputs reject them.
 | Numeric comparisons with NaN | `false` |
 | `\isnan`, `\isinf`, `\isfinite` | Inspect float states; exact values are finite |
 | Conditional | Requires a boolean; `\nan ? 1 : 2` is a typed error |
-| Range bound | Must be finite and real; use `a..` for an infinite range |
+| Range bound | Real; explicit infinite endpoints create non-iterable [intervals](intervals.md); finite-start `a..` is a lazy progression; NaN is rejected |
 | Infinite fold partial or limit anchor | Non-finite values are rejected |
 
 ## Display

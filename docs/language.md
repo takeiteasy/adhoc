@@ -189,6 +189,7 @@ preserving collection kind where applicable. See
 | `\lim(x=0) x/x` | Numeric limit: `1.0`; never evaluates at the anchor |
 | `\diff(x=a) body`, `∂(x=a) body` | Derivative |
 | `\int(x=a..b) body`, `∫(x=a..b) body` | Integral |
+| `∫(x=-\inf..b) body`, `∫(x=-\inf..\inf) body` | Lower-infinite and whole-line integrals |
 | `f'`, `f''` | Derivative functions |
 
 Binders keep their variable local; other reads use the enclosing scope. Folds
@@ -200,6 +201,10 @@ Limits probe shrinking steps on both sides. Disagreeing sides report
 `limit does not exist`. Complex bodies and anchors work; complex anchors use
 eight rays at golden-angle spacing. See [convergence](numerics.md#convergence)
 and [calculus](calculus.md) for methods and limitations.
+
+Explicit infinite endpoints create reusable [interval bounds](intervals.md).
+`r = -\inf..\inf` can be passed to `∫(x=r) body`; `x ∈ r` tests finite real
+membership. Whole-line integration requires both tails to converge independently.
 
 ## Quotes and symbolic operations
 
@@ -262,8 +267,7 @@ script or module. See [custom operators](operators.md) for precedence and exampl
   [operator limitations](operators.md#limitations).
 - Set construction and membership compare elements pairwise; construction is
   quadratic in set size: [#4](https://github.com/takeiteasy/adhoc/issues/4).
-- Numeric derivatives stop at order 2. Integrals support finite and
-  upper-infinite bounds. Function inversion returns one branch; see
+- Numeric derivatives stop at order 2. Function inversion returns one branch; see
   [calculus limitations](calculus.md#limitations).
 - Tensor `/` is elementwise. Use `\inv` or `\linsolve` for matrix division.
 - Exact irrational values display approximate digits; see

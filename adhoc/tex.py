@@ -3,6 +3,7 @@
 Formatting only: nothing here evaluates or does arithmetic on a user value."""
 
 from fractions import Fraction
+import math
 
 import sympy
 
@@ -282,7 +283,7 @@ def _scalar(value, show) -> str:
 def value_tex(value, show) -> str:
     """The LaTeX for an evaluated value; `show` is the runtime's display function."""
     from .expression import ExpressionValue
-    from .runtime import AdFunction, RangeValue
+    from .runtime import AdFunction, IntervalValue, RangeValue
     if isinstance(value, ExpressionValue):
         return node_tex(value.node)
     if isinstance(value, AdFunction):
@@ -292,6 +293,11 @@ def value_tex(value, show) -> str:
             return rf"{head} \mapsto {node_tex(value.body.node)}"
         label = _name(value.name) if is_short_name(value.name) else _long_name(value.name)
         return rf"{label}\left({', '.join(params)}\right) = {node_tex(value.body.node)}"
+    if isinstance(value, IntervalValue):
+        start, end = value_tex(value.start, show), value_tex(value.end, show)
+        left = "(" if isinstance(value.start, float) and math.isinf(value.start) else "["
+        right = ")" if isinstance(value.end, float) and math.isinf(value.end) else "]"
+        return rf"\left{left}{start}, {end}\right{right}"
     if isinstance(value, RangeValue):
         parts = [value_tex(value.start, show)]
         if value.second is not None:

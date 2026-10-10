@@ -23,6 +23,7 @@ composes (`"$" + \tex(e) + "$"`) and passes to `\py` for writing to a file.
 | Tensor | `pmatrix` |
 | Array | `\langle … \rangle` |
 | Set or range | `\{ … \}`; ranges use an ellipsis |
+| [Interval](intervals.md) | Interval notation; infinite endpoints are open, finite endpoints closed; endpoint order is preserved |
 | Boolean, string | `\text{…}` |
 
 ## Syntax rendering

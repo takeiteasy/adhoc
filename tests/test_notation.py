@@ -338,8 +338,8 @@ def test_membership_range_operand_keeps_other_comparisons_and_lists():
 
 
 def test_membership_still_rejects_other_right_operands():
-    fails("1 ∈ 1", "needs a set, array, or range")
-    fails("1 ∉ [1, 2]", "needs a set, array, or range")
+    fails("1 ∈ 1", "needs a set, array, range, or interval")
+    fails("1 ∉ [1, 2]", "needs a set, array, range, or interval")
 
 
 def test_set_extras_roundtrip_and_operator_values():

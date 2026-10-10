@@ -11,6 +11,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [Notation](notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](operators.md) | Infix declarations, precedence and scope |
 | [Calculus](calculus.md) | Derivatives and integrals |
+| [Infinite interval bounds](intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](symbolic.md) | Simplification, expansion, factoring and solving |
 | [LaTeX output](tex.md) | Rendering quotes, functions and values |
 | [Standard library](stdlib.md) | Prelude constants and functions |

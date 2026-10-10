@@ -92,8 +92,8 @@ def test_operator_type_errors():
     fails("1 ∩ {1}", "needs two sets")
     fails("⟨1⟩ ∖ {1}", "needs two sets")
     fails("{1} ⊆ [1]", "needs two sets")
-    fails("1 ∈ [1, 2]", "needs a set, array, or range on the right")
-    fails("1 ∈ 1", "needs a set, array, or range on the right")
+    fails("1 ∈ [1, 2]", "needs a set, array, range, or interval on the right")
+    fails("1 ∈ 1", "needs a set, array, range, or interval on the right")
 
 
 def test_no_arithmetic_indexing_or_ordering():

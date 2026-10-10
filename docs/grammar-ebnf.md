@@ -97,5 +97,5 @@ fold       ::= ("\sum" | "\prod" | "Σ" | "Π") "(" ident ("=" | "∈") expr ")"
 quantifier ::= ("\forall" | "∀" | "\exists" | "∃") "(" ident ("=" | "∈") expr ")" expr ;
 limit      ::= "\lim" "(" ident "=" expr ")" expr ;
 diff       ::= ("\diff" | "∂") "(" ident "=" expr ")" expr ;
-integral   ::= ("\int" | "∫") "(" ident "=" range ")" expr ;
+integral   ::= ("\int" | "∫") "(" ident "=" expr ")" expr ;
 ```

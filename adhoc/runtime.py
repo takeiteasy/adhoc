@@ -575,6 +575,14 @@ _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 
 @dataclass(frozen=True)
+class IntervalValue:
+    """Non-iterable real integration bounds, preserving orientation."""
+
+    start: AdValue
+    end: AdValue
+
+
+@dataclass(frozen=True)
 class RangeValue:
     """A lazy arithmetic progression; `end=None` denotes an infinite range."""
 
@@ -1078,6 +1086,10 @@ def _dedup(items) -> tuple:
 
 
 def neq(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, IntervalValue) or isinstance(b, IntervalValue):
+        return (isinstance(a, IntervalValue) and isinstance(b, IntervalValue)
+                and neq(a.start, b.start)
+                and neq(a.end, b.end))
     if isinstance(a, SetValue) or isinstance(b, SetValue):
         return (isinstance(a, SetValue) and isinstance(b, SetValue)
                 and len(a.items) == len(b.items)
@@ -1177,6 +1189,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
         return _show_str(v)
     if isinstance(v, LazySeq):
         return f"<seq {v.text()}>"
+    if isinstance(v, IntervalValue):
+        return f"<interval {nshow(v.start, digits)}..{nshow(v.end, digits)}>"
     if isinstance(v, RangeValue):
         start = nshow(v.start, digits)
         middle = f",{nshow(v.second, digits)}" if v.second is not None else ""
@@ -1444,23 +1458,29 @@ def _kronrod(f: Callable[[float], float | complex], lo: float, hi: float):
 
 def _quadrature(evaluate: Callable[[float], AdValue], lo: float, hi: float | None,
                 label: str) -> float | complex:
-    """Globally adaptive Gauss–Kronrod over `[lo, hi]`, or `[lo, ∞)` through
-    `x = lo + t/(1-t)`. The panel with the largest error bisects until the summed error
+    """Globally adaptive Gauss–Kronrod with independent infinite tails.
+    The panel with the largest error bisects until the summed error
     is within CONVERGENCE_TOLERANCE (relatively scaled) or MAX_INTERVALS panels exist.
     Endpoints are never evaluated."""
+    if hi is None:
+        hi = math.inf
+    if lo == -math.inf and hi == math.inf:
+        return _drop_stray_parts(_quadrature(evaluate, lo, 0.0, label)
+                                 + _quadrature(evaluate, 0.0, hi, label))
+
     def sample(x: float) -> float | complex:
         value = _as_inexact(evaluate(x))
         if not cmath.isfinite(value):
             raise NumError(f"{label}: the body is not finite at {nshow(x)}")
         return value
 
-    if hi is None:
-        origin = lo
+    if lo == -math.inf or hi == math.inf:
+        origin, direction = (hi, -1) if lo == -math.inf else (lo, 1)
 
         def f(t: float) -> float | complex:
             if t >= 1:
                 raise NumError(f"{label} did not converge: the integral diverges or decays too slowly")
-            return sample(origin + t / (1 - t)) / (1 - t) ** 2
+            return sample(origin + direction * t / (1 - t)) / (1 - t) ** 2
         lo, hi = 0.0, 1.0
     else:
         f = sample
@@ -1775,7 +1795,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
                       | ExpressionValue
                       | TensorValue | ArrayValue | SetValue):
         return value
-    if isinstance(value, RangeValue | LazySeq):
+    if isinstance(value, RangeValue | IntervalValue | LazySeq):
         return value
     if isinstance(value, bool):  # before int — bool is an int subclass
         return value if preserve_bool else int(value)
@@ -1995,7 +2015,20 @@ def _membership(symbol: str, value: AdValue, collection: AdValue) -> bool:
         return _contains(collection.items, value)
     if isinstance(collection, RangeValue):
         return _range_contains(collection, value)
-    raise NumError(f"`{symbol}` needs a set, array, or range on the right, "
+    if isinstance(collection, IntervalValue):
+        if (isinstance(value, bool) or not isinstance(value, _NUMERIC_TYPES)
+                or _is_complex(value)
+                or isinstance(value, float) and not math.isfinite(value)):
+            return False
+        if isinstance(collection.start, float) and math.isinf(collection.start):
+            infinity, finite = collection.start, collection.end
+        else:
+            infinity, finite = collection.end, collection.start
+        if isinstance(finite, float) and math.isinf(finite):
+            return True
+        op = "le" if infinity < 0 else "ge"
+        return ncompare(op, value, finite)
+    raise NumError(f"`{symbol}` needs a set, array, range, or interval on the right, "
                    f"got {nshow(collection)}")
 
 
@@ -3368,9 +3401,21 @@ class Engine:
 
     def range(self, start, second, end, sid):
         try:
-            _reject_non_numeric(start)
-            if _is_complex(start):
-                raise NumError("range bounds must be real numbers")
+            for name, value in (("start", start), ("end", end)):
+                if value is None:
+                    continue
+                _reject_non_numeric(value)
+                if _is_complex(value):
+                    raise NumError("range bounds must be real numbers")
+                if isinstance(value, float) and math.isnan(value):
+                    raise NumError(f"range {name} must be a finite number or infinity")
+            if any(isinstance(value, float) and math.isinf(value) for value in (start, end)):
+                if second is not None:
+                    raise NumError("infinite interval bounds take a plain range, not a stepped one")
+                end = math.inf if end is None else end
+                if neq(start, end):
+                    raise NumError("interval endpoints cannot be equal infinities")
+                return IntervalValue(start, end)
             if second is None:
                 step = 1
             else:
@@ -3378,20 +3423,8 @@ class Engine:
                 if _is_complex(second):
                     raise NumError("range bounds must be real numbers")
                 step = nsub(second, start)
-            if end is not None:
-                _reject_non_numeric(end)
-                if _is_complex(end):
-                    raise NumError("range bounds must be real numbers")
-                # A non-finite endpoint would iterate forever (or never start) in
-                # the finite-range loop; `a..` is the language's infinite form.
-                if isinstance(end, float) and not math.isfinite(end):
-                    raise NumError(
-                        "range end must be a finite number (`a..` is the infinite "
-                        "range form)")
             if isinstance(step, float) and not math.isfinite(step):
                 raise NumError("range step must be a finite number")
-            if isinstance(start, float) and not math.isfinite(start):
-                raise NumError("range start must be a finite number")
             if step == 0:
                 raise NumError("range step cannot be zero")
             return RangeValue(start, step, end, second)
@@ -3565,25 +3598,27 @@ class Engine:
         except NumError as e:
             self._fail(e.args[0], sid)
 
-    def integral(self, name: str, bound: AdValue, sid: int,
+    def integral(self, name: str, bound: AdValue | RangeValue | IntervalValue, sid: int,
                  spelling: str | None = None, var_spelling: str | None = None) -> float | complex:
-        """`\\int(x=a..b) body`: the numeric integral over a range (`_quadrature`); `a..`
-        runs to infinity and a reversed range negates."""
+        """Numeric integration over ranges or intervals; reversed bounds negate."""
         label = spelling or "\\int"
         if self._protected(name):
             self._fail(f"`{_display_name(name, var_spelling)}` is protected", sid)
-        if not isinstance(bound, RangeValue):
+        if not isinstance(bound, RangeValue | IntervalValue):
             self._fail(f"{label} integrates over a range a..b or a.., got {nshow(bound)}", sid)
-        if bound.second is not None:
+        if isinstance(bound, RangeValue) and bound.second is not None:
             self._fail(f"{label} takes a plain range a..b, not a stepped one", sid)
         body = self.definitions[sid]
         try:
             lo = _as_float(bound.start)
-            hi = None if bound.end is None else _as_float(bound.end)
+            hi = math.inf if bound.end is None else _as_float(bound.end)
+            for value, widened in ((bound.start, lo), (bound.end, hi)):
+                if value is not None and not isinstance(value, float) and not math.isfinite(widened):
+                    raise NumError(f"{label} bound is too large to widen to a finite float")
             sign = 1
-            if hi is not None and hi < lo:
+            if hi < lo:
                 lo, hi, sign = hi, lo, -1
-            if hi is not None and hi == lo:
+            if hi == lo:
                 return 0.0
             result = _quadrature(lambda x: self._eval_bound(body, {name: x}, label, sid),
                                  lo, hi, label)

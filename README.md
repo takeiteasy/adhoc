@@ -66,6 +66,7 @@ Heavyweight tests are marked `slow`;
 | [Notation](docs/notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](docs/operators.md) | Infix declarations, precedence and scope |
 | [Calculus](docs/calculus.md) | Derivatives and integrals |
+| [Infinite interval bounds](docs/intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](docs/symbolic.md) | Simplification, expansion, factoring and solving |
 | [LaTeX output](docs/tex.md) | Rendering quotes, functions and values |
 | [Standard library](docs/stdlib.md) | Prelude constants and functions |

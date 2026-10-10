@@ -49,7 +49,7 @@ importing file. See [import rules](grammar.md#modules-and-imports).
 | Contraction `@` | `_e.dot` |
 | Array literal | `_e.array(items, sid)` |
 | Set and set operations | `_e.set_`, `_e.union`, `_e.intersect`, `_e.setminus`, `_e.member`, `_e.subseteq` |
-| Range | `_e.range(start, second, end, sid)` |
+| Range or infinite interval | `_e.range(start, second, end, sid)`; infinite endpoints produce a non-iterable interval |
 
 `\arr(...)` rewrites to an array node during parsing. Set construction
 deduplicates through numeric-tier equality. A numeric index head multiplies;

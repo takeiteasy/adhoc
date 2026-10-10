@@ -9,6 +9,9 @@ supports them, otherwise numeric methods. Failure to converge is a typed error.
 | `\diff(x=a) body`, `∂(x=a) body` | Numeric derivative at a real point |
 | `\int(x=a..b) body`, `∫(x=a..b) body` | Numeric integral over `[a, b]` |
 | `\int(x=a..) body` | Numeric integral over `[a, ∞)` |
+| `\int(x=-\inf..b) body` | Numeric integral over `(-∞, b]` |
+| `\int(x=-\inf..\inf) body`, `\int(x=-\inf..) body` | Numeric integral over the whole real line |
+| `\int(x=r) body` | Integral over stored range or interval bounds |
 | `f'`, `f''`, `f'''`, … | Derivative function; exact to any order, numeric to order 2 |
 | `f⁻¹` | Inverse function, returning one branch |
 
@@ -64,18 +67,31 @@ a function.
 
 Adaptive integration stops when its summed error estimate is within `1e-12`,
 scaled by the integrand's magnitude. It reports `did not converge` after 2,000
-subintervals.[^quadrature]
+subintervals per finite interval or infinite tail.[^quadrature]
 
 | Bound or body | Behavior |
 |---|---|
 | Finite endpoints | Endpoints are never evaluated |
 | Reversed bounds | Negate the result |
 | Upper-infinite `a..` | Integrate through a finite-interval transformation |
+| Explicit infinite endpoints | Reusable, non-iterable [interval bounds](intervals.md) |
+| Whole line | Split at zero; both tails must converge independently |
 | Stepped range | Typed error |
 | Divergent or slowly decaying body | Can exhaust the convergence budget |
 
 For example, `∫(x=0..1) 1/√x` is approximately `2`, and
 `∫(x=1..0) x` is `-0.5`. Symbolic integration is not implemented.
+
+```text
+r = -\inf..\inf
+∫(x=r) 1/(1+x^2)            ->  = 3.141592653589793
+∫(x=-\inf..0) e^x           ->  = 1.0
+∫(x=0..-\inf) e^x           ->  = -1.0
+```
+
+Whole-line integration requires ordinary improper convergence. For example,
+`∫(x=-\inf..\inf) x/(1+x^2)` reports `did not converge`; its tails do not
+converge independently.
 
 ## Inverses
 
@@ -99,7 +115,6 @@ the root with the larger real part wins. For `f(x) = x^2`, `f⁻¹(4)` is `2`;
 
 | Limit | Ticket |
 |---|---|
-| Integral bounds are finite or upper-infinite `a..`; no `-\inf` or whole-line bounds | [#8](https://github.com/takeiteasy/adhoc/issues/8) |
 | Numeric derivatives above order 2 are errors; symbolic derivatives support higher orders | [#9](https://github.com/takeiteasy/adhoc/issues/9) |
 | `f⁻¹` returns one branch; no set-valued inverse | [#17](https://github.com/takeiteasy/adhoc/issues/17) |
 | `\diff` at a kink returns the mean slope: `\diff(x=0) \|x\|` is `0.0` | [#10](https://github.com/takeiteasy/adhoc/issues/10) |
@@ -109,8 +124,11 @@ the root with the larger real part wins. For `f(x) = x^2`, `f⁻¹(4)` is `2`;
     the smallest error estimate. The initial step is `0.1·|a|`, or `0.1` at zero.
 
 [^quadrature]: Globally adaptive Gauss–Kronrod uses 7- and 15-point rules and
-    bisects the panel with the largest error estimate. An infinite range maps
-    through `x = a + t/(1-t)`.
+    bisects the panel with the largest error estimate. Upper-infinite bounds map
+    through `x = a + t/(1-t)`; lower-infinite bounds use `x = b - t/(1-t)`.
+    Both transformations use Jacobian magnitude `1/(1-t)²` on `(0, 1)` and
+    never sample the endpoints. Whole-line integration sums two independently
+    converged tails split at zero; each has its own error estimate and budget.
 
 [^inverse]: A bracket grows outward from `y` until `f(x) - y` changes sign, then
     bisects. A tangent root falls back to a secant walk. The residual is checked

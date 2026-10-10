@@ -1075,6 +1075,12 @@ and index brackets, a comma never starts a stepped range: `⟨1, 3..9⟩` has tw
 Ranges can be assigned and passed through the runtime; folds bind them directly
 (`\sum(i=1..10) …`, `Σ(i=1..) …` — see [Special forms](#special-forms-folds-and-limits)).
 
+If either endpoint is explicitly infinite, the same syntax creates a
+non-iterable [interval](intervals.md), such as `-\inf..0` or `0..\inf`.
+Intervals supply reusable integral bounds and test continuous real membership;
+they cannot serve as fold domains. Finite-start `a..` keeps its progression
+semantics.
+
 An open range ends at a closing delimiter, including `}`, `]`, `⟩`, `⌋`, and `⌉`.
 Sets and arrays store a range as one element without expanding it:
 `{1..}` contains one lazy infinite range, and `⟨1..3⟩` contains one finite range.
