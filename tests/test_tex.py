@@ -21,6 +21,15 @@ def test_equation_quotes_render_both_sides():
     assert tex(r"\tex(\expr((x+1)/2 = \sqrt(y)))") == r"\frac{x + 1}{2} = \sqrt{y}"
 
 
+@pytest.mark.parametrize("source, expected", [
+    (r"\expand(`((x+1)^2=y))", "x^{2} + 2 x + 1 = y"),
+    (r"\simplify(`(x+x=y+y))", "2 x = 2 y"),
+    (r"\factor(`(x^2-1=y))", r"\left(x + 1\right) \cdot \left(x - 1\right) = y"),
+])
+def test_rewritten_equations_render_both_sides(source, expected):
+    assert tex(r"\tex(" + source + ")") == expected
+
+
 def test_nested_equality_conditions_render_at_comparison_precedence():
     assert tex(r"\tex(\expr((x=3) ∧ (y<4)))") == r"x = 3 \land y < 4"
 

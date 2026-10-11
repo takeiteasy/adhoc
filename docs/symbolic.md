@@ -41,7 +41,7 @@ protected.
 | Arithmetic and unary minus | `+ - * / ^`, `-x` |
 | Elementary functions | `\sin`, `\sqrt`, `\root`, `\ln`, `\log`, `\abs` |
 | Calls to other names | Undefined symbolic functions: `g(x) + g(x)` simplifies to `2 g(x)` |
-| Equation quotes, for `\solve` | `\expr(x^2 = 4)` |
+| Equation quotes, for `\simplify`, `\expand`, `\factor` and `\solve` | `\expr(x^2 = 4)` |
 
 Sets, other comparisons, folds, lambda syntax and statement quotes produce an error
 naming the unsupported construct. A lambda passed as a function input is supported;
@@ -107,7 +107,7 @@ produce typed errors.
 ## Equation quotes
 
 Write `lhs = rhs` inside `\expr(...)` or a backtick quote. Both sides stay
-unevaluated until passed to `\solve` or `\eval`.
+unevaluated until passed to a symbolic operation or `\eval`.
 
 ```text
 q = \expr(x^2 = 4)
@@ -122,14 +122,26 @@ q = \expr(x^2 = 4)
 names. Equation quotes use the same local bindings and source diagnostics as
 other quotes. `\solve` treats an equation as `lhs - rhs = 0`.
 
+`\simplify`, `\expand` and `\factor` rewrite each side separately and return
+an equation quote preserving `=`, including when both sides are constants or
+identical expressions.
+
+```text
+\expand(\expr((x+1)^2 = y)) -> = \expr(((((x ^ 2) + (2 * x)) + 1) = y))
+\simplify(\expr(x+x = y+y)) -> = \expr(((2 * x) = (2 * y)))
+\factor(\expr(x^2-1 = y))   -> = \expr((((x + 1) * (x - 1)) = y))
+```
+
+The returned quotes support display round trips, `\tex` and boolean evaluation
+with `\eval`. `\deriv` and `\grad` reject equation quotes.
+
 An equation occupies the whole quote body; chained equations are rejected.
 Statement-sequence quotes such as `\expr((x=1; x+1))` contain assignments.
 Outside quotes, `=` retains its bind-or-check and function-definition meanings;
 in expression positions it compares values. See
 [equality expressions](grammar.md#equality-expressions). The outer `=` of an
 equation quote separates full expressions; nested equality uses ordinary
-comparison precedence. Other symbolic rewrites reject equation quotes;
-see [limitations](#limitations).
+comparison precedence.
 
 ## Systems of equations
 
@@ -176,14 +188,13 @@ numeric fallback.
 
 Rewrites stop after 5 seconds by default. `ADHOC_SYMBOLIC_TIMEOUT` sets the limit
 in seconds; `0` disables it. A timeout reports `took longer than 5s` at the default
-setting. `f⁻¹` and `f'` treat a timeout as no exact form and use their numeric
-path.[^worker]
+setting. Both sides of an equation share one time limit. `f⁻¹` and `f'` treat a
+timeout as no exact form and use their numeric path.[^worker]
 
 ## Limitations
 
 | Limit | Ticket |
 |---|---|
-| `\simplify`, `\expand` and `\factor` reject equation quotes | [#42](https://github.com/takeiteasy/adhoc/issues/42) |
 | Infinite solution families are errors; no real-domain option | [#15](https://github.com/takeiteasy/adhoc/issues/15) |
 | No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
 | Gradients are arrays of quotes without vector algebra | [#18](https://github.com/takeiteasy/adhoc/issues/18) |

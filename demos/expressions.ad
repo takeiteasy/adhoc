@@ -13,6 +13,14 @@ s = \expr(x^2 = 4)
 \eval(s, x=3)
 \tex(s)
 
+-- Symbolic rewrites preserve equations for display and boolean evaluation.
+t = \expand(\expr((x+1)^2 = y))
+\eval(t, x=2, y=9)
+\eval(t, x=2, y=8)
+\tex(t)
+\simplify(\expr(x+x = y+y))
+\factor(\expr(x^2-1 = y))
+
 -- Unspecified names resolve at the evaluation site.
 y = 5
 \eval(`(x+y), x=2)

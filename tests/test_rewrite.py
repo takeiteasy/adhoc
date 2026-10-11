@@ -100,7 +100,93 @@ def test_equation_solve_errors(source, fragment):
     fails(source, fragment)
 
 
-@pytest.mark.parametrize("operation", ["simplify", "expand", "factor", "deriv", "grad"])
+@pytest.mark.parametrize("operation, body, expected", [
+    ("expand", "(x+1)^2 = y", "((((x ^ 2) + (2 * x)) + 1) = y)"),
+    ("simplify", "x+x = y+y", "((2 * x) = (2 * y))"),
+    ("factor", "x^2-1 = y", "(((x + 1) * (x - 1)) = y)"),
+    ("expand", "(x+1)^2 = (y+1)^2",
+     "((((x ^ 2) + (2 * x)) + 1) = (((y ^ 2) + (2 * y)) + 1))"),
+    ("factor", "x^2-1 = y^2-1", "(((x + 1) * (x - 1)) = ((y + 1) * (y - 1)))"),
+    ("simplify", r"α+α = \foo+\foo", r"((2 * α) = (2 * \foo))"),
+])
+@pytest.mark.parametrize("quote", [r"\expr", "`"])
+def test_equation_rewrites_preserve_sides_and_round_trip(operation, body, expected, quote):
+    from adhoc.syntax import Equation
+    env = {}
+    source = "\\" + operation + "(" + quote + "(" + body + "))"
+    assert ev("q = " + source, env) == "q = \\expr(" + expected + ")"
+    assert isinstance(env["q"].node, Equation)
+    display = ev("q", env)[2:]
+    run_source("r = " + display, env)
+    assert env["q"] == env["r"]
+
+
+@pytest.mark.parametrize("operation", ["simplify", "expand", "factor"])
+@pytest.mark.parametrize("body, expected", [
+    ("1+1=2", "(2 = 2)"), ("1+1=3", "(2 = 3)"), ("x=x", "(x = x)"),
+])
+def test_equation_rewrites_remain_quotes(operation, body, expected):
+    assert ev("\\" + operation + "(`(" + body + "))") == "= \\expr(" + expected + ")"
+
+
+@pytest.mark.parametrize("operation", ["simplify", "expand", "factor"])
+def test_rewritten_equations_evaluate_without_binding(operation):
+    env = {}
+    run_source("x=10; q=\\" + operation + r"(`((x+1)^2=y))", env)
+    assert run_source(r"\eval(q, x=2, y=9); \eval(q, x=2, y=8)", env) == [
+        "= true", "= false",
+    ]
+    assert env["x"] == 10 and "y" not in env
+
+
+@pytest.mark.parametrize("operation", ["simplify", "expand", "factor"])
+@pytest.mark.parametrize("body", ["x<1=2", "2=x<1"])
+def test_equation_rewrites_reject_unsupported_sides(operation, body):
+    fails("\\" + operation + "(`(" + body + "))", "cannot rewrite compare")
+
+
+def test_rewritten_equation_errors_retain_source_and_byte_spans():
+    from adhoc.span import Span
+    source = r"q=\expand(`(α=1/x))"
+    env = {}
+    run_source(source, env)
+    with pytest.raises(EvalError) as failure:
+        run_source(r"\eval(q, α=1, x=0)", env)
+    start = len(source[:source.index("1/x")].encode("utf-8"))
+    assert failure.value.source == source
+    assert failure.value.span == Span(start, start + 3)
+
+
+def test_equation_rewrite_uses_one_limited_call(monkeypatch):
+    calls = []
+    def limited(fn, *args):
+        calls.append(fn)
+        return fn(*args)
+    monkeypatch.setattr(rewrite, "run_limited", limited)
+    assert ev(r"\simplify(`(x+x=y+y))") == r"= \expr(((2 * x) = (2 * y)))"
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("operation", ["simplify", "expand", "factor"])
+def test_rewritten_equations_remain_solver_inputs(operation):
+    assert ev("q=\\" + operation + r"(`(x^2=4)); \solve(q)") == "= {-2, 2}"
+
+
+@pytest.mark.parametrize("side", ["x", "y"])
+def test_equation_rewrite_timeout_reaps_worker(monkeypatch, side):
+    import multiprocessing
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    def operation(expr):
+        if str(expr) == side:
+            _spin()
+        return expr
+    before = {child.pid for child in multiprocessing.active_children()}
+    with pytest.raises(rewrite.RewriteError, match="took longer than 0.1s"):
+        rewrite.rewrite(_quote("x=y"), operation)
+    assert {child.pid for child in multiprocessing.active_children()} == before
+
+
+@pytest.mark.parametrize("operation", ["deriv", "grad"])
 def test_other_symbolic_operations_reject_equations(operation):
     fails("\\" + operation + r"(`(x^2=4))", "cannot rewrite equation")
 

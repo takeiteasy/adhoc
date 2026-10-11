@@ -309,9 +309,22 @@ def quote(expr: sympy.Expr, bridge: Bridge, source: str) -> ExpressionValue:
 
 
 def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr]) -> ExpressionValue:
+    if (isinstance(value, ExpressionValue) and not value.statement_body
+            and isinstance(value.node, Equation)):
+        equation = value.node
+        left, right = Bridge(equation.lhs.span), Bridge(equation.rhs.span)
+        lhs, rhs = left.to_sympy(equation.lhs), right.to_sympy(equation.rhs)
+        lhs, rhs = run_limited(_rewrite_sides, operation, lhs, rhs)
+        node = Equation(lhs=left.to_node(lhs), rhs=right.to_node(rhs), span=equation.span)
+        return ExpressionValue(node, value.source)
     origin = bridge_value(value)
     result = run_limited(operation, origin.expr)
     return quote(result, origin.bridge, origin.source)
+
+
+def _rewrite_sides(operation: Callable, lhs: sympy.Expr,
+                   rhs: sympy.Expr) -> tuple[sympy.Expr, sympy.Expr]:
+    return operation(lhs), operation(rhs)
 
 
 def derivative(value: Any, unknown: Any = None, order: Any = 1) -> Any:

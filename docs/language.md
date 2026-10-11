@@ -225,6 +225,7 @@ membership. Whole-line integration requires both tails to converge independently
 | `\solve(\expr(x^2 - 4))` | Solve symbolically: `{-2, 2}` |
 | `\solve(\expr(x^2 = 4))` | Solve an equation quote: `{-2, 2}` |
 | `\eval(\expr(x^2 = 4), x=2)` | Compare both sides without binding: `true` |
+| `\simplify(\expr(x+x = y+y))` | Rewrite both sides: `\expr(((2 * x) = (2 * y)))` |
 | ``\solve(⟨`(x+y=3), `(x-y=1)⟩, ⟨`(x), `(y)⟩)`` | Solve a system: `{⟨2, 1⟩}` |
 | `\tex(q)` | Return LaTeX text |
 

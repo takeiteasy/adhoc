@@ -72,6 +72,8 @@ including across REPL submissions.
 
 Equation quotes store an `Equation` node. Evaluation compares the two values;
 the solver bridge converts the two expressions to `lhs - rhs`.
+Symbolic simplification, expansion and factoring bridge each side separately
+and reconstruct an equation quote. Both sides run in one worker under one timeout.
 
 Function bodies retain their AST and defining source. `\body` wraps a body as
 a statement-sequence expression value. Evaluation keeps its bindings local and
