@@ -113,3 +113,36 @@ def test_builder_round_trips():
 def test_reduce_renames_a_captured_builder_variable():
     shown = ev(r"\reduce(\expr((\fn(y) {x ∈ S | x > y})(x)))")
     assert shown == r"= \expr({\reduce_a ∈ S | (\reduce_a > x)})"
+
+
+def test_multiple_generators_and_dependent_domains():
+    assert ev("{x+y | x ∈ 1..3, y ∈ 1..x}") == "= {2, 3, 4, 5, 6}"
+    assert ev("{x+y | x ∈ 1..3, x > 1, y ∈ 1..x, y > 1}") == "= {4, 5, 6}"
+    assert ev("{x+y | x ∈ {}, y ∈ 1/0}") == "= {}"
+    assert ev("{x+y | x ∈ 1..3, x < 0, y ∈ 1/0}") == "= {}"
+
+
+def test_multiple_generator_errors_and_scope():
+    with pytest.raises(ParseError, match="repeated"):
+        parse_program("{x | x ∈ 1..3, x ∈ 1..2}")
+    fails("{x+y | x ∈ 1..2, y ∈ 1..}", "infinite")
+    fails("{x+y | x ∈ 1..2, y ∈ 5}", "range or collection")
+    env = {}
+    run_source("x=10; y=20", env)
+    assert ev("{x+y | x ∈ 1..2, y ∈ 1..x}", env) == "= {2, 3, 4}"
+    assert ev("x+y", env) == "= 30"
+
+
+def test_multiple_generator_roundtrip_and_capture():
+    source = "{x+y | x ∈ S, x > 0, y ∈ 1..x}"
+    roundtrip(source)
+    env = {}
+    run_source("S={1,2}; x=10", env)
+    reduced = ev(r"\reduce(`((\fn(z) {x+y+z | x ∈ S, y ∈ 1..x})(x)))", env)
+    assert "\\reduce_a" in reduced
+    assert ev(r"\eval(\reduce(`((\fn(z) {x+y+z | x ∈ S, y ∈ 1..x})(x))))", env) == "= {12, 13, 14}"
+    assert r"y \\in" in ev(r"\tex(`({x+y | x ∈ S, y ∈ 1..x}))")
+
+
+def test_non_name_membership_is_a_guard():
+    assert ev("{x+y | x ∈ 1..2, x+1 ∈ {2}, y ∈ 1..2}") == "= {2, 3}"

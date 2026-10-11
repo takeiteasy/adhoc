@@ -7,7 +7,7 @@ from .expression import ExpressionValue
 from .syntax import (
     is_short_name,
     Assign, BackslashRef, Call, Diff, Fold, FuncDef, Import, Integral, Lambda, Limit, Node,
-    NoOp, PyImport, Quote, Seq, SetBuilder, Var,
+    NoOp, PyImport, Quote, Seq, SetBuilder, Generator, Var,
 )
 
 
@@ -48,6 +48,18 @@ def _diff_order(node: Node, transform) -> dict:
     return {"order": transform(node.order)} if isinstance(node, Diff) and node.order is not None else {}
 
 
+def _builder(node, context, transform, enter):
+    clauses = []
+    for clause in node.clauses:
+        if isinstance(clause, Generator):
+            clauses.append(replace(clause, domain=transform(clause.domain, context)))
+            context = enter(context, clause.var)
+        else:
+            clauses.append(replace(clause, test=transform(clause.test, context)))
+    return replace(node, clauses=tuple(clauses), element=None if node.element is None
+                   else transform(node.element, context))
+
+
 def _encode(node: Node, context: tuple[str, ...]) -> Node:
     if isinstance(node, _STATEMENTS):
         raise ReduceError("\\reduce needs an expression without statements")
@@ -68,10 +80,7 @@ def _encode(node: Node, context: tuple[str, ...]) -> Node:
                        body=_encode(node.body, (node.var,) + context),
                        **_diff_order(node, lambda child: _encode(child, context)))
     if isinstance(node, SetBuilder):
-        inner = (node.var,) + context
-        return replace(node, domain=_encode(node.domain, context),
-                       element=None if node.element is None else _encode(node.element, inner),
-                       guards=tuple(_encode(g, inner) for g in node.guards))
+        return _builder(node, context, _encode, lambda ctx, name: (name,) + ctx)
     return _children(node, lambda child: _encode(child, context))
 
 
@@ -90,10 +99,8 @@ def _shift(node: Node, amount: int, depth: int = 0) -> Node:
                        body=_shift(node.body, amount, depth + 1),
                        **_diff_order(node, lambda child: _shift(child, amount, depth)))
     if isinstance(node, SetBuilder):
-        return replace(node, domain=_shift(node.domain, amount, depth),
-                       element=None if node.element is None
-                       else _shift(node.element, amount, depth + 1),
-                       guards=tuple(_shift(g, amount, depth + 1) for g in node.guards))
+        return _builder(node, depth, lambda child, level: _shift(child, amount, level),
+                        lambda level, name: level + 1)
     return _children(node, lambda child: _shift(child, amount, depth))
 
 
@@ -117,10 +124,8 @@ def _substitute(node: Node, args: tuple[Node, ...], depth: int = 0) -> Node:
                        body=_substitute(node.body, args, depth + 1),
                        **_diff_order(node, lambda child: _substitute(child, args, depth)))
     if isinstance(node, SetBuilder):
-        return replace(node, domain=_substitute(node.domain, args, depth),
-                       element=None if node.element is None
-                       else _substitute(node.element, args, depth + 1),
-                       guards=tuple(_substitute(g, args, depth + 1) for g in node.guards))
+        return _builder(node, depth, lambda child, level: _substitute(child, args, level),
+                        lambda level, name: level + 1)
     return _children(node, lambda child: _substitute(child, args, depth))
 
 
@@ -177,7 +182,7 @@ def _all_names(node: Node) -> set[str]:
         names.add(node.name)
     elif isinstance(node, Lambda):
         names.update(node.params)
-    elif isinstance(node, Fold | Limit | Diff | Integral | SetBuilder):
+    elif isinstance(node, Fold | Limit | Diff | Integral | Generator):
         names.add(node.var)
     for field in fields(node):
         value = getattr(node, field.name)
@@ -227,16 +232,22 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
         return replace(node, params=tuple(names), param_spellings=tuple(spellings),
                        body=_reify(node.body, inner, fresh))
     if isinstance(node, SetBuilder):
-        scoped = tuple(p for p in (node.element, *node.guards) if p is not None)
-        forbidden = set().union(*map(_free_names, scoped)) | {name for name, _ in context}
-        name = fresh() if node.var in forbidden else node.var
-        spelling = f"\\{name}" if name != node.var else node.var_spelling
-        inner = ((name, spelling),) + context
-        return replace(node, var=name, var_spelling=spelling,
-                       domain=_reify(node.domain, context, fresh),
-                       element=None if node.element is None
-                       else _reify(node.element, inner, fresh),
-                       guards=tuple(_reify(g, inner, fresh) for g in node.guards))
+        clauses = []
+        inner = context
+        for index, clause in enumerate(node.clauses):
+            if isinstance(clause, Generator):
+                scoped = (*node.clauses[index + 1:], node.element)
+                forbidden = set().union(*(_free_names(p) for p in scoped if p is not None))
+                forbidden.update(name for name, _ in inner)
+                name = fresh() if clause.var in forbidden else clause.var
+                spelling = f"\\{name}" if name != clause.var else clause.var_spelling
+                clauses.append(replace(clause, var=name, var_spelling=spelling,
+                                       domain=_reify(clause.domain, inner, fresh)))
+                inner = ((name, spelling),) + inner
+            else:
+                clauses.append(replace(clause, test=_reify(clause.test, inner, fresh)))
+        return replace(node, clauses=tuple(clauses), element=None if node.element is None
+                       else _reify(node.element, inner, fresh))
     if isinstance(node, Fold | Limit | Diff | Integral):
         forbidden = _free_names(node.body) | {name for name, _ in context}
         name = fresh() if node.var in forbidden else node.var
@@ -275,4 +286,4 @@ def reduce_expression(value: ExpressionValue) -> ExpressionValue:
                 used.add(name)
                 return name
 
-    return ExpressionValue(_reify(node, (), fresh), value.source)
+    return ExpressionValue(_reify(node, (), fresh), value.source, dimensions=value.dimensions)

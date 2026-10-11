@@ -213,6 +213,29 @@ in seconds; `0` disables it. A timeout reports `took longer than 5s` at the defa
 setting. Both sides of an equation share one time limit. `f⁻¹` and `f'` treat a
 timeout as no exact form and use their numeric path.[^worker]
 
+## Dimension annotations
+
+Unit-aware `\simplify`, `\expand`, `\factor`, `\deriv`, `\grad` and
+`\solve` accept local `\dimensions` annotations. Every unresolved free name
+needs a quoted-name/unit pair; use `1` for a dimensionless variable.
+
+```text
+\solve(`(x=2\metre), `(x), \dimensions=⟨⟨`(x), \metre⟩⟩)
+    -> = {2*\metre}
+\eval(\deriv(`(x^2), `(x), \dimensions=⟨⟨`(x), \metre⟩⟩), x=3\metre)
+    -> = 6*\metre
+```
+
+Dimension checks occur before simplification. Equations require matching sides;
+functions such as sine and logarithm require dimensionless arguments. The
+backend receives canonical magnitudes; results restore unit factors.
+
+Returned expression values retain annotations. `\eval` checks supplied or
+visible bindings against them. Duplicate annotation names and conflicting
+dimensions are errors. Annotations do not change the session's bindings.
+Finite solutions and symbolic solution families carry the unknown's dimension;
+membership in a family with different dimensions is false.
+
 ## Limitations
 
 | Limit | Ticket |

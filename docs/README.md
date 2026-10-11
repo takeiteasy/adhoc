@@ -17,6 +17,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [LaTeX output](tex.md) | Rendering quotes, functions and values |
 | [Standard library](stdlib.md) | Prelude constants and functions |
 | [Eigenvalues and eigenvectors](eigen.md) | Eigenspace records, indexing and exact/float behavior |
+| [Units](units.md) | Quantities, conversion and dimensions |
 | [Numerics](numerics.md) | Exact arithmetic, convergence, display and Python conversions |
 | [Architecture](architecture.md) | Package layout and evaluation pipeline |
 | [Runtime lowering](lowering.md) | Engine calls, scope and error mapping |

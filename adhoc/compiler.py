@@ -71,6 +71,7 @@ from .syntax import (
     Eval,
     Range,
     Seq,
+    Generator,
     SetBuilder,
     SetLit,
     StrLit,
@@ -365,18 +366,21 @@ class _Lowerer:
                     pyast.Tuple(elts=[self._thunk(v) for v in values], ctx=pyast.Load()),
                     self._thunk(otherwise) if otherwise is not None else pyast.Constant(None),
                     pyast.Constant(sid)])
-            case SetBuilder(var=var, domain=domain, element=element, guards=guards,
-                            var_spelling=var_spelling, span=span):
+            case SetBuilder(clauses=clauses, element=element, span=span):
                 sid = self._push(span)
-                body_sids = []
-                for part in (*guards, *([element] if element is not None else [])):
+                specs = []
+                for clause in clauses:
+                    part = clause.domain if isinstance(clause, Generator) else clause.test
                     part_sid = self._push(part.span)
                     self.definitions[part_sid] = _compile_body(part, self.source)
-                    body_sids.append(part_sid)
-                return _call("set_builder", [pyast.Constant(var), self.expr(domain),
-                                             pyast.Constant(tuple(body_sids[:len(guards)])),
-                                             pyast.Constant(body_sids[-1] if element is not None else None),
-                                             pyast.Constant(sid), pyast.Constant(var_spelling)])
+                    specs.append((clause.var, clause.var_spelling, part_sid)
+                                 if isinstance(clause, Generator) else (None, None, part_sid))
+                element_sid = None
+                if element is not None:
+                    element_sid = self._push(element.span)
+                    self.definitions[element_sid] = _compile_body(element, self.source)
+                return _call("set_builder", [pyast.Constant(tuple(specs)),
+                                             pyast.Constant(element_sid), pyast.Constant(sid)])
             case Lambda(params=params, body=body, param_spellings=param_spellings,
                         span=span):
                 # Same shape as FuncDef/Fold: the body compiles once into

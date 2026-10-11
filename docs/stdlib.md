@@ -233,6 +233,16 @@ tensors to 1,000,000 entries.
 `×` and `⊗` share multiplication precedence. With a scalar operand they multiply:
 `2 × [1, 2]` is `[2, 4]`.
 
+## Unit operations
+
+| Function | Result |
+|---|---|
+| `\convert(q, unit)` | Quantity displayed in the target unit |
+| `\magnitude(q, unit)` | Numeric magnitude in the target unit |
+| `\unit(name, scale)` | Named exact multiplicative unit value |
+
+See [units](units.md) for the catalogue, dimension rules and limitations.
+
 ## Limitations
 
 - Float rank is estimated from elimination pivots. Elimination growth and column

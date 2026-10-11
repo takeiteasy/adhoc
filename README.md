@@ -70,6 +70,7 @@ Heavyweight tests are marked `slow`;
 | [Symbolic rewriting](docs/symbolic.md) | Simplification, expansion, factoring and solving |
 | [LaTeX output](docs/tex.md) | Rendering quotes, functions and values |
 | [Standard library](docs/stdlib.md) | Prelude constants and functions |
+| [Units](docs/units.md) | Dimensioned quantities, conversion and integration |
 | [Numerics](docs/numerics.md) | Exact arithmetic, convergence, display and Python conversions |
 | [Architecture](docs/architecture.md) | Package layout and evaluation pipeline |
 | [Runtime lowering](docs/lowering.md) | Engine calls, scope and error mapping |

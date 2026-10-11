@@ -65,3 +65,10 @@ Names use their LaTeX spelling: Greek letters (`α` is `\alpha`), subscripts (`x
 `x_{1}`), known functions (`\sin`, `\asin` is `\arcsin`) and `\operatorname{name}` for the rest.
 Built-in functions, Python callables and other values without a LaTeX form
 produce typed errors.
+
+## Unit values
+
+Quantities render numeric magnitudes followed by upright unit names and rational
+exponents. `\convert` selects the displayed unit; ordinary arithmetic uses SI
+base units. `\tex(2\metre/\second)` includes metre and second to the power
+`-1`. See [units](units.md).

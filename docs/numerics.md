@@ -4,6 +4,9 @@
 approximate iteration method. Exact values may display approximate digits;
 that does not change the stored value.
 
+Quantities wrap these numeric tiers with physical dimensions; see [units](units.md).
+Dimension checks precede magnitude arithmetic, preserving exact unit scales.
+
 ## Numeric tiers
 
 Arithmetic chooses the lowest tier that can represent the result exactly.
@@ -305,6 +308,7 @@ Arguments convert in the other direction:
 | Array | List of converted elements |
 | Set | `frozenset`; list when an element is unhashable |
 | Symbolic solution set | Unchanged non-enumerating value |
+| Quantity or unit | Requires explicit `\magnitude(q, unit)` extraction |
 | Other value | Unchanged |
 
 ```text

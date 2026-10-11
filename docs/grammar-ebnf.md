@@ -47,7 +47,7 @@ cmp-op     ::= "=" | "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" |
 angle      ::= additive (("∠" | "\\angle") additive)? ;   (* polar form r∠θ *)
 additive   ::= multiplicative (("+" | "-" | "∪" | "\\cup" | "∖" | "\\setminus") multiplicative)* ;
 multiplicative
-           ::= juxtaposed (("*" | "/" | "@" | "\\contract" | "×" | "\\times" | "⊗" | "\\otimes" | "∩" | "\\cap" | "∘" | "\\circ" | "%" | "\\mod") juxtaposed)* ;
+           ::= juxtaposed (("*" | "/" | "\\per" | "@" | "\\contract" | "×" | "\\times" | "⊗" | "\\otimes" | "∩" | "\\cap" | "∘" | "\\circ" | "%" | "\\mod") juxtaposed)* ;
 juxtaposed ::= unary unary* ;              (* implicit multiplication *)
 unary      ::= "-" unary | power ;
 radical    ::= "√" unary ;                 (* prefix spelling of \sqrt(...) *)
@@ -76,7 +76,9 @@ tensor     ::= "[" expr ("," expr)* "]"
              | "[" expr ("," expr)* (";" expr ("," expr)*)* ";"? "]" ;
 set        ::= "{" (expr ("," expr)*)? "}" ;
 piecewise  ::= "{" (expr ":" expr sep)* (expr ":" expr | expr) sep? "}" ;
-builder    ::= "{" name "∈" expr "|" guards "}" | "{" expr "|" name "∈" expr ("," guards)? "}" ;
+builder    ::= "{" name "∈" expr "|" guards "}" | "{" expr "|" generator ("," clause)* "}" ;
+generator  ::= name "∈" expr ;
+clause     ::= generator | expr ;
 guards     ::= expr ("," expr)* ;
 array      ::= ("⟨" | "#[") (expr ("," expr)*)? ("⟩" | "]")
              | "\\arr" "(" (expr ("," expr)*)? ")" ;

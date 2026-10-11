@@ -27,6 +27,25 @@ f⁻¹(8)                      ->  = 2
 (x ↦ 2x)⁻¹(6)               ->  = 3
 ```
 
+## Dimensioned calculus
+
+`\diff`, function derivatives and `\int` accept [quantities](units.md).
+An order-`n` derivative has dimension `body / variable^n`; an integral has
+dimension `body × variable`. Endpoints must have matching dimensions, and the
+body's dimension must stay consistent across samples.
+
+```text
+f(x) = x^2
+f'(2\metre)                         -> = 4*\metre
+\diff(x=2\metre) x^2                 -> approximately 4*\metre
+\int(t=0\second..2\second) 3\metre/\second -> = 6.0*\metre
+```
+
+Numeric methods probe canonical SI magnitudes and reattach dimensions. Equal
+integration bounds evaluate the body once and return zero with the integral's
+dimension. Dimensioned limits and inverses are listed in
+[unit limitations](units.md#limitations).
+
 ## Binders
 
 `\diff` and `\int` are [special forms](grammar.md#special-forms-folds-and-limits).
@@ -34,7 +53,7 @@ Their first parentheses bind a variable; the body extends over the rest of the
 expression. The variable stays local, as a function parameter does. `∂` and `∫`
 are name aliases of `\diff` and `\int`.
 
-Numeric methods return floats or complex floats. The body may be complex;
+Numeric methods return floats or complex floats, wrapped in quantities when dimensioned. The body may be complex;
 `\diff` requires a real anchor.
 
 ## Derivatives

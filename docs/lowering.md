@@ -85,3 +85,17 @@ lowers to `pass`, preserving the line mapping without producing output.
 
 Outputs accumulate in statement order. The REPL prints the last output;
 script mode echoes every statement and stops at the first failure.
+
+## Set-builders
+
+Generators and guards compile once as ordered clauses. Each domain evaluates
+with earlier bindings, and each guard filters its current branch before later
+domains evaluate. The result expression sees every bound name; bindings stay
+local and results deduplicate in first-seen order.
+
+## Quantities
+
+Unit names use ordinary protected-name lookup; `\per` lowers as division.
+Numeric helpers check dimensions before operating on canonical magnitudes.
+Calculus binds dimensioned probes and checks sample dimensions; matrix helpers
+factor out a shared dimension before calling numeric backends.

@@ -34,6 +34,10 @@ applies to finite equation-system solves.
 | Enumeration, indexing and `\len` | Typed error |
 | Arithmetic, set algebra and subset comparisons | Typed error |
 
+Dimensioned families retain the solved unknown’s dimension. Membership compares
+canonical magnitudes only when dimensions match; other dimensions return false.
+See [dimension annotations](symbolic.md#dimension-annotations).
+
 Membership preserves exact numeric values. It runs under the
 [symbolic timeout](symbolic.md#time-limit), including when called through a
 function or used as a condition.

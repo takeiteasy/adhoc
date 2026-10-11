@@ -259,9 +259,15 @@ def _single_expression(node: Node) -> Node:
     return node
 
 
-def bridge_function(fn: Any) -> Source:
+def bridge_function(fn: Any, declared=None) -> Source:
     node = _single_expression(fn.body.node)
-    bridge = Bridge(node.span, frozenset(fn.params), _closure_lookup(fn.closure))
+    from . import dimensional
+    from .runtime import _MISSING
+    def lookup(name):
+        value = fn.closure._lookup(name)
+        return None if value is _MISSING else value
+    bridge = dimensional.bridge(node, declared=declared, bound=frozenset(fn.params), lookup=lookup)
+    bridge = bridge or Bridge(node.span, frozenset(fn.params), _closure_lookup(fn.closure))
     for param in fn.params:
         bridge.symbol(param, Var(ch=param, span=node.span, spelling=param)
                       if is_short_name(param) else
@@ -283,41 +289,62 @@ def _closure_lookup(closure: Any) -> Callable[[str], Any]:
     return lookup
 
 
-def bridge_value(value: Any) -> Source:
+def bridge_value(value: Any, declared=None) -> Source:
     from .runtime import AdFunction
     if isinstance(value, AdFunction):
-        return bridge_function(value)
+        return bridge_function(value, declared)
     if isinstance(value, ExpressionValue):
         if value.statement_body:
             raise RewriteError("needs an expression quote, not a statement quote")
-        bridge = Bridge(value.node.span)
+        from . import dimensional
+        bridge = dimensional.bridge(value.node, value, declared) or Bridge(value.node.span)
         return Source(bridge.to_sympy(value.node), bridge, value.source)
     raise RewriteError("needs an expression quote or a user-defined function")
 
 
-def _bridge_equation(value: Any) -> Source:
+def _bridge_equation(value: Any, declared=None) -> Source:
     if (isinstance(value, ExpressionValue) and not value.statement_body
             and isinstance(value.node, Equation)):
-        bridge = Bridge(value.node.span)
-        expr = bridge.to_sympy(value.node.lhs) - bridge.to_sympy(value.node.rhs)
+        from . import dimensional
+        bridge = dimensional.bridge(value.node, value, declared)
+        if bridge is not None:
+            expr = bridge.to_sympy(value.node)
+        else:
+            bridge = Bridge(value.node.span)
+            expr = bridge.to_sympy(value.node.lhs) - bridge.to_sympy(value.node.rhs)
         return Source(expr, bridge, value.source)
-    return bridge_value(value)
+    return bridge_value(value, declared)
 
 
-def quote(expr: sympy.Expr, bridge: Bridge, source: str) -> ExpressionValue:
+def quote(expr: sympy.Expr, bridge: Bridge, source: str, dims=None) -> ExpressionValue:
+    from .dimensional import DimensionBridge, restore
+    if isinstance(bridge, DimensionBridge):
+        node = restore(expr, bridge, bridge.result_dimensions if dims is None else dims)
+        return ExpressionValue(node, source, dimensions=bridge.metadata)
     return ExpressionValue(bridge.to_node(expr), source)
 
 
-def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr]) -> ExpressionValue:
+def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr], *, dimensions=None) -> ExpressionValue:
+    from . import dimensional
+    declared = dimensional.annotations(dimensions) if dimensions is not None else None
     if (isinstance(value, ExpressionValue) and not value.statement_body
             and isinstance(value.node, Equation)):
         equation = value.node
+        checked = dimensional.bridge(equation, value, declared)
+        if checked is not None:
+            checked.to_sympy(equation)
+            lhs, ld = checked.measure(equation.lhs)
+            rhs, rd = checked.measure(equation.rhs)
+            lhs, rhs = run_limited(_rewrite_sides, operation, lhs, rhs)
+            node = Equation(lhs=dimensional.restore(lhs, checked, ld),
+                            rhs=dimensional.restore(rhs, checked, rd), span=equation.span)
+            return ExpressionValue(node, value.source, dimensions=checked.metadata)
         left, right = Bridge(equation.lhs.span), Bridge(equation.rhs.span)
         lhs, rhs = left.to_sympy(equation.lhs), right.to_sympy(equation.rhs)
         lhs, rhs = run_limited(_rewrite_sides, operation, lhs, rhs)
         node = Equation(lhs=left.to_node(lhs), rhs=right.to_node(rhs), span=equation.span)
         return ExpressionValue(node, value.source)
-    origin = bridge_value(value)
+    origin = bridge_value(value, declared)
     result = run_limited(operation, origin.expr)
     return quote(result, origin.bridge, origin.source)
 
@@ -327,12 +354,13 @@ def _rewrite_sides(operation: Callable, lhs: sympy.Expr,
     return operation(lhs), operation(rhs)
 
 
-def derivative(value: Any, unknown: Any = None, order: Any = 1) -> Any:
+def derivative(value: Any, unknown: Any = None, order: Any = 1, *, dimensions=None) -> Any:
     """The exact derivative: one quote for a single unknown or a list of them (a mixed
     partial), the gradient (an array of quotes) when several names are candidates."""
     if not isinstance(order, int) or isinstance(order, bool) or order < 1:
         raise RewriteError("needs the order to be a positive integer")
-    origin = bridge_value(value)
+    from .dimensional import annotations
+    origin = bridge_value(value, annotations(dimensions) if dimensions is not None else None)
     if isinstance(unknown, ArrayValue):
         if order != 1:
             raise RewriteError("takes an order only with a single unknown")
@@ -346,9 +374,10 @@ def derivative(value: Any, unknown: Any = None, order: Any = 1) -> Any:
     return _diff(origin, [_unknown(origin, unknown)] * order)
 
 
-def gradient(value: Any, unknown: Any = None) -> Any:
+def gradient(value: Any, unknown: Any = None, *, dimensions=None) -> Any:
     """The array of first partials over the listed names, or over every candidate."""
-    origin = bridge_value(value)
+    from .dimensional import annotations
+    origin = bridge_value(value, annotations(dimensions) if dimensions is not None else None)
     if unknown is None:
         return _gradient(origin, _candidates(origin))
     if not isinstance(unknown, ArrayValue):
@@ -358,7 +387,16 @@ def gradient(value: Any, unknown: Any = None) -> Any:
 
 def _diff(origin: Source, symbols: list[sympy.Symbol]) -> ExpressionValue:
     result = run_limited(sympy.diff, origin.expr, *symbols)
-    return quote(result, origin.bridge, origin.source)
+    from .dimensional import DimensionBridge
+    from . import units
+    dims = None
+    if isinstance(origin.bridge, DimensionBridge):
+        dims = origin.bridge.result_dimensions
+        for symbol in symbols:
+            if symbol.name not in origin.bridge.declared:
+                raise RewriteError(f"missing dimension annotation for {symbol.name}")
+            dims = units.combine(dims, origin.bridge.declared[symbol.name], -1)
+    return quote(result, origin.bridge, origin.source, dims)
 
 
 def _gradient(origin: Source, symbols: list[sympy.Symbol]) -> ArrayValue:
@@ -382,16 +420,23 @@ def _candidates(origin: Source) -> list[sympy.Symbol]:
     return names
 
 
-def solve(value: Any, unknown: Any = None, *, domain: str = "complex") -> Any:
+def solve(value: Any, unknown: Any = None, *, domain: str = "complex", dimensions=None) -> Any:
     """Solve an equation or `value = 0` in the selected domain, as an ad set."""
     from .runtime import SetValue, _dedup
+    from . import dimensional, units
+    declared = dimensional.annotations(dimensions) if dimensions is not None else None
     from .solution_set import SymbolicSetValue
     if not isinstance(domain, str) or domain not in ("complex", "real"):
         raise RewriteError('needs domain="complex" or domain="real"')
     if isinstance(value, ArrayValue) or isinstance(unknown, ArrayValue):
-        return _solve_system(value, unknown, domain)
-    origin = _bridge_equation(value)
+        return _solve_system(value, unknown, domain, declared)
+    origin = _bridge_equation(value, declared)
     symbol = _unknown(origin, unknown)
+    solution_dims = units.DIMENSIONLESS
+    if isinstance(origin.bridge, dimensional.DimensionBridge):
+        if symbol.name not in origin.bridge.declared:
+            raise RewriteError(f"missing dimension annotation for {symbol.name}")
+        solution_dims = origin.bridge.declared[symbol.name]
     solutions = run_limited(sympy.solveset, origin.expr, symbol,
                             sympy.S.Reals if domain == "real" else sympy.S.Complexes)
     if solutions is sympy.S.EmptySet:
@@ -399,24 +444,26 @@ def solve(value: Any, unknown: Any = None, *, domain: str = "complex") -> Any:
     if not isinstance(solutions, sympy.FiniteSet):
         if not isinstance(solutions, sympy.Set) or solutions.has(sympy.ConditionSet):
             raise RewriteError("cannot solve this equation in closed form")
-        return SymbolicSetValue(solutions, tuple(origin.bridge.nodes.items()))
+        return SymbolicSetValue(solutions, tuple(origin.bridge.nodes.items()), solution_dims)
     items = []
     for solution in sorted(solutions, key=sympy.default_sort_key):
-        items.append(_solution_value(solution, origin.bridge, origin.source))
+        items.append(_solution_value(solution, origin.bridge, origin.source, solution_dims))
     return SetValue(_dedup(items))
 
 
-def _solution_value(solution: sympy.Expr, bridge: Bridge, source: str) -> Any:
+def _solution_value(solution: sympy.Expr, bridge: Bridge, source: str, dims=None) -> Any:
     from .runtime import NumError, _sympy_to_ad
     if not solution.free_symbols:
         try:
-            return _sympy_to_ad(solution, "sympy expression")
+            from . import units
+            return units.attach(_sympy_to_ad(solution, "sympy expression"),
+                                units.DIMENSIONLESS if dims is None else dims)
         except NumError:
             pass
-    return quote(solution, bridge, source)
+    return quote(solution, bridge, source, dims)
 
 
-def _solve_system(value: Any, unknowns: Any, domain: str) -> Any:
+def _solve_system(value: Any, unknowns: Any, domain: str, declared=None) -> Any:
     from .expression import show
     from .parser import parse_program
     from .runtime import SetValue, _dedup
@@ -428,17 +475,28 @@ def _solve_system(value: Any, unknowns: Any, domain: str) -> Any:
     values = value.items if isinstance(value, ArrayValue) else (value,)
     if not values:
         raise RewriteError("needs at least one equation in the array")
-    equations = [_bridge_equation(item).expr for item in values]
+    from . import dimensional, units
+    origins = [_bridge_equation(item, declared) for item in values]
+    equations = [origin.expr for origin in origins]
     solutions = run_limited(_system_solutions, equations, symbols, domain)
-    bridge = Bridge(Span(0, 0))
+    checked = next((origin.bridge for origin in origins if isinstance(origin.bridge, dimensional.DimensionBridge)), None)
+    bridge = checked or Bridge(Span(0, 0))
+    if checked:
+        for origin in origins:
+            bridge.nodes.update(origin.bridge.nodes)
+        for symbol in symbols:
+            if symbol.name not in bridge.declared:
+                raise RewriteError(f"missing dimension annotation for {symbol.name}")
     items = []
     for row in solutions:
         coordinates = []
-        for solution in row:
-            coordinate = _solution_value(solution, bridge, "")
+        for symbol, solution in zip(symbols, row):
+            dims = bridge.declared[symbol.name] if checked else units.DIMENSIONLESS
+            coordinate = _solution_value(solution, bridge, "", dims)
             if isinstance(coordinate, ExpressionValue):
                 source = show(coordinate.node)
-                coordinate = ExpressionValue(_single_expression(parse_program(source)), source)
+                coordinate = ExpressionValue(_single_expression(parse_program(source)), source,
+                                             dimensions=coordinate.dimensions)
             coordinates.append(coordinate)
         items.append(ArrayValue(tuple(coordinates)))
     return SetValue(_dedup(items))

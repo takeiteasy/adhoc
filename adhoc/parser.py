@@ -153,6 +153,8 @@ from .syntax import (
     Eval,
     Range,
     Seq,
+    Generator,
+    Guard,
     SetBuilder,
     SetLit,
     StrLit,
@@ -196,7 +198,7 @@ _CLOSERS = (RBracket, RBrace, RAngle)
 # argument like `\\fold(+, xs)`); infix-only spellings go through `_infix_name`.
 _SYMBOL_OPERATORS = {Bang: "fact", DoubleBang: "dfact", Plus: "add", Minus: "sub", Star: "mul", Slash: "div", Caret: "pow",
                      Less: "lt", LessEq: "le", Greater: "gt", GreaterEq: "ge"}
-_INFIX_OPERATORS = {"contract": "dot", "times": "times", "otimes": "otimes", "cup": "union", "cap": "intersect",
+_INFIX_OPERATORS = {"per": "div", "contract": "dot", "times": "times", "otimes": "otimes", "cup": "union", "cap": "intersect",
                     "setminus": "setminus", "circ": "compose", "in": "member",
                     "subseteq": "subseteq", "neq": "ne", "approx": "approx", "notin": "notmember",
                     "subset": "subset", "supseteq": "supseteq", "supset": "supset", "mod": "mod",
@@ -212,7 +214,7 @@ _COMPARE_KEYS = frozenset({"lt", "le", "gt", "ge", "member", "subseteq", "ne", "
                           "notmember", "subset", "supseteq", "supset"})
 
 _ADDITIVE_INFIX = {"cup": BinOperator.UNION, "setminus": BinOperator.SETMINUS}
-_MULTIPLICATIVE_INFIX = {"contract": BinOperator.DOT, "times": BinOperator.TIMES,
+_MULTIPLICATIVE_INFIX = {"per": BinOperator.DIV, "contract": BinOperator.DOT, "times": BinOperator.TIMES,
                          "otimes": BinOperator.OTIMES, "cap": BinOperator.INTERSECT,
                          "circ": BinOperator.COMPOSE, "mod": BinOperator.MOD}
 _ANGLE_INFIX = {"angle": BinOperator.ANGLE}
@@ -1324,7 +1326,7 @@ class _Parser:
 
     # set       ::= "{" (expr ("," expr)*)? "}" ;
     # piecewise ::= "{" (expr ":" expr sep)* (expr ":" expr | expr) sep? "}" ;
-    # builder   ::= "{" name "∈" expr "|" guards "}" | "{" expr "|" name "∈" expr ("," guards)? "}" ;
+    # builder   ::= "{" name "∈" expr "|" guards "}" | "{" expr "|" generator ("," clause)* "}" ;
     # The first item reads with a `|` sentinel on the bar stack, so a top-level `|` after an
     # operand ends it rather than opening a bar form (`## Delimited forms`).
     def _set_literal(self) -> Node:
@@ -1378,41 +1380,49 @@ class _Parser:
                          otherwise=otherwise, span=opener.span.to(close.span))
 
     def _set_builder(self, opener: Token, first: Node) -> SetBuilder:
-        self.advance()  # `|`
+        self.advance()
         self._skip_newlines()
-        if isinstance(first, Compare) and first.op is CompareOperator.IN:
-            var_node, element, domain = first.lhs, None, first.rhs
+        filtering = isinstance(first, Compare) and first.op is CompareOperator.IN
+        clauses = []
+        names = set()
+
+        def generator(node):
+            if not isinstance(node, Compare) or node.op is not CompareOperator.IN:
+                raise ParseError("set-builder needs a binder `x ∈ set` after `|`; write `a*|b|` for a product of bars", node.span)
+            var = node.lhs
+            if not isinstance(var, Var | BackslashRef):
+                raise ParseError("set-builder binds a name", var.span)
+            name = var.ch if isinstance(var, Var) else var.name
+            if name in names:
+                raise ParseError("set-builder binder is repeated", var.span)
+            names.add(name)
+            return Generator(var=name, domain=node.rhs, var_spelling=var.spelling, span=node.span)
+
+        if filtering:
+            clauses.append(generator(first))
         else:
-            var_tok = self.peek()
-            if not (isinstance(var_tok, Ident | Backslash)
-                    and (self._is_member(self.peek2()))):
-                raise ParseError(
-                    "set-builder needs a binder `x ∈ set` after `|`; write `a*|b|` for a product of bars",
-                    var_tok.span)
-            var_node = self._name_node(var_tok.ch, var_tok.span) if isinstance(var_tok, Ident) \
-                else BackslashRef(name=var_tok.name, span=var_tok.span, spelling=_spelling(var_tok))
-            self.advance()
-            self.advance()  # `∈`
-            element, domain = first, self.expr()
+            if not isinstance(self.peek(), Ident | Backslash) or not self._is_member(self.peek2()):
+                raise ParseError("set-builder needs a binder `x ∈ set` after `|`; write `a*|b|` for a product of bars", self.peek().span)
+            clauses.append(generator(self.expr()))
             self._skip_newlines()
-        if not isinstance(var_node, Var | BackslashRef):
-            raise ParseError("set-builder binds a name", var_node.span)
-        var = var_node.ch if isinstance(var_node, Var) else var_node.name
-        guards: list[Node] = []
-        if element is None or isinstance(self.peek(), Comma):
-            if element is not None:
-                self.advance()  # `,`
-            self._skip_newlines()
-            guards.append(self.expr())
-            self._skip_newlines()
-            while isinstance(self.peek(), Comma):
+        if filtering or isinstance(self.peek(), Comma):
+            if not filtering:
                 self.advance()
+            while True:
                 self._skip_newlines()
-                guards.append(self.expr())
+                node = self.expr()
+                if (not filtering and isinstance(node, Compare) and node.op is CompareOperator.IN
+                        and isinstance(node.lhs, Var | BackslashRef)):
+                    clauses.append(generator(node))
+                else:
+                    clauses.append(Guard(test=node, span=node.span))
                 self._skip_newlines()
+                if not isinstance(self.peek(), Comma):
+                    break
+                self.advance()
         close = self.expect(RBrace, "`}`")
-        return SetBuilder(var=var, domain=domain, element=element, guards=tuple(guards),
-                          var_spelling=var_node.spelling, span=opener.span.to(close.span))
+        return SetBuilder(clauses=tuple(clauses), element=None if filtering else first,
+                          span=opener.span.to(close.span))
 
     # array ::= "⟨" (expr ("," expr)*)? "⟩" | "#[" (expr ("," expr)*)? "]"
     def _array_literal(self, closer: type, closer_text: str) -> ArrayLit:

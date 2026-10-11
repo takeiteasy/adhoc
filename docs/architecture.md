@@ -36,6 +36,8 @@ See [runtime lowering](lowering.md) for the operation mapping.
 | `linalg` | Matrix elimination, constructors and tensor products |
 | `eigen` | SymPy exact eigensystems and NumPy numerical eigenpairs on backend scalars |
 | `runtime` | Numeric dispatch, `Engine`, lazy ranges, interval bounds, Python interop and numeric calculus |
+| `units` | Exact unit scales, quantities and dimension arithmetic |
+| `dimensional` | Dimension validation and canonical magnitudes for symbolic operations |
 | `gauss` | Gaussian rationals using exact component arithmetic |
 | `symbolic` | Rational coefficient times one recognized SymPy atom |
 | `algebraic` | Exact algebraic SymPy values |

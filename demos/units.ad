@@ -1,0 +1,14 @@
+9.8\metre \per \second^2
+\convert(1000\metre, \kilometre)
+\magnitude(1\gram, \kilogram)
+\furlong = \unit("furlong", 201.168\metre)
+\convert(201.168\metre, \furlong)
+\sqrt(4\metre^2)
+A = [2, 0; 0, 4]*\second
+\linsolve(A, [6, 8]*\metre)
+f(x) = x^2
+f'(2\metre)
+\int(t=0\second..2\second) 3\metre/\second
+\solve(`(x=2\metre), `(x), \dimensions=⟨⟨`(x), \metre⟩⟩)
+\eval(\deriv(`(x^2), `(x), \dimensions=⟨⟨`(x), \metre⟩⟩), x=3\metre)
+\tex(2\metre/\second)

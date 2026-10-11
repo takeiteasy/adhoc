@@ -14,7 +14,7 @@ from .syntax import (
     SUBSCRIPTS, is_short_name,
     Assign, ArrayLit, BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Diff, Equation,
     Eval, Fold, Hole, IfExpr, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OpRef,
-    Piecewise, PowCall, Quote, Range, SetBuilder, SetLit, StrLit, TensorLit, Transpose,
+    Piecewise, PowCall, Quote, Range, SetBuilder, Generator, Guard, SetLit, StrLit, TensorLit, Transpose,
     UnaryOperator, UnOp, Var, WholeAxis,
 )
 
@@ -284,15 +284,23 @@ def node_tex(node: Node, prec: int = 0) -> str:
             return rf"\langle {_args(items)} \rangle"
         case SetLit(items=items):
             return r"\{" + _args(items) + r"\}" if items else r"\emptyset"
-        case SetBuilder(var=var, domain=domain, element=element, guards=guards):
-            name = _name(var) if is_short_name(var) else _long_name(var)
+        case SetBuilder(clauses=clauses, element=element):
             lookup, bound = _SCOPE.get()
-            with _scope(lookup, bound | {var}):
-                tests = _args(guards)
+            texts = []
+            for clause in clauses:
+                with _scope(lookup, bound):
+                    if isinstance(clause, Generator):
+                        name = _name(clause.var) if is_short_name(clause.var) else _long_name(clause.var)
+                        texts.append(rf"{name} \in {node_tex(clause.domain)}")
+                    else:
+                        texts.append(node_tex(clause.test))
+                if isinstance(clause, Generator):
+                    bound = bound | {clause.var}
             if element is None:
-                return rf"\{{ {name} \in {node_tex(domain)} \mid {tests} \}}"
-            tail = f", {tests}" if guards else ""
-            return rf"\{{ {_bound_tex(element, (var,))} \mid {name} \in {node_tex(domain)}{tail} \}}"
+                return rf"\{{ {texts[0]} \mid {', '.join(texts[1:])} \}}"
+            with _scope(lookup, bound):
+                head = node_tex(element)
+            return rf"\{{ {head} \mid {', '.join(texts)} \}}"
         case WholeAxis():
             return r"\ldots"
         case Index(head=head, items=items):
@@ -332,6 +340,26 @@ def _value_tex(value, show) -> str:
     from .expression import ExpressionValue
     from .solution_set import SymbolicSetValue
     from .runtime import AdFunction, IntervalValue, RangeValue
+    from . import units
+    if isinstance(value, units.UnitValue):
+        return rf"\mathrm{{{value.name.replace('_', r'\_')}}}"
+    if isinstance(value, units.Quantity):
+        unit = value.display_unit
+        magnitude = value.magnitude if unit is None else units.extract(value, unit)
+        terms = []
+        if unit is not None and unit.name:
+            suffix = rf"\mathrm{{{unit.name.replace('_', r'\_')}}}"
+        else:
+            for name, exponent in zip(units.BASE_NAMES, value.dimensions):
+                if exponent:
+                    term = rf"\mathrm{{{name}}}"
+                    if exponent != 1:
+                        term += "^{" + str(exponent) + "}"
+                    terms.append(term)
+            suffix = r"\, ".join(terms)
+            if unit is not None:
+                suffix = rf"\left({_value_tex(unit.scale, show)}\, {suffix or '1'}\right)"
+        return _value_tex(magnitude, show) + r"\, " + suffix
     if isinstance(value, SymbolicSetValue):
         return value.render(tex=True)
     if isinstance(value, ExpressionValue):

@@ -31,6 +31,13 @@ Errors point to the source span:
 | `$ADHOC_HISTORY` | `~/.adhoc_history` | Persistent REPL history |
 | `$ADHOC_SYMBOLIC_TIMEOUT` | `5` seconds | [Symbolic rewrite](symbolic.md) timeout; `0` disables it |
 
+## Physical quantities
+
+[Units](units.md) attach dimensions to numeric values. `2\metre +
+30\centimetre` is exactly `23/10*\metre`; `\convert` selects a display unit
+and `\magnitude` explicitly extracts a number. Long unit commands leave
+variables such as `m` and `s` available.
+
 ## Names and notation
 
 A bare identifier is one ASCII or Unicode letter, optionally subscripted:

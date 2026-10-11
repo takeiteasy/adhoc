@@ -203,10 +203,12 @@ from .syntax import OP_SYMBOLS, Seq, is_short_name
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
+from . import units
+from .units import Quantity, UnitValue
 from .tensor import ArrayValue, SetValue, TensorError, TensorValue
 
 AdValue = (int | Fraction | float | complex | bool | str | Gaussian | Symbolic | Algebraic | RRA
-           | ExpressionValue | TensorValue | ArrayValue | SetValue | SymbolicSetValue)
+           | ExpressionValue | TensorValue | ArrayValue | SetValue | SymbolicSetValue | Quantity | UnitValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -229,7 +231,7 @@ MAX_INTERVALS = 2000  # adaptive quadrature subintervals for `\\int`
 
 FOLD_LABELS = {"add": "\\sum", "mul": "\\prod", "and": "\\forall", "or": "\\exists"}
 
-_NUMERIC_TYPES = (int, float, complex, Fraction, Gaussian, Symbolic, Algebraic, RRA)
+_NUMERIC_TYPES = (int, float, complex, Fraction, Gaussian, Symbolic, Algebraic, RRA, Quantity, UnitValue)
 
 #: The one shadowable prelude name: `i` may be bound at any binding
 #: site, shadowing the imaginary unit in that scope — the collision between the
@@ -239,7 +241,7 @@ SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"infix", "let", "expr", "eval", "contract", "times", "otimes", "arr", "cup", "cap", "setminus",
                            "in", "subseteq", "circ", "mod", "angle", "and", "or", "not", "implies",
                            "iff", "neq", "approx", "notin", "subset",
-                           "supseteq", "supset"})
+                           "supseteq", "supset", "per"})
 
 
 _CALL_ENGINE = ContextVar("adhoc_call_engine", default=None)
@@ -259,6 +261,26 @@ class PreludeFn:
         self.__name__ = name
 
     def __call__(self, *args, **kwargs):
+        if any(isinstance(v, Quantity | UnitValue) for v in args):
+            if self.name == "sqrt" and len(args) == 1:
+                return npow(args[0], Fraction(1, 2))
+            if self.name == "root" and len(args) == 2:
+                return self.fn(args[0], units.dimensionless(args[1], "root"), **kwargs)
+            if self.name in {"abs", "conj", "re", "im", "floor", "ceil", "trunc", "round"}:
+                magnitude, dims = units.parts(args[0])
+                rest = [units.dimensionless(v, self.name) for v in args[1:]]
+                return units.attach(self.fn(magnitude, *rest, **kwargs), dims)
+            if self.name in {"sign", "arg", "isfinite", "isinf", "isnan"}:
+                return self.fn(*(units.parts(v)[0] for v in args), **kwargs)
+            if self.name in {"atan2", "complex"} and len(args) == 2:
+                a, b, dims = units.matching(*args)
+                result = self.fn(a, b, **kwargs)
+                return units.attach(result, dims) if self.name == "complex" else result
+            if self.name not in {"convert", "magnitude", "unit", "norm", "det", "inv", "tr",
+                                 "rank", "rref", "linsolve", "kron", "outer", "cross", "diag",
+                                 "stack", "concat", "reshape", "polar", "tex", "min", "max",
+                                 "mean", "median", "stdev", "sstdev", "root"}:
+                args = tuple(units.dimensionless(v, self.name) for v in args)
         return self.fn(*args, **kwargs)
 
 
@@ -475,36 +497,36 @@ def _reduce_call(value: Any) -> ExpressionValue:
 
 
 def _rewrite_call(name: str, operation: Callable[[sympy.Expr], sympy.Expr]) -> PreludeFn:
-    def call(value: Any) -> ExpressionValue:
+    def call(value: Any, *, dimensions=None) -> ExpressionValue:
         from . import rewrite
         try:
-            return rewrite.rewrite(value, operation)
+            return rewrite.rewrite(value, operation, dimensions=dimensions)
         except rewrite.RewriteError as error:
             raise NumError(f"\\{name} {error}") from None
     return PreludeFn(name, call)
 
 
 def _solve_call(value: Any, unknown: Any = None, *,
-                domain: str = "complex") -> SetValue | SymbolicSetValue:
+                domain: str = "complex", dimensions=None) -> SetValue | SymbolicSetValue:
     from . import rewrite
     try:
-        return rewrite.solve(value, unknown, domain=domain)
+        return rewrite.solve(value, unknown, domain=domain, dimensions=dimensions)
     except rewrite.RewriteError as error:
         raise NumError(f"\\solve {error}") from None
 
 
-def _deriv_call(value: Any, unknown: Any = None, order: Any = 1) -> ExpressionValue | ArrayValue:
+def _deriv_call(value: Any, unknown: Any = None, order: Any = 1, *, dimensions=None) -> ExpressionValue | ArrayValue:
     from . import rewrite
     try:
-        return rewrite.derivative(value, unknown, order)
+        return rewrite.derivative(value, unknown, order, dimensions=dimensions)
     except rewrite.RewriteError as error:
         raise NumError(f"\\deriv {error}") from None
 
 
-def _grad_call(value: Any, unknown: Any = None) -> ArrayValue:
+def _grad_call(value: Any, unknown: Any = None, *, dimensions=None) -> ArrayValue:
     from . import rewrite
     try:
-        return rewrite.gradient(value, unknown)
+        return rewrite.gradient(value, unknown, dimensions=dimensions)
     except rewrite.RewriteError as error:
         raise NumError(f"\\grad {error}") from None
 
@@ -635,6 +657,8 @@ def _is_inexact(v: AdValue) -> bool:
 def _is_complex(v: AdValue) -> bool:
     """A decided non-real value — nonzero imaginary part at every tier. Ordering,
     range bounds, `\\lim` anchors and float widening reject these with typed errors."""
+    if isinstance(v, Quantity | UnitValue):
+        return _is_complex(units.parts(v)[0])
     if isinstance(v, complex | Gaussian):
         return True
     if isinstance(v, Symbolic | Algebraic):
@@ -772,7 +796,9 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
 
 def _tensor_op(f: Callable, a: AdValue, b: AdValue) -> AdValue:
     try:
-        return tn.map2(f, a, b)
+        result = tn.map2(f, a, b)
+        units.dimensions(result)
+        return result
     except TensorError as e:
         raise NumError(e.args[0]) from e
 
@@ -782,6 +808,8 @@ def nadd(a: AdValue, b: AdValue) -> AdValue:
         return _tensor_op(nadd, a, b)
     if isinstance(a, str) and isinstance(b, str):
         return a + b  # string + string concatenates; mixed never coerces
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        return units.binary("add", a, b)
     _reject_non_numeric(a, b)
     if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
@@ -800,6 +828,8 @@ def nadd(a: AdValue, b: AdValue) -> AdValue:
 def nsub(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(nsub, a, b)
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        return units.binary("sub", a, b)
     _reject_non_numeric(a, b)
     if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
@@ -818,6 +848,8 @@ def nsub(a: AdValue, b: AdValue) -> AdValue:
 def nmul(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(nmul, a, b)
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        return units.binary("mul", a, b)
     _reject_non_numeric(a, b)
     if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
@@ -836,6 +868,8 @@ def nmul(a: AdValue, b: AdValue) -> AdValue:
 def ndiv(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(ndiv, a, b)
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        return units.binary("div", a, b)
     _reject_non_numeric(a, b)
     if _is_inexact(a) or _is_inexact(b):
         if _is_complex(a) or _is_complex(b):
@@ -860,6 +894,8 @@ def nmod(a: AdValue, b: AdValue) -> AdValue:
     """`a % b`, floored: the result takes the divisor's sign."""
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(nmod, a, b)
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        return units.binary("mod", a, b)
     _reject_non_numeric(a, b)
     if _is_complex(a) or _is_complex(b):
         raise NumError("`%` needs real numbers")
@@ -900,6 +936,8 @@ def _fdiv(fa: float, fb: float) -> float:
 def npow(a: AdValue, b: AdValue) -> AdValue:
     if isinstance(a, TensorValue) or isinstance(b, TensorValue):
         return _tensor_op(npow, a, b)
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        return units.binary("pow", a, b)
     _reject_non_numeric(a, b)
     n = _integer_exponent(b)
     if n is not None:
@@ -1017,6 +1055,8 @@ def _fpow(base: float, exp: float) -> float:
 def nneg(a: AdValue) -> AdValue:
     if isinstance(a, TensorValue):
         return tn.map1(nneg, a)
+    if isinstance(a, Quantity | UnitValue):
+        return units.unary(a, nneg)
     _reject_non_numeric(a)
     if isinstance(a, Symbolic):
         return symbolic.negate(a)  # negating a coefficient×atom form stays one
@@ -1067,7 +1107,7 @@ def ndot(a: AdValue, b: AdValue) -> AdValue:
 def ntimes(a: AdValue, b: AdValue) -> AdValue:
     """`a × b`: the cross product of two 3-vectors; a scalar operand scales."""
     if isinstance(a, TensorValue) and isinstance(b, TensorValue):
-        return _linalg(linalg.cross, _SCALARS, a, b)
+        return PRELUDE["cross"](a, b)
     return nmul(a, b)
 
 
@@ -1098,6 +1138,10 @@ def _dedup(items) -> tuple:
 
 
 def neq(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        am, ad = units.parts(a)
+        bm, bd = units.parts(b)
+        return ad == bd and neq(am, bm)
     if isinstance(a, SymbolicSetValue) or isinstance(b, SymbolicSetValue):
         return a == b
     if isinstance(a, IntervalValue) or isinstance(b, IntervalValue):
@@ -1182,6 +1226,8 @@ def _show_tensor(t: TensorValue, digits: int | None) -> str:
 
 
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
+    if isinstance(v, Quantity | UnitValue):
+        return units.show(v, lambda x: nshow(x, digits))
     if isinstance(v, SymbolicSetValue):
         return v.render()
     if isinstance(v, SetValue):
@@ -1318,6 +1364,8 @@ def _as_float(value: AdValue) -> float:
     """Widen an ad number to the float tier for approximate iteration (infinite-range
     folds and `\\lim` probes). Non-numerics and complex values are rejected with the
     seam's typed error so the caller can attach a span."""
+    if isinstance(value, Quantity | UnitValue):
+        raise NumError("dimensioned values require explicit magnitude extraction")
     _reject_non_numeric(value)
     if _is_complex(value):
         raise NumError("a complex value cannot widen to float")
@@ -1330,6 +1378,8 @@ def _as_float(value: AdValue) -> float:
 def _as_inexact(value: AdValue) -> float | complex:
     """`_as_float`, except a complex value widens to a complex float — the widening for
     approximate iteration that may leave the reals (`\\fold` partials, `\\lim` probes)."""
+    if isinstance(value, Quantity | UnitValue):
+        raise NumError("dimensioned values require explicit magnitude extraction")
     _reject_non_numeric(value)
     if _is_complex(value):
         try:
@@ -1881,7 +1931,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
         raise NumError("the call returned nothing")
     if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | Derivative | Inverse
                       | ExpressionValue
-                      | TensorValue | ArrayValue | SetValue | SymbolicSetValue):
+                      | TensorValue | ArrayValue | SetValue | SymbolicSetValue | Quantity | UnitValue):
         return value
     if isinstance(value, RangeValue | IntervalValue | LazySeq):
         return value
@@ -1951,6 +2001,8 @@ def _to_py(value: Any) -> Any:
     """The ad→Python half of the boundary, applied to arguments of Python callables:
     tensors and arrays become nested lists, sets become a `frozenset` (a list when
     an element is unhashable). Everything else is already native."""
+    if isinstance(value, Quantity | UnitValue):
+        raise NumError("Python calls require explicit magnitude extraction for quantities")
     if isinstance(value, TensorValue):
         return _tensor_to_list(value.shape, value.items)
     if isinstance(value, ArrayValue):
@@ -2030,6 +2082,8 @@ class Partial:
 
 
 def ncompare(op: str, a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        a, b, _ = units.matching(a, b)
     _reject_non_numeric(a, b)
     if _is_complex(a) or _is_complex(b):
         raise NumError("complex values are not ordered")
@@ -2159,6 +2213,8 @@ def _approx_reals(a: AdValue, b: AdValue) -> bool:
 
 
 def napprox(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, Quantity | UnitValue) or isinstance(b, Quantity | UnitValue):
+        a, b, _ = units.matching(a, b)
     _reject_non_numeric(a, b)
     if _is_complex(a) or _is_complex(b):
         return (_approx_reals(_re_call(a), _re_call(b))
@@ -2256,6 +2312,33 @@ OPERATORS = {name: OperatorFn(OP_SYMBOLS[name], fn, arities)
              for name, (fn, arities) in _OPERATOR_IMPLS.items()}
 
 
+class _QuantitySamples:
+    def __init__(self, function, input_dimensions):
+        self.function = function
+        self.input_dimensions = input_dimensions
+        self.output_dimensions = None
+
+    def __call__(self, magnitude):
+        value = self.function(units.attach(magnitude, self.input_dimensions))
+        raw, dims = units.parts(value)
+        if self.output_dimensions is None:
+            self.output_dimensions = dims
+        elif self.output_dimensions != dims:
+            raise NumError("calculus body dimensions change between samples")
+        return _as_inexact(raw)
+
+
+def _numeric_derivative(function, point, order, label):
+    raw, dims = units.parts(point)
+    anchor = _as_inexact(raw)
+    if isinstance(anchor, complex) or not math.isfinite(anchor):
+        raise NumError(f"{label} needs a finite real point")
+    samples = _QuantitySamples(function, dims)
+    result = _ridders(samples, anchor, order, label)
+    dimension = units.combine(samples.output_dimensions, units.power(dims, order), -1)
+    return units.attach(result, dimension)
+
+
 class Derivative:
     """Repeated primes differentiate a one-argument function. Exact when the
     body bridges to sympy and the point is exact; otherwise numeric (`_ridders`)."""
@@ -2263,6 +2346,7 @@ class Derivative:
     def __init__(self, fn: Any, order: int):
         self.fn, self.order = fn, order
         self._symbolic: tuple[sympy.Symbol, sympy.Expr] | None | bool = False
+        self._dimensional_forms = {}
 
     def _exact_form(self) -> tuple[sympy.Symbol, sympy.Expr] | None:
         if self._symbolic is False:
@@ -2279,6 +2363,25 @@ class Derivative:
         return self._symbolic
 
     def _exact(self, point: AdValue) -> AdValue | None:
+        from . import dimensional, rewrite
+        raw, dims = units.parts(point)
+        if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1 and (
+                isinstance(point, Quantity | UnitValue) or
+                dimensional.has_units(self.fn.body.node, self.fn.closure._lookup)):
+            if _is_inexact(raw):
+                return None
+            if dims not in self._dimensional_forms:
+                try:
+                    origin = rewrite.bridge_function(self.fn, {self.fn.params[0]: dims})
+                    form = rewrite.run_limited(sympy.diff, origin.expr, origin.params[0], self.order)
+                    output = units.combine(origin.bridge.result_dimensions, units.power(dims, self.order), -1)
+                    self._dimensional_forms[dims] = (origin.params[0], form, output)
+                except (rewrite.RewriteError, NotImplementedError, NumError):
+                    self._dimensional_forms[dims] = None
+            if self._dimensional_forms[dims] is None:
+                return None
+            symbol, form, output = self._dimensional_forms[dims]
+            return units.attach(_sympy_to_ad(form.subs(symbol, value_to_sympy(raw)), "derivative"), output)
         if isinstance(point, float | complex):
             return None
         form = self._exact_form()
@@ -2297,11 +2400,8 @@ class Derivative:
         exact = self._exact(args[0])
         if exact is not None:
             return exact
-        anchor = _as_inexact(args[0])
-        if isinstance(anchor, complex) or not math.isfinite(anchor):
-            raise NumError(f"{_callable_label(self)} needs a finite real point")
-        return _ridders(lambda t: _invoke(self.fn, (t,)), anchor, self.order,
-                        _callable_label(self))
+        return _numeric_derivative(lambda point: _invoke(self.fn, (point,)),
+                                   args[0], self.order, _callable_label(self))
 
 
 class Inverse:
@@ -2364,6 +2464,8 @@ class Inverse:
         if len(args) != 1:
             raise NumError(f"{label} takes 1 argument, got {len(args)}")
         _reject_non_numeric(args[0])
+        if isinstance(args[0], Quantity | UnitValue):
+            raise NumError("dimensioned inverse functions are unsupported")
         exact = self._exact(args[0])
         if exact is not None:
             return exact
@@ -2372,7 +2474,10 @@ class Inverse:
             raise NumError(f"{label} needs a finite real value")
 
         def gap(x: float) -> float:
-            value = _as_inexact(_invoke(self.fn, (x,)))
+            raw = _invoke(self.fn, (x,))
+            if isinstance(raw, Quantity | UnitValue):
+                raise NumError("dimensioned inverse functions are unsupported")
+            value = _as_inexact(raw)
             if isinstance(value, complex):
                 raise NumError(f"{label}: the function is not real-valued near {nshow(x)}")
             return value - target
@@ -2599,7 +2704,9 @@ def _rebuild(source: Any, results: list, label: str) -> Any:
             if not isinstance(r, TensorValue):
                 _reject_non_numeric(r)
         try:
-            return tn.stack(results)
+            result = tn.stack(results)
+            units.dimensions(result)
+            return result
         except TensorError as e:
             raise NumError(f"{label}: {e.args[0]}") from None
     if isinstance(source, SetValue):
@@ -2764,8 +2871,10 @@ def _simplified(v: AdValue) -> AdValue:
 
 
 def _abs_call(v: AdValue) -> AdValue:
+    if isinstance(v, Quantity | UnitValue):
+        return units.unary(v, _abs_call)
     if isinstance(v, TensorValue):
-        return _linalg(linalg.det, _SCALARS, v)
+        return PRELUDE["det"](v)
     _reject_non_numeric(v)
     if isinstance(v, complex):
         return abs(v)
@@ -2870,9 +2979,11 @@ def _factor_gaussian(n: Gaussian) -> ArrayValue:
     return ArrayValue(tuple(ArrayValue((p, k)) for p, k in gauss.factor_q(*q)))
 
 
-def _factor_call(n: AdValue) -> ArrayValue | ExpressionValue:
+def _factor_call(n: AdValue, *, dimensions=None) -> ArrayValue | ExpressionValue:
     if isinstance(n, ExpressionValue | AdFunction):
-        return _symbolic_factor(n)
+        return _symbolic_factor(n, dimensions=dimensions)
+    if dimensions is not None:
+        raise NumError("dimension annotations require an expression or function")
     if isinstance(n, Gaussian):
         return _factor_gaussian(n)
     q = _exact_rational(n, "\\factor")
@@ -3226,6 +3337,9 @@ def _eig_call(*args: AdValue) -> ArrayValue:
 
     _takes("eig", args, 1, 1, "1 argument")
     t = args[0]
+    if units.dimensions(t) != units.DIMENSIONLESS:
+        raise NumError("dimensioned eigensystems are unsupported")
+    t, _ = units.strip(t)
     rows = _linalg(linalg._square, t, "\\eig")
     _linalg(linalg._size, t.shape)
     for value in t.items:
@@ -3245,10 +3359,11 @@ def _eig_call(*args: AdValue) -> ArrayValue:
 def _norm_call(v: AdValue) -> AdValue:
     if not isinstance(v, TensorValue):
         return _abs_call(v)
+    v, dims = units.strip(v)
     total = 0
     for item in v.items:
         total = nadd(total, nmul(item, _conj_call(item)))
-    return npow(total, Fraction(1, 2))
+    return units.attach(npow(total, Fraction(1, 2)), dims)
 
 
 def _dims(args: tuple, label: str) -> list[int]:
@@ -3261,7 +3376,9 @@ def _reshape_call(t: AdValue, *dims: AdValue) -> AdValue:
 
 def _concat_call(*parts: AdValue) -> AdValue:
     _takes("concat", parts, 2, math.inf, "two or more tensors or arrays")
-    return _linalg(linalg.concat, list(parts))
+    result = _linalg(linalg.concat, list(parts))
+    units.dimensions(result)
+    return result
 
 
 def _stack_call(*parts: AdValue) -> AdValue:
@@ -3269,7 +3386,9 @@ def _stack_call(*parts: AdValue) -> AdValue:
     for part in parts:
         if not isinstance(part, TensorValue):
             _reject_non_numeric(part)
-    return _linalg(tn.stack, list(parts))
+    result = _linalg(tn.stack, list(parts))
+    units.dimensions(result)
+    return result
 
 
 def _fill_call(name: str, value: int) -> PreludeFn:
@@ -3279,7 +3398,23 @@ def _fill_call(name: str, value: int) -> PreludeFn:
 def _matrix_fn(name: str, f: Callable, arity: int, scalars: bool = True) -> PreludeFn:
     def call(*args: AdValue) -> AdValue:
         _takes(name, args, arity, arity, f"{arity} argument{'s' * (arity > 1)}")
-        return _linalg(f, _SCALARS, *args) if scalars else _linalg(f, *args)
+        stripped = [units.strip(v) for v in args]
+        values = [value for value, _ in stripped]
+        dims = [dimension for _, dimension in stripped]
+        result = _linalg(f, _SCALARS, *values) if scalars else _linalg(f, *values)
+        if name == "det":
+            dimension = units.power(dims[0], args[0].shape[0])
+        elif name == "inv":
+            dimension = units.power(dims[0], -1)
+        elif name == "linsolve":
+            dimension = units.combine(dims[1], dims[0], -1)
+        elif name in {"rank", "rref"}:
+            dimension = units.DIMENSIONLESS
+        elif len(dims) == 2:
+            dimension = units.combine(*dims)
+        else:
+            dimension = dims[0]
+        return units.attach(result, dimension)
     return PreludeFn(name, call)
 
 
@@ -3302,6 +3437,15 @@ PRELUDE.update({
     "reshape": PreludeFn("reshape", _reshape_call),
     "concat": PreludeFn("concat", _concat_call),
     "stack": PreludeFn("stack", _stack_call),
+})
+_PRELUDE_PROTECTED = frozenset(PRELUDE)
+
+
+PRELUDE.update(units.catalogue())
+PRELUDE.update({
+    "convert": PreludeFn("convert", units.convert),
+    "magnitude": PreludeFn("magnitude", units.extract),
+    "unit": PreludeFn("unit", units.make_unit),
 })
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
@@ -3346,6 +3490,11 @@ class Engine:
         for name, spelling in zip(names, spellings):
             if self._protected(name):
                 self._fail(f"`{_display_name(name, spelling)}` is protected", sid)
+        provided = dict(zip(names, values))
+        for name, dimension in value.dimensions:
+            binding = provided.get(name, self._lookup(name))
+            if binding is not _MISSING and units.dimensions(binding) != dimension:
+                self._fail(f"conflicting dimensions for {name}", sid)
         from .compiler import _compile_body, compile_expression
 
         body = (_compile_body(value.node, value.source) if value.statement_body
@@ -3495,6 +3644,15 @@ class Engine:
 
     def range(self, start, second, end, sid):
         try:
+            if any(isinstance(v, Quantity | UnitValue) for v in (start, second, end)):
+                dimension = units.dimensions(start)
+                if end is not None and units.dimensions(end) != dimension:
+                    raise NumError("range endpoints must have matching dimensions")
+                if second is not None:
+                    raise NumError("stepped dimensioned ranges are unsupported")
+                if _is_complex(start) or end is not None and _is_complex(end):
+                    raise NumError("range bounds must be real numbers")
+                return IntervalValue(start, units.attach(math.inf, dimension) if end is None else end)
             for name, value in (("start", start), ("end", end)):
                 if value is None:
                     continue
@@ -3573,6 +3731,7 @@ class Engine:
         # Sums-only tail estimation (products keep the plateau — see
         # _FoldTailEstimator); finite folds never estimate.
         progress = _InfiniteFold(label, estimate=op_name == "add") if infinite else None
+        first_term = True
         iterator = iter(items)
         while True:
             try:
@@ -3585,7 +3744,13 @@ class Engine:
             term = self._eval_bound(body, {name: binding}, label, sid)
             if infinite and isinstance(term, TensorValue):
                 self._fail(f"{label} over an infinite range needs numeric terms", sid)
-            acc = self._binop(fn, acc, term, sid)
+            if infinite and isinstance(term, Quantity | UnitValue):
+                self._fail("dimensioned infinite folds are unsupported", sid)
+            if first_term and not infinite and op_name == "add":
+                acc = term
+            else:
+                acc = self._binop(fn, acc, term, sid)
+            first_term = False
             if progress is not None:
                 try:
                     limit = progress.observe(term, acc)
@@ -3630,6 +3795,8 @@ class Engine:
         sides stabilizing apart means the limit does not exist. Probes evaluate in the
         float tier like infinite-range folds (docs/numerics.md), a complex body value
         as a complex float."""
+        if isinstance(point_value, Quantity | UnitValue):
+            self._fail("dimensioned limits are unsupported", sid)
         label = spelling or "\\lim"
         display_name = _display_name(name, var_spelling)
         try:
@@ -3655,6 +3822,8 @@ class Engine:
                 if probe == anchor:
                     break  # step underflowed onto the anchor itself — never evaluate there
                 raw = self._eval_bound(body, {name: probe}, label, sid)
+                if isinstance(raw, Quantity | UnitValue):
+                    self._fail("dimensioned limits are unsupported", sid)
                 try:
                     estimate = _as_inexact(raw)
                 except NumError as e:
@@ -3687,11 +3856,9 @@ class Engine:
         body = self.definitions[sid]
         try:
             _reject_non_numeric(point_value)
-            anchor = _as_inexact(point_value)
-            if isinstance(anchor, complex) or not math.isfinite(anchor):
-                raise NumError(f"{label} needs a finite real point")
-            return _ridders(lambda t: self._eval_bound(body, {name: t}, label, sid),
-                            anchor, order, label)
+            return _numeric_derivative(
+                lambda point: self._eval_bound(body, {name: point}, label, sid),
+                point_value, order, label)
         except NumError as e:
             self._fail(e.args[0], sid)
 
@@ -3707,19 +3874,26 @@ class Engine:
             self._fail(f"{label} takes a plain range a..b, not a stepped one", sid)
         body = self.definitions[sid]
         try:
-            lo = _as_float(bound.start)
-            hi = math.inf if bound.end is None else _as_float(bound.end)
-            for value, widened in ((bound.start, lo), (bound.end, hi)):
+            start, dimension = units.parts(bound.start)
+            end, end_dimension = units.parts(bound.end)
+            if bound.end is not None and dimension != end_dimension:
+                raise NumError("integral endpoints must have matching dimensions")
+            lo = _as_float(start)
+            hi = math.inf if bound.end is None else _as_float(end)
+            for value, widened in ((start, lo), (end, hi)):
                 if value is not None and not isinstance(value, float) and not math.isfinite(widened):
                     raise NumError(f"{label} bound is too large to widen to a finite float")
             sign = 1
             if hi < lo:
                 lo, hi, sign = hi, lo, -1
+            samples = _QuantitySamples(
+                lambda point: self._eval_bound(body, {name: point}, label, sid), dimension)
             if hi == lo:
-                return 0.0
-            result = _quadrature(lambda x: self._eval_bound(body, {name: x}, label, sid),
-                                 lo, hi, label)
-            return -result if sign < 0 else result
+                samples(lo)
+                return units.attach(0.0, units.combine(samples.output_dimensions, dimension))
+            result = _quadrature(samples, lo, hi, label)
+            return units.attach(-result if sign < 0 else result,
+                                units.combine(samples.output_dimensions, dimension))
         except NumError as e:
             self._fail(e.args[0], sid)
 
@@ -3735,37 +3909,47 @@ class Engine:
             self._fail("no piecewise case matched", sid)
         return _to_ad(otherwise(), preserve_bool=True)
 
-    def set_builder(self, name, domain, guard_sids, element_sid, sid, var_spelling=None):
-        """`{x ∈ S | p}` / `{e | x ∈ S, p}`: the deduplicated set of the element over the
-        domain's members whose guards all hold."""
-        label = "set-builder"
-        if self._protected(name):
-            self._fail(f"`{_display_name(name, var_spelling)}` is protected", sid)
-        if isinstance(domain, SymbolicSetValue):
-            self._fail("symbolic sets cannot be enumerated", sid)
-        items = _elements(domain)
-        if items is None:
-            self._fail(f"{label} ranges over a range or collection, got {nshow(domain)}", sid)
-        if _is_infinite(domain):
-            self._fail(f"{label} cannot range over an infinite range or sequence", sid)
+    def set_builder(self, clauses, element_sid, sid):
+        for name, spelling, part_sid in clauses:
+            if name is not None and self._protected(name):
+                self._fail(f"`{_display_name(name, spelling)}` is protected", part_sid)
         kept = []
-        try:
+
+        def visit(index, bindings):
+            if index == len(clauses):
+                kept.append(bindings[clauses[0][0]] if element_sid is None else
+                            self._eval_bound(self.definitions[element_sid], bindings,
+                                             "set-builder", element_sid))
+                return
+            name, spelling, part_sid = clauses[index]
+            value = self._eval_bound(self.definitions[part_sid], bindings, "set-builder", part_sid)
+            if name is None:
+                if not isinstance(value, bool):
+                    self._fail(f"set-builder guards must be boolean, got {nshow(value)}", part_sid)
+                if value:
+                    visit(index + 1, bindings)
+                return
+            if isinstance(value, SymbolicSetValue):
+                self._fail("symbolic sets cannot be enumerated", part_sid)
+            items = _elements(value)
+            if items is None:
+                self._fail(f"set-builder ranges over a range or collection, got {nshow(value)}", part_sid)
+            if _is_infinite(value):
+                self._fail("set-builder cannot range over an infinite range or sequence", part_sid)
             for item in items:
-                for guard in guard_sids:
-                    verdict = self._eval_bound(self.definitions[guard], {name: item}, label, guard)
-                    if not isinstance(verdict, bool):
-                        self._fail(f"{label} guards must be boolean, got {nshow(verdict)}", guard)
-                    if not verdict:
-                        break
-                else:
-                    kept.append(item if element_sid is None else self._eval_bound(
-                        self.definitions[element_sid], {name: item}, label, element_sid))
+                visit(index + 1, {**bindings, name: item})
+
+        try:
+            visit(0, {})
             return SetValue(_dedup(kept))
         except NumError as e:
             self._fail(e.args[0], sid)
 
     def tensor(self, items, row_length, sid):
         try:
+            dimensions = [units.dimensions(v) for v in items]
+            if dimensions and any(d != dimensions[0] for d in dimensions):
+                raise NumError("tensor entries must have matching dimensions")
             for item in items:
                 if not isinstance(item, TensorValue):
                     _reject_non_numeric(item)

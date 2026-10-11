@@ -7,7 +7,7 @@ from .syntax import (
     is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Equation, Eval,
     Assign, ArrayLit, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
-    PyImport, Quote, Range, Seq, SetBuilder, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var, WholeAxis,
+    PyImport, Quote, Range, Seq, SetBuilder, Generator, Guard, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var, WholeAxis,
 )
 
 
@@ -16,11 +16,13 @@ class ExpressionValue:
     node: Node
     source: str
     statement_body: bool = False
+    dimensions: tuple = ()
     __hash__ = None
 
     def __eq__(self, other: object) -> bool:
         return (isinstance(other, ExpressionValue)
                 and self.statement_body == other.statement_body
+                and self.dimensions == other.dimensions
                 and _shape(self.node) == _shape(other.node))
 
 
@@ -148,13 +150,15 @@ def _show(node: Node, *, statement: bool = False) -> str:
             if otherwise is not None:
                 clauses.append(_show(otherwise))
             return f"{{{'; '.join(clauses)}}}"
-        case SetBuilder(var=var, domain=domain, element=element, guards=guards,
-                        var_spelling=var_spelling):
-            name = var_spelling or (var if is_short_name(var) else f"\\{var}")
-            tail = "".join(f", {_show(g)}" for g in guards)
+        case SetBuilder(clauses=clauses, element=element):
+            def clause_text(clause):
+                if isinstance(clause, Guard):
+                    return _show(clause.test)
+                name = clause.var_spelling or (clause.var if is_short_name(clause.var) else f"\\{clause.var}")
+                return f"{name} ∈ {_show(clause.domain)}"
             if element is None:
-                return f"{{{name} ∈ {_show(domain)} | {', '.join(_show(g) for g in guards)}}}"
-            return f"{{{_show(element)} | {name} ∈ {_show(domain)}{tail}}}"
+                return f"{{{clause_text(clauses[0])} | {', '.join(map(clause_text, clauses[1:]))}}}"
+            return f"{{{_show(element)} | {', '.join(map(clause_text, clauses))}}}"
         case Lambda(params=params, body=body, param_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name for i, name in enumerate(params)]
             return f"(\\fn({', '.join(names)}) {_show(body)})"

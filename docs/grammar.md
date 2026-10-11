@@ -490,7 +490,14 @@ bars are read: bars still open at an operand (`{|x| | x ∈ s}`), but after an o
 bar separates. A first item of the form `x ∈ S` is the filter form; otherwise the binder
 `x ∈ S` follows the bar. The domain is a finite range or collection (an infinite one is an
 error; parenthesize `(1..)` when a bar follows a range end), guards are booleans, and
-the binder scopes like a fold's. One binder only.
+the binder scopes like a fold's. Map-form generators and guards evaluate left to right;
+later domains see earlier bindings. A false guard skips the remaining clauses for
+that branch. Binder names must be distinct. A map-form clause `name ∈ domain` is a
+generator; other clauses are guards. Filter shorthand binds one name.
+
+```text
+{x+y | x ∈ 1..3, x > 1, y ∈ 1..x} -> = {3, 4, 5, 6}
+```
 
 Sets display in first-seen order and compare regardless of it: `{1, 2} = {2, 1}` is
 `true`. Sets nest (`{{1, 2}, {2, 1}}` is `{{1, 2}}`) and hold tensors, arrays, strings,
@@ -1142,6 +1149,12 @@ finite domains even when their guards would select only finitely many elements.
 A callable binds like any other value (`s = \py("math.sqrt")` prints `s = <py math.sqrt>`);
 a call returning a string binds like any value too (see [String literals](#string-literals)). Two
 non-numeric values never compare equal unless identical — strings by content.
+
+## Units
+
+[Unit commands](units.md) are protected numeric values. `\per` is a division
+alias with the same precedence and associativity as `/`. Long unit names such as
+`\metre` leave bare single-letter variables available.
 
 ## Limitations
 

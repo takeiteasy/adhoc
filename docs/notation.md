@@ -130,6 +130,12 @@ Parentheses turn operators into function values:
 Postfix operators and radicals have no sections. `(∛)` is `\root(·, 3)`.
 See [operator values](grammar.md#operator-values) for application rules.
 
+## Unit notation
+
+`\metre`, `\second` and other [unit commands](units.md) are numeric values.
+`\per` spells division, so `9.8\metre \per \second^2` has acceleration
+dimensions. Unit names use full words; bare `m` and `s` remain variables.
+
 ## Limitations
 
 - Set-builder separators and absolute-value bars share `|`. Write `{a*|b|}`

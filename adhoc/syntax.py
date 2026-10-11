@@ -222,15 +222,21 @@ class Piecewise(Node):
 
 
 @dataclass(frozen=True)
-class SetBuilder(Node):
-    """`{x ∈ S | p, q}` or `{e | x ∈ S, p}` — the set of `element` (the variable itself when
-    None) over the domain's members that satisfy every guard."""
-
+class Generator(Node):
     var: str
     domain: Node
-    element: Node | None
-    guards: tuple[Node, ...]
     var_spelling: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class Guard(Node):
+    test: Node
+
+
+@dataclass(frozen=True)
+class SetBuilder(Node):
+    clauses: tuple[Generator | Guard, ...]
+    element: Node | None
 
 
 @dataclass(frozen=True)

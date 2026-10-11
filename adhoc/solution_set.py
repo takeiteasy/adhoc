@@ -6,6 +6,7 @@ from itertools import count
 import sympy
 
 from .span import Span
+from . import units
 from .syntax import Node
 
 
@@ -24,10 +25,12 @@ _SET_OPERATORS = {sympy.Union: (" ∪ ", r" \cup "),
 class SymbolicSetValue:
     expr: sympy.Set
     names: tuple[tuple[sympy.Symbol, Node], ...] = field(default=(), compare=False)
+    dimensions: tuple = units.DIMENSIONLESS
     __hash__ = None
 
     def __eq__(self, other: object) -> bool:
         return (isinstance(other, SymbolicSetValue)
+                and self.dimensions == other.dimensions
                 and self.expr.as_dummy() == other.expr.as_dummy())
 
     def contains(self, value) -> bool:
@@ -35,8 +38,11 @@ class SymbolicSetValue:
         from .runtime import NumError, _NUMERIC_TYPES, value_to_sympy
         if isinstance(value, bool) or not isinstance(value, _NUMERIC_TYPES):
             raise NumError("symbolic set membership needs a number")
+        magnitude, dimension = units.parts(value)
+        if dimension != self.dimensions:
+            return False
         try:
-            return run_limited(_contains, self.expr, value_to_sympy(value))
+            return run_limited(_contains, self.expr, value_to_sympy(magnitude))
         except RewriteError as error:
             raise NumError(f"symbolic set membership {error}") from None
 
@@ -48,14 +54,22 @@ class SymbolicSetValue:
 
         def scalar(expr):
             try:
-                node = bridge.to_node(expr)
+                from .dimensional import restore
+                node = restore(expr, bridge, self.dimensions)
             except RewriteError:
                 return sympy.latex(expr) if tex else str(expr)
             return node_tex(node) if tex else show(node)
 
         def render(expr):
             if expr in _DOMAINS:
-                return _DOMAINS[expr][tex]
+                domain = _DOMAINS[expr][tex]
+                if self.dimensions == units.DIMENSIONLESS:
+                    return domain
+                suffix = units.unit_text(self.dimensions)
+                if tex:
+                    from .dimensional import unit_node
+                    suffix = node_tex(unit_node(self.dimensions, Span(0, 0)))
+                return domain + (r"\, " if tex else "*") + suffix
             if expr is sympy.S.EmptySet:
                 return r"\emptyset" if tex else "{}"
             if isinstance(expr, sympy.ImageSet):
@@ -69,7 +83,8 @@ class SymbolicSetValue:
                     used.add(name)
                     variables.append(sympy.Symbol(name))
                 body = expr.lamda.expr.xreplace(dict(zip(expr.lamda.variables, variables)))
-                binders = [(scalar(variable), render(base))
+                binders = [(node_tex(bridge.to_node(variable)) if tex else show(bridge.to_node(variable)),
+                            _DOMAINS[base][tex] if base in _DOMAINS else render(base))
                            for variable, base in zip(variables, expr.base_sets)]
                 member = r"\in" if tex else "∈"
                 tail = ", ".join(f"{name} {member} {base}" for name, base in binders)
