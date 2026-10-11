@@ -11,6 +11,7 @@ import os
 import pickle
 import warnings
 from dataclasses import dataclass, field
+from functools import wraps
 from typing import Any, Callable
 
 import sympy
@@ -29,6 +30,7 @@ class RewriteError(Exception):
 
 
 DEFAULT_TIMEOUT = 5.0
+_IN_WORKER = False
 
 
 def _timeout_seconds() -> float:
@@ -42,6 +44,8 @@ def _timeout_seconds() -> float:
 
 
 def _child(send: Any, fn: Callable, args: tuple) -> None:
+    global _IN_WORKER
+    _IN_WORKER = True
     try:
         payload = ("ok", fn(*args))
     except BaseException as error:
@@ -55,9 +59,9 @@ def _child(send: Any, fn: Callable, args: tuple) -> None:
 
 def run_limited(fn: Callable, *args: Any) -> Any:
     """`fn(*args)` in a forked child that is killed after the time limit; the result comes
-    back pickled. Unlimited where `fork` is unavailable (Windows)."""
+    back pickled. Nested work shares the worker's deadline. Unlimited without `fork`."""
     seconds = _timeout_seconds()
-    if seconds <= 0 or "fork" not in multiprocessing.get_all_start_methods():
+    if seconds <= 0 or _IN_WORKER or "fork" not in multiprocessing.get_all_start_methods():
         return fn(*args)
     context = multiprocessing.get_context("fork")
     receive, send = context.Pipe(duplex=False)
@@ -82,6 +86,21 @@ def run_limited(fn: Callable, *args: Any) -> Any:
     return payload
 
 
+def _function_operation(operation):
+    @wraps(operation)
+    def limited(value, *args, **kwargs):
+        from .runtime import AdFunction
+        inputs = value.items if isinstance(value, ArrayValue) else (value,)
+        if any(isinstance(item, AdFunction) for item in inputs):
+            return run_limited(_apply_operation, operation, value, args, kwargs)
+        return operation(value, *args, **kwargs)
+    return limited
+
+
+def _apply_operation(operation, value, args, kwargs):
+    return operation(value, *args, **kwargs)
+
+
 _FUNCTIONS = {
     "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "asin": sympy.asin,
     "acos": sympy.acos, "atan": sympy.atan, "sinh": sympy.sinh, "cosh": sympy.cosh,
@@ -104,6 +123,8 @@ class Bridge:
     bound: frozenset[str] = frozenset()
     lookup: Callable[[str], Any] | None = None
     nodes: dict[sympy.Symbol, Node] = field(default_factory=dict)
+    call_lookup: Callable[[str], Any] | None = None
+    active: tuple[Any, ...] = ()
 
     def symbol(self, name: str, node: Node) -> sympy.Symbol:
         symbol = sympy.Symbol(name)
@@ -122,6 +143,24 @@ class Bridge:
         return self.symbol(name, node)
 
     def to_sympy(self, node: Node) -> sympy.Expr:
+        if isinstance(node, Call) and isinstance(node.head, Var | BackslashRef):
+            label = node.head.ch if isinstance(node.head, Var) else node.head.name
+            if self.call_lookup is not None and label not in self.bound:
+                from .runtime import AdFunction, _MISSING
+                fn = self.call_lookup(label)
+                if isinstance(fn, AdFunction):
+                    if node.kwargs or len(node.args) != len(fn.params):
+                        raise RewriteError(f"{label} needs {len(fn.params)} positional arguments")
+                    from .dimensional import has_units
+                    if has_units(fn.body.node, fn.closure._lookup):
+                        raise RewriteError("nested dimensioned function calls are unsupported")
+                    arguments = tuple(self.to_sympy(arg) for arg in node.args)
+                    origin = _bridge_function(fn, active=self.active)
+                    replacements = dict(zip(origin.params, (sympy.Dummy(p.name) for p in origin.params)))
+                    body = origin.expr.xreplace(replacements)
+                    return body.xreplace(dict(zip(replacements.values(), arguments)))
+                if fn is not _MISSING and not callable(fn) and len(node.args) == 1 and not node.kwargs:
+                    return self.name(node.head) * self.to_sympy(node.args[0])
         match node:
             case NumLit(text=text):
                 from .runtime import parse_literal, value_to_sympy
@@ -260,6 +299,20 @@ def _single_expression(node: Node) -> Node:
 
 
 def bridge_function(fn: Any, declared=None) -> Source:
+    return run_limited(_function_source, fn, declared)
+
+
+def _function_source(fn: Any, declared=None) -> Source:
+    origin = _bridge_function(fn, declared)
+    origin.bridge.lookup = None
+    origin.bridge.call_lookup = None
+    origin.bridge.active = ()
+    return origin
+
+
+def _bridge_function(fn: Any, declared=None, active=()) -> Source:
+    if any(fn is caller for caller in active):
+        raise RewriteError("cannot rewrite recursive function calls")
     node = _single_expression(fn.body.node)
     from . import dimensional
     from .runtime import _MISSING
@@ -268,6 +321,8 @@ def bridge_function(fn: Any, declared=None) -> Source:
         return None if value is _MISSING else value
     bridge = dimensional.bridge(node, declared=declared, bound=frozenset(fn.params), lookup=lookup)
     bridge = bridge or Bridge(node.span, frozenset(fn.params), _closure_lookup(fn.closure))
+    bridge.call_lookup = lambda name: fn if name == fn.name else fn.closure._lookup(name)
+    bridge.active = (*active, fn)
     for param in fn.params:
         bridge.symbol(param, Var(ch=param, span=node.span, spelling=param)
                       if is_short_name(param) else
@@ -324,6 +379,7 @@ def quote(expr: sympy.Expr, bridge: Bridge, source: str, dims=None) -> Expressio
     return ExpressionValue(bridge.to_node(expr), source)
 
 
+@_function_operation
 def rewrite(value: Any, operation: Callable[[sympy.Expr], sympy.Expr], *, dimensions=None) -> ExpressionValue:
     from . import dimensional
     declared = dimensional.annotations(dimensions) if dimensions is not None else None
@@ -354,6 +410,7 @@ def _rewrite_sides(operation: Callable, lhs: sympy.Expr,
     return operation(lhs), operation(rhs)
 
 
+@_function_operation
 def derivative(value: Any, unknown: Any = None, order: Any = 1, *, dimensions=None) -> Any:
     """The exact derivative: one quote for a single unknown or a list of them (a mixed
     partial), the gradient (an array of quotes) when several names are candidates."""
@@ -374,6 +431,7 @@ def derivative(value: Any, unknown: Any = None, order: Any = 1, *, dimensions=No
     return _diff(origin, [_unknown(origin, unknown)] * order)
 
 
+@_function_operation
 def gradient(value: Any, unknown: Any = None, *, dimensions=None) -> Any:
     """The array of first partials over the listed names, or over every candidate."""
     from .dimensional import annotations
@@ -420,12 +478,11 @@ def _candidates(origin: Source) -> list[sympy.Symbol]:
     return names
 
 
+@_function_operation
 def solve(value: Any, unknown: Any = None, *, domain: str = "complex", dimensions=None) -> Any:
     """Solve an equation or `value = 0` in the selected domain, as an ad set."""
-    from .runtime import SetValue, _dedup
     from . import dimensional, units
     declared = dimensional.annotations(dimensions) if dimensions is not None else None
-    from .solution_set import SymbolicSetValue
     if not isinstance(domain, str) or domain not in ("complex", "real"):
         raise RewriteError('needs domain="complex" or domain="real"')
     if isinstance(value, ArrayValue) or isinstance(unknown, ArrayValue):
@@ -439,6 +496,45 @@ def solve(value: Any, unknown: Any = None, *, domain: str = "complex", dimension
         solution_dims = origin.bridge.declared[symbol.name]
     solutions = run_limited(sympy.solveset, origin.expr, symbol,
                             sympy.S.Reals if domain == "real" else sympy.S.Complexes)
+    return _solution_set(solutions, origin, solution_dims)
+
+
+def preimages(fn: Any, target: Any, domain: str = "complex") -> Any:
+    if not isinstance(domain, str) or domain not in ("complex", "real"):
+        raise RewriteError('needs domain="complex" or domain="real"')
+    origin, solutions = run_limited(_preimages, fn, target, domain)
+    return _solution_set(solutions, origin)
+
+
+def _preimages(fn: Any, target: Any, domain: str) -> tuple[Source, sympy.Set]:
+    from .runtime import AdFunction, PRELUDE, PreludeFn, value_to_sympy
+    from .dimensional import has_units
+    point = value_to_sympy(target)
+    if point.is_finite is False:
+        raise RewriteError("needs a finite numeric target")
+    if isinstance(fn, AdFunction) and len(fn.params) == 1:
+        if has_units(fn.body.node, fn.closure._lookup):
+            raise RewriteError("dimensioned inverse functions are unsupported")
+        origin = _function_source(fn)
+    elif isinstance(fn, PreludeFn) and fn is PRELUDE.get(fn.name) and fn.name in (*_FUNCTIONS, "log"):
+        symbol = sympy.Dummy("x")
+        operation = sympy.log if fn.name == "log" else _FUNCTIONS[fn.name]
+        origin = Source(operation(symbol), Bridge(Span(0, 0)), "", (symbol,))
+    else:
+        raise RewriteError("all branches need a one-parameter user function or supported elementary prelude function")
+    try:
+        solutions = sympy.solveset(origin.expr - point, origin.params[0],
+                                  sympy.S.Reals if domain == "real" else sympy.S.Complexes)
+    except (NotImplementedError, ValueError, sympy.PolynomialError) as error:
+        raise RewriteError("cannot solve this equation in closed form") from error
+    return origin, solutions
+
+
+def _solution_set(solutions: sympy.Set, origin: Source, solution_dims=None) -> Any:
+    from . import units
+    from .runtime import SetValue, _dedup
+    from .solution_set import SymbolicSetValue
+    solution_dims = units.DIMENSIONLESS if solution_dims is None else solution_dims
     if solutions is sympy.S.EmptySet:
         return SetValue(())
     if not isinstance(solutions, sympy.FiniteSet):

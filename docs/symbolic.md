@@ -42,11 +42,27 @@ protected.
 | Arithmetic and unary minus | `+ - * / ^`, `-x` |
 | Elementary functions | `\sin`, `\sqrt`, `\root`, `\ln`, `\log`, `\abs` |
 | Calls to other names | Undefined symbolic functions: `g(x) + g(x)` simplifies to `2 g(x)` |
+| Calls to user functions in a function input | Expand single-expression bodies using each callee's defining scope |
 | Equation quotes, for `\simplify`, `\expand`, `\factor` and `\solve` | `\expr(x^2 = 4)` |
 
 Sets, other comparisons, folds, lambda syntax and statement quotes produce an error
 naming the unsupported construct. A lambda passed as a function input is supported;
 a lambda expression inside a quote is not.
+
+Function inputs expand nested user-function calls before rewriting. Parameters
+shadow closure bindings, and each call accepts its declared number of positional
+arguments. Quotes keep calls symbolic even when their names are bound to user
+functions.
+
+```text
+g(t) = t^2
+f(x) = g(x) - 4
+\solve(f)               -> = {-2, 2}
+\deriv(f)               -> = \expr((2 * x))
+```
+
+Recursive calls and unsupported callee bodies produce typed errors; see
+[limitations](#limitations).
 
 ## Selecting names and orders
 
@@ -201,10 +217,15 @@ error. Parameters do not acquire real assumptions automatically.
 
 ## Inverses
 
-For supported user functions, `f⁻¹(y)` solves `f(x) = y` once per function and
-substitutes the argument into that exact form. Exact complex arguments are
-supported. See [inverse behavior](calculus.md#inverses) for branch selection and
+For supported user functions, `f⁻¹(y)` substitutes the argument into an exact
+inverse form. A stored inverse reuses that form between scalar calls. Exact complex
+arguments are supported. See [inverse behavior](calculus.md#inverses) for branch selection and
 numeric fallback.
+
+`f⁻¹(y, \all=\true)` returns the complete solution set for `f(x) = y` using
+the same finite and infinite representations as `\solve`. It accepts
+`\domain="real"` or the default `\domain="complex"`. See
+[all preimages](calculus.md#all-preimages) for supported functions and examples.
 
 ## Time limit
 
@@ -212,6 +233,10 @@ Rewrites stop after 5 seconds by default. `ADHOC_SYMBOLIC_TIMEOUT` sets the limi
 in seconds; `0` disables it. A timeout reports `took longer than 5s` at the default
 setting. Both sides of an equation share one time limit. `f⁻¹` and `f'` treat a
 timeout as no exact form and use their numeric path.[^worker]
+
+For function inputs, body expansion and rewriting share one time limit.
+All-preimage inverse calls include expansion and solving in one limit and report
+a timeout instead of falling back numerically.
 
 ## Dimension annotations
 
@@ -244,6 +269,9 @@ membership in a family with different dimensions is false.
 | Conditional real solutions are unsupported; undecidable system realness is an error | [#44](https://github.com/takeiteasy/adhoc/issues/44) |
 | No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
 | Gradients are arrays of quotes without vector algebra | [#18](https://github.com/takeiteasy/adhoc/issues/18) |
+
+Nested user-function expansion does not support recursive calls, statement-body
+callees or dimensioned calls. Python callables are not executed during rewriting.
 
 [^worker]: Each rewrite runs in a forked child that is killed at the limit.
     This also enforces the timeout off the main thread. Forking adds per-call

@@ -49,6 +49,58 @@ def test_undefined_function_calls_stay_symbolic():
     assert ev(r"\simplify(\expr(g(x) + g(x)))") == r"= \expr((2 * g(x)))"
 
 
+@pytest.mark.parametrize("operation, expected", [
+    (r"\solve(f)", "= {-2, 2}"),
+    (r"\simplify(f)", r"= \expr(((x ^ 2) - 4))"),
+    (r"\expand(f)", r"= \expr(((x ^ 2) - 4))"),
+    (r"\factor(f)", r"= \expr(((x - 2) * (x + 2)))"),
+    (r"\deriv(f)", r"= \expr((2 * x))"),
+    (r"\grad(f)", r"= ⟨\expr((2 * x))⟩"),
+    (r"f⁻¹(5)", "= 3"),
+    (r"f⁻¹(5, \all=\true)", "= {-3, 3}"),
+    (r"f'(3)", "= 6"),
+])
+def test_symbolic_operations_expand_nested_user_functions(operation, expected):
+    assert ev("g(t)=t^2\nh(t)=g(t)\nf(x)=h(x)-4\n" + operation) == expected
+
+
+def test_nested_functions_use_their_own_closure_and_avoid_parameter_capture():
+    assert ev("a=2\ng(x,y)=x+ay\nf(x)=g(3,x)-9\n\\solve(f)") == "= {3}"
+    assert ev("g(x,y)=x-y\nf(x,y)=g(y,x)\n\\simplify(f)") == r"= \expr(((-x) + y))"
+    assert ev("h(a)=(t ↦ at)\ng=h(3)\nf(a)=g(a)-6\n\\solve(f)") == "= {2}"
+
+
+def test_nested_calls_respect_shadowing_and_ordinary_product_application():
+    assert ev("g(x)=x^2\nf(g)=g(2)\n\\simplify(f)") == r"= \expr(g(2))"
+    assert ev("a=3\nf(x)=a(x)-6\n\\solve(f)") == "= {2}"
+
+
+def test_bound_functions_in_quotes_remain_symbolic():
+    assert ev("g(x)=x^2\n\\simplify(`(g(x)+g(x)))") == r"= \expr((2 * g(x)))"
+
+
+def test_nested_calls_work_in_systems_and_with_long_names():
+    assert ev("\\square(t)=t^2\nf(x)=\\square(x)-4\n"
+              r"\solve(⟨f, `(y=x)⟩, ⟨`(x), `(y)⟩)") == "= {⟨-2, -2⟩, ⟨2, 2⟩}"
+    assert ev("g(t)=t^2\nf(x)=g(x)+g(x)-8\n\\solve(f)") == "= {-2, 2}"
+
+
+@pytest.mark.parametrize("source, fragment", [
+    ("g(x)=g(x)\nf(x)=g(x)\n\\solve(f)", "recursive"),
+    ("g(x)=h(x)\nh(x)=g(x)\n\\simplify(g)", "recursive"),
+    ("g(x,y)=x+y\nf(x)=g(x)\n\\solve(f)", "2 positional arguments"),
+    ("g(x)=(t=x; t)\nf(x)=g(x)\n\\solve(f)", "several statements"),
+])
+def test_nested_function_expansion_errors(source, fragment):
+    fails(source, fragment)
+
+
+def test_symbolic_expansion_does_not_execute_python_callables():
+    def forbidden(x):
+        raise AssertionError("symbolic rewriting must not execute this callable")
+    assert ev("f(x)=g(x)\n\\simplify(f)", {"g": forbidden}) == r"= \expr(g(x))"
+
+
 def test_solve_quadratic_and_complex_roots():
     assert ev(r"\solve(\expr(x^2 - 4))") == "= {-2, 2}"
     assert ev(r"\solve(\expr(x^2 + 1))") == "= {-i, i}"

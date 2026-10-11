@@ -15,6 +15,7 @@ supports them, otherwise numeric methods. Failure to converge is a typed error.
 | `\int(x=r) body` | Integral over stored range or interval bounds |
 | `f'`, `f''`, `f'''`, … | Derivative function; exact or numeric, subject to numeric convergence and resource limits |
 | `f⁻¹` | Inverse function, returning one branch |
+| `f⁻¹(y, \all=\true)` | Set of all preimages in the complex domain |
 
 ```text
 \diff(x=1) \sin(x)          -> approximately 0.5403023058681387
@@ -101,7 +102,7 @@ and displays as `<fn f′>`.
 
 | Function and argument | Method |
 |---|---|
-| One-parameter definition or lambda with a supported symbolic body; exact integer, rational or Gaussian point | Exact derivative, cached per function, to any order |
+| One-parameter definition or lambda with a supported symbolic body; exact integer, rational or Gaussian point | Exact derivative, cached on the derivative callable, to any order |
 | Other function or float point | Numeric differences with the same tolerances, agreement checks and budgets as `\diff` |
 
 For `f(x) = x^3`, `f'(1/2)` is exactly `3/4`.
@@ -158,11 +159,49 @@ the root with the larger real part wins. For `f(x) = x^2`, `f⁻¹(4)` is `2`;
 `(x ↦ 2x)⁻¹(6)` is `3`. For `f(x) = x^2`, `f⁻¹(3+4i)` is `2+i` and
 `f⁻¹(-1)` has no real preimage. `\floor⁻¹(2.5)` reports a jump error.
 
+### All preimages
+
+Pass `\all=\true` to return every solution of `f(x) = y`. The default domain is
+complex; `\domain="real"` selects real solutions. Finite answers are ordinary
+sets; infinite families are [symbolic sets](solution-sets.md). No solutions
+returns `{}`.
+
+```text
+f(x) = x^2
+f⁻¹(4, \all=\true)                  -> = {-2, 2}
+f⁻¹(-1, \all=\true)                 -> = {-i, i}
+f⁻¹(-1, \all=\true, \domain="real") -> = {}
+g = f⁻¹
+g(4, \all=\true)                    -> = {-2, 2}
+
+s = \sin⁻¹(0, \all=\true)
+\pi ∈ s                             -> = true
+```
+
+The option accepts one-parameter definitions, lambdas and supported elementary
+prelude functions.[^preimages] User-function bodies may call other
+single-expression user functions. Each callee uses its own defining scope.
+
+`\all` accepts booleans only and defaults to `\false`. A `\domain` option requires
+`\all=\true`. Float targets use the symbolic solution-set path without promising
+exact arithmetic. Unresolved equations and timeouts are typed errors; all-branches
+calls do not use numeric root searches. See [limitations](#limitations).
+
 ## Limitations
 
 | Limit | Ticket |
 |---|---|
-| `f⁻¹` returns one branch; no set-valued inverse | [#17](https://github.com/takeiteasy/adhoc/issues/17) |
+| All-preimage calls reject unresolved `ConditionSet` results | [#44](https://github.com/takeiteasy/adhoc/issues/44) |
+| Dimensioned inverse functions | [#49](https://github.com/takeiteasy/adhoc/issues/49) |
+
+All-preimage calls do not support Python callables, compositions or
+statement-body functions. Symbolic expansion rejects recursive
+and nested dimensioned function calls.
+
+[^preimages]: Supported prelude heads are `\sin`, `\cos`, `\tan`, `\asin`,
+    `\acos`, `\atan`, `\sinh`, `\cosh`, `\tanh`, `\asinh`, `\acosh`, `\atanh`,
+    `\exp`, `\ln`, `\log`, `\sqrt` and `\abs`. Support means the body crosses the
+    symbolic bridge; a particular equation may still lack a closed-form result.
 
 [^ridders]: Cached finite-difference weights define symmetric central stencils
     and separate one-sided stencils without the anchor. Richardson extrapolation

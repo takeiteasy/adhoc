@@ -152,8 +152,10 @@ Exact results retain a closed form where available: `\log(1/2, 8)` is `-3` and
 `\sin(1)`. Complex logarithms use `\ln(x)/\ln(b)`.
 `\atan2` requires real arguments; use `\arg` for a complex value.
 
-Paired functions support `⁻¹` inverses: `\exp⁻¹` is `\ln` and `\sinh⁻¹` is
-`\asinh`. Poles and other undefined points produce typed errors.
+Scalar inverse calls use paired functions: `\exp⁻¹(x)` calls `\ln(x)` and
+`\sinh⁻¹(x)` calls `\asinh(x)`. Pass `\all=\true` for
+[all preimages](calculus.md#all-preimages). Poles and other undefined points
+produce typed errors.
 `\atan2` is the backslash name that permits a final digit.
 
 ## Rounding

@@ -1270,6 +1270,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
             return rra.show(v, digits)
         except rra.DomainError as e:
             raise NumError(e.args[0])
+    if isinstance(v, Inverse) and id(v.fn) in _INVERSES:
+        return nshow(_INVERSES[id(v.fn)], digits)
     if isinstance(v, Composed | Partial | OperatorFn | Derivative | Inverse):
         return f"<fn {_callable_label(v)}>"
     if isinstance(v, PreludeFn):
@@ -2037,7 +2039,7 @@ def _invoke(fn: Any, args: tuple, kwargs: dict | None = None,
     if not callable(fn):
         raise NumError(f"{nshow(fn)} is not a function")
     internal = isinstance(fn, _INTERNAL_CALLABLES)
-    if kwargs and internal and not isinstance(fn, PreludeFn):
+    if kwargs and internal and not isinstance(fn, PreludeFn | Inverse):
         raise NumError("user-defined functions take positional arguments only")
     if isinstance(fn, AdFunction) and len(args) != len(fn.params):
         label = spelling or fn.display_name
@@ -2405,10 +2407,8 @@ class Derivative:
 
 
 class Inverse:
-    """`f⁻¹` of a function with no paired inverse: `f⁻¹(y)` is the exact root of `f(x) = y`
-    nearest `y` when sympy solves the body, else the float root nearest `y`. A bracket grows outward from `y` and bisects; a root with no sign change
-    (a tangent one) falls to a secant walk. The residual is checked, so a jump or a
-    value outside the range is an error rather than a wrong answer."""
+    """A paired scalar inverse or the exact/numeric root nearest the target.
+    `all=True` returns the symbolic preimage set instead."""
 
     SPREAD_STEPS = 60
 
@@ -2459,11 +2459,26 @@ class Inverse:
                 continue
         return None
 
-    def __call__(self, *args):
+    def __call__(self, *args, all=False, domain=_MISSING):
         label = _callable_label(self)
+        if not isinstance(all, bool):
+            raise NumError(f"{label}: all needs a boolean")
+        if not all and domain is not _MISSING:
+            raise NumError(f"{label}: domain requires all=true")
         if len(args) != 1:
             raise NumError(f"{label} takes 1 argument, got {len(args)}")
         _reject_non_numeric(args[0])
+        if all:
+            if isinstance(args[0], Quantity | UnitValue):
+                raise NumError("dimensioned inverse functions are unsupported")
+            from . import rewrite
+            try:
+                return rewrite.preimages(self.fn, args[0], "complex" if domain is _MISSING else domain)
+            except rewrite.RewriteError as error:
+                raise NumError(f"{label}: {error}") from None
+        paired = _INVERSES.get(id(self.fn))
+        if paired is not None:
+            return _invoke(paired, args)
         if isinstance(args[0], Quantity | UnitValue):
             raise NumError("dimensioned inverse functions are unsupported")
         exact = self._exact(args[0])
@@ -2558,6 +2573,9 @@ def _callable_label(fn: Any) -> str:
     if isinstance(fn, Derivative):
         return f"{_callable_label(fn.fn)}{'′' * fn.order}"
     if isinstance(fn, Inverse):
+        paired = _INVERSES.get(id(fn.fn))
+        if paired is not None:
+            return _callable_label(paired)
         return f"{_callable_label(fn.fn)}⁻¹"
     return _show_callable(fn)[len("<py "):-1]
 
@@ -4266,7 +4284,7 @@ class Engine:
             self._fail("only `⁻¹` denotes an inverse function", sid)
         if isinstance(fn, Inverse):
             return fn.fn
-        return _INVERSES.get(id(fn)) or Inverse(fn)
+        return Inverse(fn)
 
     def _binop(self, f, a: AdValue, b: AdValue, sid: int) -> AdValue:
         try:

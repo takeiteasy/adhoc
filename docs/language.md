@@ -207,6 +207,8 @@ preserving collection kind where applicable. See
 | `\int(x=a..b) body`, `∫(x=a..b) body` | Integral |
 | `∫(x=-\inf..b) body`, `∫(x=-\inf..\inf) body` | Lower-infinite and whole-line integrals |
 | `f'`, `f''` | Derivative functions |
+| `f⁻¹(y)` | Scalar inverse; exact or numeric |
+| `f⁻¹(y, \all=\true)` | [All preimages](calculus.md#all-preimages); complex domain by default |
 
 Binders keep their variable local; other reads use the enclosing scope. Folds
 also iterate collections, including a tensor's outer slices. Infinite folds use

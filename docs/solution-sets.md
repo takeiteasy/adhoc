@@ -3,6 +3,8 @@
 `\solve` returns a non-enumerating symbolic set for infinite scalar families and
 scalar results restricted to a domain. Finite solutions remain ordinary sets.
 See [solving](symbolic.md#solving) for inputs and domain selection.
+All-preimage inverse calls, such as `\sin⁻¹(0, \all=\true)`, use the same
+representations; see [all preimages](calculus.md#all-preimages).
 
 ## Use
 

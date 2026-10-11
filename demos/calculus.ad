@@ -14,6 +14,17 @@ f''(2)
 f'''(2.)
 \map(f', [1, 2, 3])
 
+q(x) = x^2
+q⁻¹(4)
+q⁻¹(4, \all=\true)
+q⁻¹(-1, \all=\true, \domain="real")
+s = \sin⁻¹(0, \all=\true)
+π ∈ s
+
+g(t) = t^2
+h(x) = g(x) - 4
+\solve(h)
+
 -- \int(x=a..b) body: the integral over a range (∫ is the same name)
 ∫(x=0..π) \sin(x)
 \int(x=0..1) x^2
