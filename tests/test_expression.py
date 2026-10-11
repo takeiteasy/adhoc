@@ -139,9 +139,9 @@ def test_equation_evaluation_errors_keep_original_source():
 
 @pytest.mark.parametrize("source", [
     r"\expr(x=)", r"\expr(=4)", r"`(x=2=3)", r"\expr((x=2=3))",
-    r"\expr(x=2; x)", r"\expr(1+(x=2))", r"1+2=3", r"(x^2=4)",
+    r"\expr(x=2; x)",
 ])
-def test_malformed_or_unquoted_equations_are_rejected(source):
+def test_malformed_equations_are_rejected(source):
     with pytest.raises(ParseError):
         parse_program(source)
 

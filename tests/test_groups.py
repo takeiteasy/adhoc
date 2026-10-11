@@ -74,11 +74,9 @@ def test_empty_group_is_an_error():
         parse_program("()")
 
 
-def test_statements_need_a_separator_between_them():
-    # `b = 2` abutting `a = 1` on the same line is juxtaposition then an error —
-    # group statements are newline- or `;`-separated.
+def test_unseparated_equalities_are_rejected():
     with pytest.raises(ParseError):
-        parse_program("(\na = 1 b = 2\n)")
+        parse_program("(a = 1 b = 2)")
 
 
 def test_imports_are_rejected_inside_groups():

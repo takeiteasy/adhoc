@@ -132,8 +132,10 @@ Built-ins and Python callables have no reflected body.
 An equation occupies the whole expression quote and has one outer `=`. Enclosing
 parentheses are optional: `\expr((x=4))` is an equation quote. Evaluating it
 compares both sides without binding `x`. A separator marks a statement sequence:
-`\expr((x=4;))` quotes an assignment. Equation syntax outside quotes is
-unsupported; see [symbolic limitations](symbolic.md#limitations).
+`\expr((x=4;))` quotes an assignment. The outer `=` of an equation quote
+separates full expressions: `\expr(\true ∧ \false = \false)` compares
+`\true ∧ \false` with `\false`. Nested equality expressions use ordinary
+[comparison precedence](#equality-expressions).
 
 Reduction leaves arithmetic as syntax and named functions as calls. Statement
 quotes are rejected.[^reduction]
@@ -155,14 +157,14 @@ Loosest to tightest:
 | Level | Operators | Associativity |
 |---|---|---|
 | 1 | `? :` (ternary) | right |
-| 2 | `=` (binding/check) | statement level only, non-associative |
+| 2 | `=` (binding/check) | statement level only; RHS is an expression |
 | 3 | `↔` | non-associative |
 | 4 | `→` | right |
 | 5 | `∨` | left |
 | 6 | `∧` | left |
 | 7 | `¬` | prefix |
 | 8 | `..` (range) | non-associative |
-| 9 | `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
+| 9 | `=` `<` `>` `<=` `>=` `≤` `≥` `≠` `≈` `∈` `∉` `⊆` `⊂` `⊇` `⊃` | non-associative |
 | 10 | `∠` (polar form) | non-associative |
 | 11 | `+` `-` (binary), `∪` `∖` | left |
 | 12 | `*` `/` `@` `×` `⊗` `%`, `∩`, `∘` | left |
@@ -336,6 +338,11 @@ multi-line statement form:
 sequence ::= statement (sep statement)* sep? ;   -- sep: newline run | ";"
 ```
 
+Without a separator, parentheses contain one expression: `(x=3)` is equality,
+and `(f(x)=3)` compares a call result. Use `(x=3;)` or a newline after `x=3`
+for a bind/check group. Explicit statement forms such as `(\let x=3)` require
+no separator. See [equality expressions](#equality-expressions).
+
 ```
 f(x) = (
 y = x^2
@@ -428,9 +435,9 @@ a[2]      ->  = [1, 2]               a[4][1]  ->  = 4
 
 An array accepts one 1-based exact-integer index or [slice selector](slicing.md)
 (chain `a[i][j]` for nested arrays). Ranges and bare `..` return arrays;
-folds bind over elements in order. It has no algebra: every arithmetic
-operator, comparison, and transpose on an array is a typed error. The binding rule's check
-compares arrays by length and elements in order. Literal heads do not index (`⟨1, 2⟩[1]`
+folds bind over elements in order. Arithmetic, ordering, approximate comparison,
+and transpose on arrays are typed errors. Equality (`=` and `≠`) and binding
+checks compare arrays by length and elements in order. Literal heads do not index (`⟨1, 2⟩[1]`
 juxtaposes and fails), like tensor literals. `\arr` is reserved: it cannot be bound, and
 takes positional values only.
 
@@ -703,10 +710,45 @@ x < 0: "neg"
 A `{ }` whose first item is followed by `:` is a piecewise; `{c ? a : b}` is still a set of
 a ternary.
 
-Comparisons `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
+Comparisons `=`, `≠`, `<`, `>`, `<=`, and `>=` return booleans, displayed as `true` or `false`.
 Booleans are valid values and conditions but are not numeric operands. There is no
 numeric truthiness: a number is never a condition — `0 ? 1 : 2` is a typed error,
-not a silent pick, and the only conditions are comparisons and `\true`/`\false`.
+not a silent pick. Comparisons, boolean values and logical expressions are conditions.
+
+### Equality expressions
+
+`lhs = rhs` compares values without binding a name. Each side evaluates once,
+left to right, using the same value equality as a binding check. Equality binds
+at comparison precedence, tighter than logic and the ternary. Comparisons do
+not chain: `1=2=3` and `1<2=3` are errors; parenthesize a side to compare booleans.
+
+| Context | Meaning |
+|---|---|
+| `x=3` at statement start | Bind or check `x` |
+| `f(x)=body` at statement start | Define `f` |
+| `(x=3)` | Compare `x` with `3`; an unbound `x` is an error |
+| `(f(x)=3)` | Compare the call result with `3` |
+| `(x=3;)` or `(x=3` followed by a newline and `)` | Bind/check in a statement group |
+| `p=x=3` | Bind/check `p` against the boolean `x=3` |
+| `g(x=3)` | Named argument `x` with value `3` |
+| `g((x=3))` | Positional boolean argument |
+| `g(p=x=3)` | Named argument `p` with a boolean value |
+
+```text
+x=3
+(x^2=9) ? 10 : 20             ->  = 10
+(x=3) ∧ (x<4)                 ->  = true
+```
+
+A newline after `=` or another operator continues the expression:
+`(x=` followed by a newline and `3)` compares values. Leading newlines inside
+parentheses do not select statement-group parsing. Explicit statement forms
+such as `(\let x=3)` remain statements without a separator. Special-form
+binders retain their meaning, including `\sum(i=1..3)` and `\lim(x=0)`.
+
+Equality is an infix expression; `(=)`, `(= 3)`, `(3 =)` and bare `=` operator
+arguments are parse errors. Explicit equation quotes retain their
+[whole-side parsing](#quotes-and-evaluation).
 
 ## Lambdas: anonymous functions
 

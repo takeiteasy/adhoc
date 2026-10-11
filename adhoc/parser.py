@@ -44,7 +44,7 @@ argument is a binding, not an application argument. `\\sum`/`\\prod`/`Σ`/`Π` p
 `(i=a..b)` into a range and rewrite to `Fold`; `\\lim(x=a)` rewrites to `Limit`. In both,
 the body extends greedily over the rest of the current expression, up to the enclosing
 delimiter — parenthesize to end it earlier. Recognition commits on the `(ident =` shape
-alone (bare `=` cannot occur inside a general expression); any other use of those heads
+alone; any other use of those heads
 goes through ordinary application parsing.
 
 **Newlines are statement separators, everywhere.** The lexer emits a `Newline` token
@@ -273,6 +273,7 @@ class _Parser:
         # Set by `_skip_newlines`, reset by statement lists around each
         # statement: "a line break was consumed since the last statement ended".
         self._nl = False
+        self._equation_delimiters: set[int] = set()
         # True while parsing the items of a comma-separated list (call arguments,
         # tensor/array/set literals, index brackets): there `,` always separates
         # items, so `a, b..c` is never a stepped range (docs/grammar.md, `## Ranges`).
@@ -510,6 +511,9 @@ class _Parser:
             op = symbols.get(type(self.peek())) or names.get(self._infix_name())
             if custom is not None and custom[1] == level:
                 op = custom
+            elif (isinstance(self.peek(), Eq) and level == 9
+                  and self.pos not in self._equation_delimiters):
+                op = Equation
             elif op is None:
                 break
             nonassoc = not isinstance(op, tuple) and association == "none"
@@ -526,8 +530,11 @@ class _Parser:
             else:
                 if op in (CompareOperator.IN, CompareOperator.NOTIN):
                     rhs = self._range_from(rhs, self.additive)
-                node = Compare if isinstance(op, CompareOperator) else BinOp
-                lhs = node(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+                if op is Equation:
+                    lhs = Equation(lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+                else:
+                    node = Compare if isinstance(op, CompareOperator) else BinOp
+                    lhs = node(op=op, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
             consumed = True
             previous_nonassoc = nonassoc
         return lhs
@@ -788,12 +795,15 @@ class _Parser:
     # expression (`1 +`, a committed range `1..`) the statement continues. Imports
     # stay out (statements, not expressions — the group is an expression) and
     # `\alias`/`\dual` stay top-level (the depth guard).
-    def _group_stmts(self, allow_let_function: bool = False) -> list[Node]:
+    def _group_stmts(self, allow_let_function: bool = False) -> tuple[list[Node], bool]:
         self._skip_newlines()
         self._nl = False
         items = [self.statement(allow_let_function=allow_let_function)]
+        separated = False
         while True:
             sep = self._nl or isinstance(self.peek(), Newline)
+            separated |= isinstance(self.peek(), (Semi, Newline)) or (
+                self.pos > 0 and isinstance(self.tokens[self.pos - 1], Newline))
             self._skip_newlines()
             if isinstance(self.peek(), Semi):
                 sep = True
@@ -807,7 +817,49 @@ class _Parser:
                     f"found {self.peek().describe}")
             self._nl = False
             items.append(self.statement(allow_let_function=allow_let_function))
-        return items
+        return items, separated
+
+    def _paren_items(self, allow_let_function: bool) -> tuple[list[Node], bool]:
+        self._skip_newlines()
+        self._nl = False
+        tok = self.peek()
+        if isinstance(tok, Backslash) and tok.name in (
+            "let", "import", "pyimport", "alias", "dual", "infix"
+        ):
+            return self._group_stmts(allow_let_function)[0], True
+        saved = self.pos, self._nl, self._section_operand
+        try:
+            expression = self.expr()
+        except ParseError as error:
+            stack = []
+            has_newline = has_semicolon = False
+            for index in range(saved[0], len(self.tokens)):
+                token = self.tokens[index]
+                # Statement parsing cannot repair an error inside a nested expression.
+                if index == self.pos and stack:
+                    raise error
+                if isinstance(token, (LParen, *_OPENERS)):
+                    stack.append(token)
+                elif isinstance(token, (RParen, *_CLOSERS)):
+                    if not stack:
+                        break
+                    stack.pop()
+                elif isinstance(token, Eof):
+                    break
+                elif not stack:
+                    has_newline |= isinstance(token, Newline)
+                    has_semicolon |= isinstance(token, Semi)
+            if not has_newline and not has_semicolon:
+                raise error
+            self.pos, self._nl, self._section_operand = saved
+            items, separated = self._group_stmts(allow_let_function)
+            if separated or has_semicolon:
+                return items, True
+            raise error
+        if isinstance(self.peek(), RParen) or self._closes_section():
+            return [expression], False
+        self.pos, self._nl, self._section_operand = saved
+        return self._group_stmts(allow_let_function)[0], True
 
     # lambda ::= ("\λ" | "\fn") "(" params? ")" expr ;
     # The body extends greedily over the rest of the current expression — the
@@ -1017,7 +1069,7 @@ class _Parser:
         return Call(head=operator, args=(operand, Hole(span=operator.span)),
                     span=open_paren.span.to(close.span))
 
-    # comparison ::= angle (("<" | ">" | "<=" | ">=" | "∈" | "⊆") additive)? ;
+    # comparison ::= angle (cmp-op angle)? ;
     def comparison(self) -> Node:
         return self._binary(9, self.angle,
                             {Less: CompareOperator.LT, LessEq: CompareOperator.LE,
@@ -1120,8 +1172,6 @@ class _Parser:
                     f"argument: {usage}",
                     node.span.to(self.peek().span),
                 )
-            # Binder shape committed: bare `=` cannot occur in a general expression,
-            # so from here on malformed binders are genuine parse errors.
             return self._special_form(node, fold_op)
         while True:
             if isinstance(node, _Parser._INDEXABLE) and isinstance(self.peek(), LBracket):
@@ -1410,25 +1460,36 @@ class _Parser:
                     has_separator = True
         if (group_end is not None and has_separator
                 and isinstance(self.tokens[group_end + 1], RParen)):
+            saved = self.pos, self._nl, self._section_operand
             self.advance()
             self.depth += 1
             try:
-                statements = self._group_stmts()
+                statements, statement_body = self._paren_items(False)
+            except ParseError:
+                # A quote's full equation sides can fail ordinary comparison parsing.
+                statement_body = False
             finally:
                 self.depth -= 1
-            self.expect(RParen, "`)`")
-            self.expect(RParen, "`)`")
-            body = Seq(statements=tuple(statements),
-                       span=statements[0].span.to(statements[-1].span))
-            return Quote(body=body, source=self.source, statement_body=True,
-                         span=head.span.to(self.tokens[self.pos - 1].span))
-        wrappers = self._quoted_equation_wrappers()
-        if wrappers is None:
+            if statement_body:
+                self.expect(RParen, "`)`")
+                self.expect(RParen, "`)`")
+                body = Seq(statements=tuple(statements),
+                           span=statements[0].span.to(statements[-1].span))
+                return Quote(body=body, source=self.source, statement_body=True,
+                             span=head.span.to(self.tokens[self.pos - 1].span))
+            self.pos, self._nl, self._section_operand = saved
+        equation = self._quoted_equation_wrappers()
+        if equation is None:
             body = self.expr()
         else:
+            wrappers, delimiter = equation
             for _ in range(wrappers):
                 self.expect(LParen, "`(`")
-            lhs = self.expr()
+            self._equation_delimiters.add(delimiter)
+            try:
+                lhs = self.expr()
+            finally:
+                self._equation_delimiters.remove(delimiter)
             self.expect(Eq, "`=`")
             rhs = self.expr()
             body = Equation(lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
@@ -1439,12 +1500,12 @@ class _Parser:
             raise ParseError("quotes contain one expression, not statements", body.span)
         return Quote(body=body, source=self.source, span=head.span.to(self.tokens[self.pos - 1].span))
 
-    def _quoted_equation_wrappers(self) -> int | None:
+    def _quoted_equation_wrappers(self) -> tuple[int, int] | None:
         """Find a root equation without treating binders or keyword arguments as equations."""
         start = self.pos
         stack = []
         closes = {}
-        equation_depths = set()
+        equations: dict[int, list[int]] = {}
         end = start
         for end in range(start, len(self.tokens)):
             tok = self.tokens[end]
@@ -1455,13 +1516,17 @@ class _Parser:
             elif isinstance(tok, (RParen, *_CLOSERS)) and stack:
                 closes[stack.pop()] = end
             elif isinstance(tok, Eq):
-                equation_depths.add(len(stack))
+                equations.setdefault(len(stack), []).append(end)
             elif isinstance(tok, Eof):
                 break
         wrappers = 0
         while start < end:
-            if wrappers in equation_depths:
-                return wrappers
+            if wrappers in equations:
+                delimiters = equations[wrappers]
+                if len(delimiters) != 1:
+                    raise ParseError("this operator does not chain; parenthesize one side",
+                                     self.tokens[delimiters[1]].span)
+                return wrappers, delimiters[0]
             if not isinstance(self.tokens[start], LParen) or closes.get(start) != end - 1:
                 return None
             start += 1
@@ -1564,12 +1629,7 @@ class _Parser:
             case _:
                 return "?"
 
-    # args ::= (expr | string | kwarg) ("," ...)* — a string is an ordinary atom now,
-    # so `call_value` need only special-case it before the general expression (where it
-    # would parse the same way). A kwarg is `name=value`; the `=` seen directly after a
-    # name token commits it, and bare `=` cannot occur inside a general expression, so
-    # nothing else can want that shape. Multi-character names take the `\` sigil
-    # (`\dpi=300`).
+    # A leading `name=` commits a named argument; `(name=value)` is positional equality.
     def call_arg(self) -> Node:
         tok = self.peek()
         if isinstance(tok, Placeholder):
@@ -1715,9 +1775,7 @@ class _Parser:
                 self.depth += 1
                 try:
                     with self._list_context(False):
-                        items = self._group_stmts(
-                            allow_let_function=group_top_level
-                        )
+                        items, _ = self._paren_items(group_top_level)
                 finally:
                     self.depth -= 1
                 # Imports bind names and produce no output — they have no value, so

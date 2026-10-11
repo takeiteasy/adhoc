@@ -145,12 +145,21 @@ A parenthesized group supplies a branch with several statements.
 
 | Form | Purpose |
 |---|---|
+| `(x^2=9) ? 10 : 20` | Equality condition; compare values without binding |
 | `∧ ∨ ¬ → ↔` | Boolean logic, with short-circuit evaluation |
 | `\and \or \not \implies \iff` | ASCII logic spellings |
 | `∀(x∈s) body`, `∃(x∈s) body` | Quantification over ranges or collections; `x=s` also works |
 | `{x < 0: -x; x}` | Piecewise expression |
 
 See [logic](notation.md#logic) and [conditionals](grammar.md#conditionals-the-ternary).
+
+Equality has comparison precedence and does not chain. `(x=3)` compares an
+existing value; `(x=3;)` binds or checks in a statement group. At statement
+start, `x=3` remains a binding/check and `f(x)=body` remains a definition.
+`p=x=3` binds a boolean. In calls, `g(x=3)` passes a named value and
+`g((x=3))` passes a positional boolean. See
+[equality expressions](grammar.md#equality-expressions) and the
+[equality demo](../demos/equality.ad).
 
 ## Collections and higher-order functions
 

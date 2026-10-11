@@ -41,7 +41,7 @@ range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? 
                                            (* the "," form is not read inside lists *)
 comparison ::= angle (cmp-op angle)? | angle ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
 range-tail ::= additive (".." additive? | "," additive ".." additive?) ;   (* membership only *)
-cmp-op     ::= "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈" | "\\approx"
+cmp-op     ::= "=" | "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈" | "\\approx"
              | "∈" | "\\in" | "∉" | "\\notin" | "⊆" | "\\subseteq" | "⊂" | "\\subset"
              | "⊇" | "\\supseteq" | "⊃" | "\\supset" ;
 angle      ::= additive (("∠" | "\\angle") additive)? ;   (* polar form r∠θ *)
@@ -68,7 +68,7 @@ operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "×" | "⊗" | "∘" | "∪" 
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
-atom       ::= number | string | identifier | "\"-name | "(" sequence ")"
+atom       ::= number | string | identifier | "\"-name | "(" expr ")" | "(" sequence ")"
               | "(" operator ")" | "(" operator operand ")" | "(" operand operator ")"
               | lambda | arrow-lambda | radical | delimited | quote | tensor | array | set | piecewise | builder ;
 delimited  ::= "⌊" expr "⌋" | "⌈" expr "⌉" | "|" expr "|" | "‖" expr "‖" ;
@@ -89,6 +89,20 @@ sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 arrow-lambda ::= (name | "(" params? ")") ("↦" | "->" | "\mapsto") expr ;
 ```
+
+Statement heads `name =` and `name(params) =` take priority over expression
+equality; a call argument beginning `name =` takes priority as a named argument.
+Their right-hand sides are expressions, including equality.
+
+Parentheses select `expr` unless a statement separator follows a complete
+expression or the head is an explicit statement form such as `\let`.
+Newlines after operators continue the expression. Comparison operators,
+including equality, do not chain without parentheses.
+
+An explicit equation quote's single outer `=` separates two full `expr`
+productions; it is not consumed as an ordinary comparison. Equality nested
+inside either side uses comparison precedence. See
+[quotes and evaluation](grammar.md#quotes-and-evaluation).
 
 ## Special forms
 

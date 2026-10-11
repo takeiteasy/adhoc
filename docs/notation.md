@@ -22,6 +22,7 @@ for parsing rules and the [standard library](stdlib.md) for functions.
 
 | Glyph | ASCII | Meaning | Level |
 |---|---|---|---|
+| `=` | `=` | Value equality in expressions; see [syntax contexts](grammar.md#equality-expressions) | comparison |
 | `≤` `≥` | `<=` `>=` | ordering | comparison |
 | `≠` | `\neq` | Not equal; uses numeric-tier equality | comparison |
 | `≈` | `\approx` | approximately equal[^approx] | comparison |

@@ -55,30 +55,37 @@ _CMP = {
 
 
 def show(node: Node) -> str:
+    return _show(node, statement=True)
+
+
+def _show(node: Node, *, statement: bool = False) -> str:
+    if not statement and isinstance(node, (Assign, FuncDef, Seq)):
+        separator = "\n" if isinstance(node, FuncDef) else ";"
+        return f"({_show(node, statement=True)}{separator})"
     match node:
         case Seq(statements=statements):
-            return "".join(show(stmt) + ("\n" if isinstance(stmt, FuncDef) else "; ")
-                           for stmt in statements[:-1]) + show(statements[-1])
+            return "".join(_show(stmt, statement=True) + ("\n" if isinstance(stmt, FuncDef) else "; ")
+                           for stmt in statements[:-1]) + _show(statements[-1], statement=True)
         case Assign(name=name, value=value, spelling=spelling, fresh_only=fresh):
             prefix = "\\let " if fresh else ""
             label = spelling or (name if is_short_name(name) else f"\\{name}")
-            return f"{prefix}{label} = {show(value)}"
+            return f"{prefix}{label} = {_show(value)}"
         case FuncDef(name=name, params=params, body=body, spelling=spelling,
                      param_spellings=spellings):
             label = spelling or (name if is_short_name(name) else f"\\{name}")
             names = [spellings[i] if i < len(spellings) else param
                      for i, param in enumerate(params)]
-            text = f"({show(body)})" if isinstance(body, Seq) else show(body)
+            text = _show(body) if isinstance(body, Seq) else _show(body, statement=True)
             return f"{label}({', '.join(names)}) = {text}"
         case Import(path=path, members=members, member_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name
                      for i, name in enumerate(members)]
             suffix = f": {', '.join(names)}" if names else ""
-            return f"\\import({show(StrLit(text=path, span=node.span))}{suffix})"
+            return f"\\import({_show(StrLit(text=path, span=node.span))}{suffix})"
         case PyImport(path=path, members=members, member_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name
                      for i, name in enumerate(members)]
-            return f"\\pyimport({show(StrLit(text=path, span=node.span))}: {', '.join(names)})"
+            return f"\\pyimport({_show(StrLit(text=path, span=node.span))}: {', '.join(names)})"
         case NumLit(text=text):
             return text
         case Hole():
@@ -90,87 +97,87 @@ def show(node: Node) -> str:
         case Var(ch=name, spelling=spelling) | BackslashRef(name=name, spelling=spelling):
             return spelling or (name if is_short_name(name) else f"\\{name}")
         case UnOp(op=UnaryOperator.NEG, operand=operand):
-            return f"(-{show(operand)})"
+            return f"(-{_show(operand)})"
         case UnOp(op=UnaryOperator.NOT, operand=operand):
-            return f"(¬{show(operand)})"
+            return f"(¬{_show(operand)})"
         case UnOp(op=op, operand=operand):
-            return f"({show(operand)}{_POSTFIX[op]})"
+            return f"({_show(operand)}{_POSTFIX[op]})"
         case BinOp(op=op, lhs=left, rhs=right):
-            return f"({show(left)} {_BIN[op]} {show(right)})"
+            return f"({_show(left)} {_BIN[op]} {_show(right)})"
         case Compare(op=op, lhs=left, rhs=right):
-            return f"({show(left)} {_CMP[op]} {show(right)})"
+            return f"({_show(left)} {_CMP[op]} {_show(right)})"
         case Equation(lhs=left, rhs=right):
-            return f"{show(left)} = {show(right)}"
+            return f"({_show(left)} = {_show(right)})"
         case Range(start=start, second=second, end=end):
-            middle = f",{show(second)}" if second is not None else ""
-            return f"({show(start)}{middle}..{show(end) if end is not None else ''})"
+            middle = f",{_show(second)}" if second is not None else ""
+            return f"({_show(start)}{middle}..{_show(end) if end is not None else ''})"
         case IfExpr(condition=condition, then_branch=yes, otherwise=no):
-            return f"({show(condition)} ? {show(yes)} : {show(no)})"
+            return f"({_show(condition)} ? {_show(yes)} : {_show(no)})"
         case Call(head=head, args=args, kwargs=kwargs):
-            values = [show(arg) for arg in args]
-            values += [f"{show(kw_name(kw))}={show(kw.value)}" for kw in kwargs]
-            return f"{show(head)}({', '.join(values)})"
+            values = [_show(arg) for arg in args]
+            values += [f"{_show(kw_name(kw))}={_show(kw.value)}" for kw in kwargs]
+            return f"{_show(head)}({', '.join(values)})"
         case PowCall(head=head, exponent=exponent, args=args, kwargs=kwargs):
-            values = [show(arg) for arg in args]
-            values += [f"{show(kw_name(kw))}={show(kw.value)}" for kw in kwargs]
+            values = [_show(arg) for arg in args]
+            values += [f"{_show(kw_name(kw))}={_show(kw.value)}" for kw in kwargs]
             script = _superscript(exponent)
             if script is None:
                 # An exponent rewritten by `\expr` may leave the superscript alphabet; a
                 # callable head still reads the same as `f(x) ^ n`.
-                return f"({show(head)}({', '.join(values)}) ^ {show(exponent)})"
-            return f"{show(head)}{script}({', '.join(values)})"
+                return f"({_show(head)}({', '.join(values)}) ^ {_show(exponent)})"
+            return f"{_show(head)}{script}({', '.join(values)})"
         case Fold(op=op, var=var, bound=bound, body=body, spelling=spelling,
                   var_spelling=var_spelling, member_binder=member):
             head = spelling or _FOLD_HEADS[op]
-            return f"({head}({var_spelling or var}{'∈' if member else '='}{show(bound)}) {show(body)})"
+            return f"({head}({var_spelling or var}{'∈' if member else '='}{_show(bound)}) {_show(body)})"
         case Limit(var=var, point=point, body=body, spelling=spelling,
                    var_spelling=var_spelling):
             head = spelling or "\\lim"
-            return f"({head}({var_spelling or var}={show(point)}) {show(body)})"
+            return f"({head}({var_spelling or var}={_show(point)}) {_show(body)})"
         case Diff(var=var, point=point, body=body, order=order, spelling=spelling,
                   var_spelling=var_spelling):
             head = spelling or "\\diff"
-            degree = "" if order is None else f", {show(order)}"
-            return f"({head}({var_spelling or var}={show(point)}{degree}) {show(body)})"
+            degree = "" if order is None else f", {_show(order)}"
+            return f"({head}({var_spelling or var}={_show(point)}{degree}) {_show(body)})"
         case Integral(var=var, bound=bound, body=body, spelling=spelling,
                       var_spelling=var_spelling):
             head = spelling or "\\int"
-            return f"({head}({var_spelling or var}={show(bound)}) {show(body)})"
+            return f"({head}({var_spelling or var}={_show(bound)}) {_show(body)})"
         case Piecewise(conditions=conditions, values=values, otherwise=otherwise):
-            clauses = [f"{show(c)}: {show(v)}" for c, v in zip(conditions, values)]
+            clauses = [f"{_show(c)}: {_show(v)}" for c, v in zip(conditions, values)]
             if otherwise is not None:
-                clauses.append(show(otherwise))
+                clauses.append(_show(otherwise))
             return f"{{{'; '.join(clauses)}}}"
         case SetBuilder(var=var, domain=domain, element=element, guards=guards,
                         var_spelling=var_spelling):
             name = var_spelling or (var if is_short_name(var) else f"\\{var}")
-            tail = "".join(f", {show(g)}" for g in guards)
+            tail = "".join(f", {_show(g)}" for g in guards)
             if element is None:
-                return f"{{{name} ∈ {show(domain)} | {', '.join(show(g) for g in guards)}}}"
-            return f"{{{show(element)} | {name} ∈ {show(domain)}{tail}}}"
+                return f"{{{name} ∈ {_show(domain)} | {', '.join(_show(g) for g in guards)}}}"
+            return f"{{{_show(element)} | {name} ∈ {_show(domain)}{tail}}}"
         case Lambda(params=params, body=body, param_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name for i, name in enumerate(params)]
-            return f"(\\fn({', '.join(names)}) {show(body)})"
+            return f"(\\fn({', '.join(names)}) {_show(body)})"
         case TensorLit(items=items, row_length=row_length):
             if row_length is None:
-                return f"[{', '.join(show(item) for item in items)}]"
-            rows = [", ".join(show(item) for item in items[i:i + row_length])
+                return f"[{', '.join(_show(item) for item in items)}]"
+            rows = [", ".join(_show(item) for item in items[i:i + row_length])
                     for i in range(0, len(items), row_length)]
             return f"[{'; '.join(rows)};]" if len(rows) == 1 else f"[{'; '.join(rows)}]"
         case ArrayLit(items=items):
-            return f"⟨{', '.join(show(item) for item in items)}⟩"
+            return f"⟨{', '.join(_show(item) for item in items)}⟩"
         case SetLit(items=items):
-            return f"{{{', '.join(show(item) for item in items)}}}"
+            return f"{{{', '.join(_show(item) for item in items)}}}"
         case WholeAxis():
             return ".."
         case Index(head=head, items=items):
-            return f"{show(head)}[{', '.join(show(item) for item in items)}]"
+            return f"{_show(head)}[{', '.join(_show(item) for item in items)}]"
         case Transpose(operand=operand, glyph=glyph):
-            return f"{show(operand)}{glyph}"
+            return f"{_show(operand)}{glyph}"
         case Quote(body=body, statement_body=statement_body):
             return show_quote(body, statement_body)
         case Eval(value=value, bindings=bindings):
-            values = [show(value)] + [f"{show(kw_name(kw))}={show(kw.value)}" for kw in bindings]
+            values = [_show(value)] + [f"{_show(kw_name(kw))}={_show(kw.value)}" for kw in bindings]
             return f"\\eval({', '.join(values)})"
         case _:
             raise TypeError(f"cannot display expression node {type(node).__name__}")
@@ -215,7 +222,7 @@ def kw_name(kw: KwArg) -> Node:
 
 
 def show_quote(node: Node, statement_body: bool) -> str:
-    text = show(node)
+    text = _show(node, statement=statement_body)
     if statement_body and isinstance(node, Seq) and len(node.statements) == 1:
         text += "\n" if isinstance(node.statements[0], FuncDef) else ";"
     return f"\\expr(({text}))" if statement_body else f"\\expr({text})"

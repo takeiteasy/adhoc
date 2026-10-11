@@ -125,7 +125,11 @@ other quotes. `\solve` treats an equation as `lhs - rhs = 0`.
 An equation occupies the whole quote body; chained equations are rejected.
 Statement-sequence quotes such as `\expr((x=1; x+1))` contain assignments.
 Outside quotes, `=` retains its bind-or-check and function-definition meanings;
-see [limitations](#limitations). Other symbolic rewrites reject equation quotes.
+in expression positions it compares values. See
+[equality expressions](grammar.md#equality-expressions). The outer `=` of an
+equation quote separates full expressions; nested equality uses ordinary
+comparison precedence. Other symbolic rewrites reject equation quotes;
+see [limitations](#limitations).
 
 ## Systems of equations
 
@@ -179,7 +183,6 @@ path.[^worker]
 
 | Limit | Ticket |
 |---|---|
-| Equality expressions outside quotes are unsupported | [#41](https://github.com/takeiteasy/adhoc/issues/41) |
 | `\simplify`, `\expand` and `\factor` reject equation quotes | [#42](https://github.com/takeiteasy/adhoc/issues/42) |
 | Infinite solution families are errors; no real-domain option | [#15](https://github.com/takeiteasy/adhoc/issues/15) |
 | No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |

@@ -21,6 +21,10 @@ def test_equation_quotes_render_both_sides():
     assert tex(r"\tex(\expr((x+1)/2 = \sqrt(y)))") == r"\frac{x + 1}{2} = \sqrt{y}"
 
 
+def test_nested_equality_conditions_render_at_comparison_precedence():
+    assert tex(r"\tex(\expr((x=3) ∧ (y<4)))") == r"x = 3 \land y < 4"
+
+
 def test_juxtaposed_coefficients_and_parentheses():
     assert tex(r"\tex(\expr(2x))") == "2 x"
     assert tex(r"\tex(\expr(2 (x + 1)))") == r"2 \left(x + 1\right)"

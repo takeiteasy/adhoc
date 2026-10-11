@@ -576,7 +576,7 @@ def test_group_cannot_overwrite_a_global():
     # rule: bound name → compare. There is no force-rebind path left anywhere.
     env: dict = {}
     last("x = 5", env)
-    assert run_source("(x = 6)", env) == ["false"]
+    assert run_source("(x = 6;)", env) == ["false"]
     assert last("x", env) == "= 5"
 
 

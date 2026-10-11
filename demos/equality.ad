@@ -1,0 +1,20 @@
+-- Equality in conditions compares values without binding.
+x = 3
+(x^2 = 9) ? 10 : 20
+(x = 3) ∧ (x < 4)
+1 + 2 = 3
+
+-- A binding can store an equality result.
+p = x = 3
+p
+f(a) = (a = 3)
+f(x)
+
+-- A separator selects a bind/check statement group.
+(y = 4;)
+(y = 4)
+
+-- Equation quotes preserve solver inputs and local evaluation bindings.
+q = \expr(x^2 = 9)
+\solve(q)
+\eval(q, x=3)
