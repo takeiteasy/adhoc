@@ -25,3 +25,14 @@ g=\merge
 \infix(11) ~(a,b) = a-b
 \infix(11) ~~(a,b) = a+b
 10~~3~2
+
+"Sections fix either operand using ordinary partial application"
+(2 ⊕)(3)
+(⊕ 2)(3)
+\map((<+> 2), ⟨1,2,3⟩)
+(\merge 2)(3)
+(<+> 2*3)(10)
+(<+> (2,3))
+<+>(·,(1+2))(10)
+\expr((<+> 2))
+\eval(\expr((2 <+>)))(3)

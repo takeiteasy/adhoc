@@ -82,6 +82,37 @@ whereas `2^3 ⊕ 2` groups as `2^(3 ⊕ 2)`. Chains involving a non-associative
 built-in at the same level require parentheses: at level 9, write `(a ⊕ b) < c`.
 See the [full precedence table](grammar.md#precedence-table).
 
+## Sections
+
+Parenthesized sections fix one operand of any declared operator. They use the
+same partial application as an explicit hole call.
+
+```text
+\infix(11) \blend, <+>(a,b) = a-b
+(2 <+>)(3)                  -- -1: <+>(2,·)(3)
+(<+> 2)(3)                  -- 1: <+>(·,2)(3)
+(\blend 2)(3)               -- 1: the paired name works too
+\map((<+> 2), ⟨1,2,3⟩)      -- ⟨-1, 0, 1⟩
+```
+
+| Rule | Example |
+|---|---|
+| Tighter operations fit inside an operand | `(<+> 2*3)(10)` returns `4` at level 11 |
+| Group a looser left operand | At level 12, write `((1+2) <+>)` |
+| Ordinary calls take priority before `(`, with or without spaces | `(<+> (2,3))` is a two-argument call |
+| Use a hole call for a grouped right operand | `<+>(·,(1+2))` fixes `1+2` |
+| Left sections preserve custom left association | `(10 <+> 3 <+>)(2)` returns `5` |
+| Quotes display the hole call | `\expr((<+> 2))` displays `\expr(<+>(·, 2))` |
+
+A right section reads its fixed operand as the declared operator's right-hand
+side. Looser operations require the explicit hole form with grouping. Left
+sections accept a tighter operand or a left-associated custom chain; looser
+operations and mixed non-associative chains require parentheses.
+
+The function and fixed operand evaluate when the section is created. Calling
+the partial fills its one remaining argument. Built-in sections retain their
+prefix exceptions: `(- 2)` is negation, and radicals are ordinary calls.
+
 ## Scope and function values
 
 Declarations appear at top level, outside functions, groups, and quotes. They
@@ -90,7 +121,7 @@ onto the next line; a leading operator starts a new statement.
 
 The REPL retains declarations across submissions. Each script and imported
 module parses independently. Imports bring in function bindings, with ordinary
-calls such as `\blend(2,3)`, but do not export infix syntax or paired spellings.[^registry]
+calls such as `\blend(2,3)`, but have [independent operator syntax](#limitations).[^registry]
 
 A failed, incomplete, or cancelled parse registers nothing. After a successful
 parse, syntax stays registered even if evaluation fails; an operator whose
@@ -103,8 +134,8 @@ spelling.
 
 ## Limitations
 
-- Custom operator sections such as `(⊕ 2)` and `(2 ⊕)` are deferred; use
-  `⊕(·,2)` and `⊕(2,·)` — [#21](https://github.com/takeiteasy/adhoc/issues/21).
+- Imports carry function bindings, but do not export infix declarations or paired spellings.
+- Each paired declaration has one alternate spelling; aliases cannot add further spellings.
 
 [^registry]: The Python APIs `parse_program`, `compile_source`, and `run_source`
     accept `operators=`. Pass the same dictionary across calls to preserve syntax;

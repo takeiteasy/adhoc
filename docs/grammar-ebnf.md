@@ -25,11 +25,12 @@ alias-stmt  ::= "\alias" name "," single-char ("," single-char)* ;
 dual-stmt   ::= "\dual" name "," single-char params? "=" statement (";" statement)* ;
 single-char ::= identifier ;                (* aliases are one-character letters *)
 name        ::= identifier | "\"-name ;
-infix-stmt  ::= "\infix" "(" integer ")" operator-name ("," operator-symbol)?
+infix-stmt  ::= "\infix" "(" integer ")" infix-head
                 "(" name "," name ")" "=" statement (";" statement)* ;
-operator-name ::= "\"-name | operator-symbol ;
+infix-head ::= "\"-name ("," operator-symbol)? | operator-symbol ;
 operator-symbol ::= unused-mathematical-symbol | punctuation-operator ;
 punctuation-operator ::= unreserved-run-of-"+-*/^%@<>&~" ;
+declared-custom-operator ::= registered-backslash-name | registered-operator-symbol ;
 
 expr       ::= ternary ;
 ternary    ::= iff ("?" ternary ":" ternary)? ;   (* right-associative *)
@@ -65,7 +66,7 @@ hole       ::= "·" | "⋅" | "_" ;
 operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "×" | "⊗" | "∘" | "∪" | "∩" | "∖" | "<" | ">" | "<="
              | ">=" | "≤" | "≥" | "≠" | "≈" | "∈" | "∉" | "⊆" | "⊂" | "⊇" | "⊃" | "√" | "∛" | "∜"
              | "!" | "‼" | "\\contract" | "\\times" | "\\otimes" | "\\circ" | "\\cup" | "\\cap" | "\\setminus" | "\\in"
-             | "\\notin" | "\\subseteq" | "\\subset" | "\\supseteq" | "\\supset" | "\\neq" | "\\approx" ;
+             | "\\notin" | "\\subseteq" | "\\subset" | "\\supseteq" | "\\supset" | "\\neq" | "\\approx" | declared-custom-operator ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
 func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
 params     ::= name ("," name)* ;
@@ -106,6 +107,11 @@ An explicit equation quote's single outer `=` separates two full `expr`
 productions; it is not consumed as an ordinary comparison. Equality nested
 inside either side uses comparison precedence. See
 [quotes and evaluation](grammar.md#quotes-and-evaluation).
+
+Declared custom spellings participate in the infix production at their declared
+precedence and in both section productions. A custom spelling followed by `(`
+parses as an ordinary call, regardless of spaces; use an explicit hole call for
+a grouped right-section operand. See [custom operator sections](operators.md#sections).
 
 ## Special forms
 

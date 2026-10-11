@@ -464,8 +464,8 @@ class _Parser:
                 self.pos = saved  # not the def shape after all — reparse as an application
         return self.expr()
 
-    def _custom_operator(self) -> tuple[str, int] | None:
-        tok = self.peek()
+    def _custom_operator(self, k: int = 0) -> tuple[str, int] | None:
+        tok = self.look(k)
         spelling = (f"\\{tok.name}" if isinstance(tok, Backslash)
                     else tok.ch if isinstance(tok, CustomOp) else None)
         return self.operators.get(spelling)
@@ -532,8 +532,9 @@ class _Parser:
         previous_nonassoc = False
         consumed = False
         while True:
-            if self._section(lhs, keys):
-                if consumed and association == "none":
+            if self._section(lhs, keys, level):
+                if consumed and association == "none" and (
+                        previous_nonassoc or self._custom_operator() is None):
                     raise self.error_at_current("unexpected token: this operator does not chain; parenthesize one side")
                 break
             custom = self._custom_operator()
@@ -1026,9 +1027,12 @@ class _Parser:
         return None
 
     def _operator_value(self, k: int = 0) -> Node | None:
-        """The function value spelled by the operator token `k` ahead — an `OpRef`, or
-        `\\sqrt` for the radical — else None."""
+        """Return the function value of a built-in or declared operator token."""
         tok = self.look(k)
+        custom = self._custom_operator(k)
+        if custom is not None:
+            spelling = f"\\{tok.name}" if isinstance(tok, Backslash) else tok.ch
+            return BackslashRef(name=custom[0], spelling=spelling, span=tok.span)
         if isinstance(tok, Radical):
             return BackslashRef(name="sqrt", span=tok.span, spelling="√")
         if isinstance(tok, NthRoot):
@@ -1046,41 +1050,50 @@ class _Parser:
     def _root_ref(tok: NthRoot) -> BackslashRef:
         return BackslashRef(name="root", span=tok.span, spelling="\\root")
 
-    def _closes_section(self, keys: frozenset[str] | None = None) -> bool:
-        """The cursor is an operator (of `keys`, or any) directly before a `)`: the end of
-        a left section, `(e op)`."""
+    def _closes_section(self, keys: frozenset[str] | None = None, level: int | None = None) -> bool:
+        if not isinstance(self.look(1), RParen):
+            return False
+        custom = self._custom_operator()
+        if custom is not None:
+            return level is None or custom[1] == level
         operator = self._operator_value()
-        return (isinstance(operator, OpRef) and (keys is None or operator.name in keys)
-                and isinstance(self.look(1), RParen))
+        return isinstance(operator, OpRef) and (keys is None or operator.name in keys)
 
-    def _section(self, lhs: Node, keys: frozenset[str]) -> bool:
-        """Stop an operand at a section's closing operator, remembering the operand so the
-        enclosing group can check it was the whole expression."""
-        if not self._closes_section(keys):
+    def _section(self, lhs: Node, keys: frozenset[str], level: int) -> bool:
+        if not self._closes_section(keys, level):
             return False
         self._section_operand = lhs
         return True
 
-    # section ::= "(" operator operand ")" | "(" operand operator ")" ; the operand reads at
-    # the level of the operator's own right-hand side, so a section is the hole form
-    # `(op)(_, e)` / `(op)(e, _)` — `(- e)` stays negation.
+    def _section_label(self, operator: Node) -> str:
+        return OP_SYMBOLS[operator.name] if isinstance(operator, OpRef) else self._form_label(operator)
+
+    def _section_operand_parser(self, operator: Node):
+        custom = self._custom_operator()
+        if custom is not None:
+            return {3: self.implies, 4: self.disjunction, 5: self.conjunction,
+                    6: self.negation, 9: self.angle, 10: self.additive,
+                    11: self.multiplicative, 12: self.juxtaposed,
+                    15: self._power_operand}[custom[1]]
+        return (self.negation if operator.name == "and"
+                else self.conjunction if operator.name == "or"
+                else self.implies if operator.name in ("implies", "iff")
+                else self.multiplicative if operator.name in _ADDITIVE_KEYS
+                else self.juxtaposed if operator.name in _MULTIPLICATIVE_KEYS
+                else self.unary if operator.name == "pow" else self.additive)
+
     def _right_section(self, open_paren: Token) -> Node:
         self.advance()
         operator = self._operator_value()
-        operand_level = (self.negation if operator.name == "and"
-                         else self.conjunction if operator.name == "or"
-                         else self.implies if operator.name in ("implies", "iff")
-                         else self.multiplicative if operator.name in _ADDITIVE_KEYS
-                         else self.juxtaposed if operator.name in _MULTIPLICATIVE_KEYS
-                         else self.unary if operator.name == "pow" else self.additive)
+        operand_level = self._section_operand_parser(operator)
         self.advance()
         operand = operand_level()
-        if operator.name in ("member", "notmember"):
+        if isinstance(operator, OpRef) and operator.name in ("member", "notmember"):
             operand = self._range_from(operand, operand_level)
         if not isinstance(self.peek(), (RParen, Eof)):
             raise ParseError(
                 f"a section's operand ends at `)`, found {self.peek().describe}; "
-                f"parenthesize it: ({OP_SYMBOLS[operator.name]} (…))", self.peek().span)
+                f"parenthesize it: ({self._section_label(operator)})(·, (…))", self.peek().span)
         close = self.expect(RParen, "`)`")
         return Call(head=operator, args=(Hole(span=operator.span), operand),
                     span=open_paren.span.to(close.span))
@@ -1089,7 +1102,7 @@ class _Parser:
         operator = self._operator_value()
         if not single or operand is not self._section_operand:
             raise ParseError(
-                f"parenthesize the section's operand: ((…) {OP_SYMBOLS[operator.name]})",
+                f"parenthesize the section's operand: ((…) {self._section_label(operator)})",
                 operator.span)
         self._section_operand = None
         self.advance()
@@ -1801,6 +1814,7 @@ class _Parser:
                 close = self.advance()
                 return replace(operator, span=tok.span.to(close.span))
             case LParen() if (self._operator_value(1) is not None
+                              and (self._custom_operator(1) is None or not isinstance(self.look(2), LParen))
                               and not isinstance(self.look(1), (Minus, Radical, NthRoot, Bang, DoubleBang))
                               and not self._is_not(self.look(1))):
                 return self._right_section(tok)

@@ -648,6 +648,7 @@ forms `(+)(·, 1)` and `(^)(2, ·)`.
 | Operand | Reads as the operator's own right-hand side would, so `(+ 1*2)` fixes `1*2` and `(1 * 2 +)` fixes `1*2`; a looser operand is a parse error asking for parentheses: `(* 1 + 2)`, `(1 + 2 *)`, `(-2 ^)` |
 | Minus | `(- 1)` is negation, so a right section for `-` is `(+ -1)` or `(-)(·, 1)`; `(1 -)` is a section |
 | Radical | `(√ x)`, `(∛ x)` are calls, not sections; postfix `!` `‼` have none either |
+| Custom operators | Declared names, glyphs and punctuation support both sections; ordinary calls take priority when a custom spelling is followed by `(`, even with spaces. Use `⊕(·,(1+2))` for a grouped right operand |
 | Quotes | A section is the hole form: `\expr((+ 1))` prints `\expr((+)(·, 1))` |
 
 ## Custom infix operators
@@ -668,7 +669,9 @@ level, the expression grammar also accepts the declared operator.
 Custom operators associate left; built-ins retain their own association. Mixed
 chains involving a non-associative built-in at the same level require parentheses.
 Custom calls evaluate both operands and use ordinary function scoping, recursion,
-values, and partial application. Built-in sections keep their existing syntax.
+values, partial application and sections. `(⊕ 2)` is `⊕(·,2)`; `(2 ⊕)` is
+`⊕(2,·)`. Section boundaries use the declared precedence. See
+[custom operator sections](operators.md#sections) for operand and call rules.
 
 Declarations are top-level and affect their body and later statements. The REPL
 retains them; scripts and imported modules have independent parsing declarations.

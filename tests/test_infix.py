@@ -204,8 +204,7 @@ def test_large_precedence_has_typed_diagnostic():
         parse_program('\\infix(' + '9' * 5000 + ') ⊕(a,b)=a+b')
 
 
-def test_custom_sections_are_deferred():
-    with pytest.raises(ParseError):
-        parse_program(r'\infix(11) ⊕(a,b)=a+b' + '\n(2 ⊕)')
-    with pytest.raises(EvalError):
-        run_source(r'\infix(11) ⊕(a,b)=a+b' + '\n(⊕ 2)')
+def test_custom_sections_use_ordinary_partial_application():
+    source = r'\infix(11) ⊕(a,b)=a-b' + '\n'
+    assert run_source(source + '(2 ⊕)(3)')[-1] == '= -1'
+    assert run_source(source + '(⊕ 2)(3)')[-1] == '= 1'

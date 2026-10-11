@@ -191,6 +191,8 @@ and have no elementwise algebra. Sets accept any values and support
 
 `(f ∘ g)(2)` composes functions. `f(10, ·)` fixes an argument; `⋅` and `_` are
 also placeholders. Operator sections `(+ 1)` and `(2 ^)` fix one operand.
+Declared custom operators support `(⊕ 2)` and `(2 ⊕)` too; see
+[custom operator sections](operators.md#sections).
 `\map`, `\filter`, `\fold` and `\scan` work over ranges and collections,
 preserving collection kind where applicable. See
 [higher-order functions](grammar.md#higher-order-functions).
@@ -283,14 +285,12 @@ ad collections convert to Python lists or frozensets. See
 
 `\infix(11) \blend, ⊕(a,b) = a+b` declares a function as an infix operator with
 an optional glyph or punctuation spelling. For example,
-`\infix(11) \blend, <+>(a,b) = a+b` gives `2<+>3` infix syntax. Declarations persist in the REPL and stay local to each
-script or module. See [custom operators](operators.md) for precedence and examples.
+`\infix(11) \blend, <+>(a,b) = a+b` gives `2<+>3` infix syntax. Declarations
+persist in the REPL and stay local to each script or module. See [custom operators](operators.md) for precedence, sections and examples.
 
 ## Limitations
 
 - Graphing is not implemented (#30).
-- Custom operator sections are not implemented; see
-  [operator limitations](operators.md#limitations).
 - Set construction and membership compare elements pairwise; construction is
   quadratic in set size: [#4](https://github.com/takeiteasy/adhoc/issues/4).
 - Numeric derivatives use [order-dependent tolerances and resource budgets](calculus.md#derivatives).

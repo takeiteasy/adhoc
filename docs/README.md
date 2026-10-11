@@ -9,7 +9,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [Formal grammar](grammar-ebnf.md) | EBNF parser productions |
 | [Collection slicing](slicing.md) | Range selectors, tensor shapes and bounds |
 | [Notation](notation.md) | Math glyphs and ASCII spellings |
-| [Custom operators](operators.md) | Infix declarations, precedence and scope |
+| [Custom operators](operators.md) | Spellings, declarations, precedence, sections and scope |
 | [Calculus](calculus.md) | Derivatives and integrals |
 | [Infinite interval bounds](intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](symbolic.md) | Simplification, expansion, factoring and solving |

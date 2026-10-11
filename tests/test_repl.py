@@ -190,3 +190,13 @@ def test_cancelled_punctuation_declaration_can_be_declared_again(tmp_path):
     assert '-- input cancelled' in result.stdout
     assert '< = 5' in result.stdout
     assert 'ERROR' not in result.stdout
+
+
+@pytest.mark.parametrize('spelling', ['⊕', '<+>'])
+def test_custom_sections_use_persisted_declarations(tmp_path, spelling):
+    result = run_repl(f'\\infix(11) {spelling}(a,b)=a-b\nf=({spelling} 2)\nf(5)\n(2 {spelling})(5)\n', tmp_path)
+    assert result.returncode == 0
+    assert '< = 3' in result.stdout
+    assert '< = -3' in result.stdout
+    assert 'ERROR' not in result.stdout
+    assert not result.stderr
