@@ -1,7 +1,7 @@
 # Custom infix operators
 
 `\infix(N)` defines a two-argument function and gives it infix syntax. Higher
-precedence numbers bind tighter. A name and its paired glyph share one function.
+precedence numbers bind tighter. A name and its paired spelling share one function.
 
 ```text
 \infix(11) \blend, ⊕(a,b) = a+b
@@ -17,7 +17,8 @@ f = ⊕                   -- the same function as \blend
 |---|---|
 | Backslash name | `\infix(11) \blend(a,b) = a+b` |
 | Mathematical glyph | `\infix(11) ⊕(a,b) = a+b` |
-| Name with one paired glyph | `\infix(11) \blend, ⊕(a,b) = a+b` |
+| Punctuation | `\infix(11) <+>(a,b) = a+b` |
+| Name with one paired spelling | `\infix(11) \blend, <+>(a,b) = a+b` |
 
 Use a literal integer precedence and exactly two distinct parameter names. The
 body follows ordinary function rules: parameters and local bindings stay local,
@@ -31,11 +32,35 @@ behavior.
 |---|---|
 | Glyph | One unused non-ASCII Unicode mathematical symbol (`Sm`) |
 | Backslash name | Unprotected, without an existing alias or operator declaration |
-| Paired declaration | One name and one glyph; both refer to the same function |
+| Punctuation | One contiguous run of `+ - * / ^ % @ < > & ~`, excluding reserved spellings |
+| Paired declaration | One name and one glyph or punctuation spelling; both refer to the same function |
 
 Letters, delimiters, built-in operators and `≡` are reserved. Previously
 declared operator spellings are rejected. `\alias` and `\dual` cannot extend
 a custom operator; use the paired declaration.
+
+## Punctuation matching
+
+The longest declared spelling matches at each punctuation position. Without a
+match, built-in tokenization applies: `2*-3` means `2 * (-3)` unless `*-` is
+declared. Whitespace separates tokens; `< + >` is distinct from `<+>`.
+
+```text
+\infix(11) ~(a,b) = a-b
+\infix(11) ~~(a,b) = a+b
+10~~3~2                 -- 11: ~~ matches before ~
+```
+
+| Reserved syntax | Rule |
+|---|---|
+| Built-in punctuation | `+ - * / ^ % @ < > <= >=` cannot be declared |
+| Comments and lambda arrows | A spelling cannot contain `--` or `->` |
+| Other syntax punctuation | `! = . : ?`, quotes, delimiters, commas, backticks, backslashes and placeholders are excluded |
+| Strings and comments | Operator matching does not run inside either |
+
+Unused single characters `&` and `~` are valid spellings. Declarations read the
+whole punctuation spelling, so declaring a longer spelling after its prefix
+works. A spelling affects its own function body and subsequent statements.
 
 ## Precedence and grouping
 
@@ -65,7 +90,7 @@ onto the next line; a leading operator starts a new statement.
 
 The REPL retains declarations across submissions. Each script and imported
 module parses independently. Imports bring in function bindings, with ordinary
-calls such as `\blend(2,3)`, but do not export infix syntax or paired glyphs.[^registry]
+calls such as `\blend(2,3)`, but do not export infix syntax or paired spellings.[^registry]
 
 A failed, incomplete, or cancelled parse registers nothing. After a successful
 parse, syntax stays registered even if evaluation fails; an operator whose
@@ -78,8 +103,6 @@ spelling.
 
 ## Limitations
 
-- Punctuation sequences such as `<+>` are deferred —
-  [#20](https://github.com/takeiteasy/adhoc/issues/20).
 - Custom operator sections such as `(⊕ 2)` and `(2 ⊕)` are deferred; use
   `⊕(·,2)` and `⊕(2,·)` — [#21](https://github.com/takeiteasy/adhoc/issues/21).
 
@@ -87,4 +110,5 @@ spelling.
     accept `operators=`. Pass the same dictionary across calls to preserve syntax;
     it maps written spellings to `(canonical_name, precedence)` pairs. Omit it for
     independent source units. Publication follows the same parse-success rule as
-    `aliases=`.
+    `aliases=`. The lexer API `tokenize(source, operators=spellings)` accepts an
+    iterable of declared spellings for longest-match punctuation tokenization.

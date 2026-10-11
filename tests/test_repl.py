@@ -5,6 +5,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 
 def run_repl(input_text: str, tmp_path) -> subprocess.CompletedProcess:
     env = {**os.environ, "ADHOC_HISTORY": str(tmp_path / "history")}
@@ -166,8 +168,9 @@ def test_unclosed_set_literal_continues(tmp_path):
     assert "< = {1, 2}" in out
 
 
-def test_infix_declarations_persist_and_continue(tmp_path):
-    result = run_repl('\\infix(11) \\blend, ⊕(a,b)=\na+b\n2 ⊕ 3\nf=⊕\nf(4,5)\n', tmp_path)
+@pytest.mark.parametrize('spelling', ['⊕', '<+>'])
+def test_infix_declarations_persist_and_continue(tmp_path, spelling):
+    result = run_repl(f'\\infix(11) \\blend, {spelling}(a,b)=\na+b\n2 {spelling} 3\nf={spelling}\nf(4,5)\n', tmp_path)
     assert result.returncode == 0
     assert '... ' in result.stdout
     assert '< = 5' in result.stdout
@@ -180,3 +183,10 @@ def test_cancelled_infix_declaration_leaves_no_syntax(tmp_path):
     assert '-- input cancelled' in result.stdout
     assert 'undeclared operator `⊕`' in result.stdout
     assert '< = 9' in result.stdout
+
+
+def test_cancelled_punctuation_declaration_can_be_declared_again(tmp_path):
+    result = run_repl('\\infix(11) <+>(a,b)=\n\n\\infix(11) <+>(a,b)=a+b\n2<+>3\n', tmp_path)
+    assert '-- input cancelled' in result.stdout
+    assert '< = 5' in result.stdout
+    assert 'ERROR' not in result.stdout

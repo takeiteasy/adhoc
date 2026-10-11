@@ -97,7 +97,9 @@ letter. `√` is an operator token, so it cannot be bound, aliased or shadowed.
 | `↦`, `->`, `\mapsto` | Lambda arrow; `\mapsto` is not a name |
 
 An unused Unicode mathematical symbol (`Sm`) can be a custom operator glyph.
-Existing lexical meanings and `≡` remain reserved. See [custom operators](operators.md).
+Existing lexical meanings and `≡` remain reserved. Declared punctuation operators
+use longest matching over `+ - * / ^ % @ < > & ~`; built-in spellings and runs
+containing `--` or `->` are reserved. See [custom operators](operators.md).
 
 The parser recognizes `\λ` and `\fn` as lambda heads when followed by a parameter
 list. Other backslash names tokenize normally and require a binding at evaluation.
@@ -658,8 +660,8 @@ forms `(+)(·, 1)` and `(^)(2, ·)`.
 \blend(2,3)              -- 5
 ```
 
-An operator has a backslash name, an unused mathematical glyph, or a backslash
-name paired with one glyph. Parameter names are distinct. Valid integer levels
+An operator has a backslash name, an unused mathematical glyph, a punctuation
+spelling, or a backslash name paired with one glyph or punctuation spelling. Parameter names are distinct. Valid integer levels
 are **3, 4, 5, 6, 9, 10, 11, 12, 15**, using the table above. At each selected
 level, the expression grammar also accepts the declared operator.
 

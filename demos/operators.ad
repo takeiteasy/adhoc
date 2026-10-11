@@ -15,3 +15,13 @@ f = \blend
 \infix(15) ⊞(a,b) = a+b
 2 ⊞ 3^2
 2^3 ⊞ 2
+
+"Punctuation spellings match the longest declared operator"
+\infix(11) \merge, <+>(a,b) = a+b
+2<+>3*4
+<+>(2,3)
+g=<+>
+g=\merge
+\infix(11) ~(a,b) = a-b
+\infix(11) ~~(a,b) = a+b
+10~~3~2

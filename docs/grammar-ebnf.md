@@ -25,10 +25,11 @@ alias-stmt  ::= "\alias" name "," single-char ("," single-char)* ;
 dual-stmt   ::= "\dual" name "," single-char params? "=" statement (";" statement)* ;
 single-char ::= identifier ;                (* aliases are one-character letters *)
 name        ::= identifier | "\"-name ;
-infix-stmt  ::= "\infix" "(" integer ")" operator-name ("," operator-glyph)?
+infix-stmt  ::= "\infix" "(" integer ")" operator-name ("," operator-symbol)?
                 "(" name "," name ")" "=" statement (";" statement)* ;
-operator-name ::= "\"-name | operator-glyph ;
-operator-glyph ::= unused-mathematical-symbol ;
+operator-name ::= "\"-name | operator-symbol ;
+operator-symbol ::= unused-mathematical-symbol | punctuation-operator ;
+punctuation-operator ::= unreserved-run-of-"+-*/^%@<>&~" ;
 
 expr       ::= ternary ;
 ternary    ::= iff ("?" ternary ":" ternary)? ;   (* right-associative *)

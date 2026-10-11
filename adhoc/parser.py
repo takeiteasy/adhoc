@@ -116,7 +116,8 @@ from .lexer import (
     HashBracket,
     DotDot,
     UnterminatedString,
-    tokenize,
+    TokenBuffer,
+    is_punctuation_operator,
 )
 from .runtime import PRELUDE, RESERVED_NAMES
 from .span import Span
@@ -248,12 +249,15 @@ def _spelling(tok: Ident | Backslash) -> str:
 
 
 class _Parser:
-    def __init__(self, tokens: list[Token], aliases: dict[str, str] | None = None,
+    def __init__(self, tokens: list[Token] | TokenBuffer, aliases: dict[str, str] | None = None,
                  source: str = "", operators: OperatorRegistry | None = None):
         self.tokens = tokens
         self.source = source
         self.pos = 0
         self.operators = dict(operators or {})
+        if isinstance(tokens, TokenBuffer):
+            tokens.operators = self.operators
+            tokens.reset(0)
         # Working alias map: the session's map (if given) layered over the seed.
         # `\alias`/`\dual` declarations mutate this dict; parse_program merges it
         # back into the caller's map only on a fully successful parse.
@@ -293,19 +297,28 @@ class _Parser:
             self._in_list = saved
             self._bars = saved_bars
 
+    def _token(self, index: int) -> Token:
+        if isinstance(self.tokens, TokenBuffer):
+            return self.tokens[index]
+        return self.tokens[min(index, len(self.tokens) - 1)]
+
+    def _tokens_from(self, index: int):
+        if isinstance(self.tokens, TokenBuffer):
+            return self.tokens.from_index(index)
+        return enumerate(self.tokens[index:], index)
+
     def peek(self) -> Token:
-        return self.tokens[self.pos]
+        return self._token(self.pos)
 
     def peek2(self) -> Token:
-        return self.tokens[min(self.pos + 1, len(self.tokens) - 1)]
+        return self.look(1)
 
     def look(self, k: int) -> Token:
-        """The token `k` positions past the cursor; always defined (clamped to Eof)."""
-        return self.tokens[min(self.pos + k, len(self.tokens) - 1)]
+        return self._token(self.pos + k)
 
     def advance(self) -> Token:
-        tok = self.tokens[self.pos]
-        if self.pos + 1 < len(self.tokens):
+        tok = self.peek()
+        if not isinstance(tok, Eof):
             self.pos += 1
         return tok
 
@@ -457,6 +470,18 @@ class _Parser:
                     else tok.ch if isinstance(tok, CustomOp) else None)
         return self.operators.get(spelling)
 
+    def _operator_spelling(self) -> Token:
+        if isinstance(self.tokens, TokenBuffer):
+            self.tokens.reset(self.pos, declaration=True)
+        self._skip_newlines()
+        token = self.peek()
+        if not isinstance(token, (Backslash, CustomOp)):
+            raise self.error_at_current("expected a backslash name, unused mathematical glyph or punctuation spelling")
+        if isinstance(token, CustomOp) and token.ch.isascii() and not is_punctuation_operator(token.ch):
+            raise ParseError(f"reserved or invalid punctuation operator `{token.ch}`; "
+                             "use + - * / ^ % @ < > & ~, excluding built-ins, -- and ->", token.span)
+        return token
+
     def _infix_statement(self) -> Node:
         head = self.advance()
         if self.depth:
@@ -468,10 +493,7 @@ class _Parser:
             raise ParseError("infix precedence must be one of 3, 4, 5, 6, 9, 10, 11, 12, 15", level.span)
         precedence = int(level_text)
         self.expect(RParen, "`)`")
-        self._skip_newlines()
-        name = self.peek()
-        if not isinstance(name, (Backslash, CustomOp)):
-            raise self.error_at_current("expected a backslash name or unused mathematical glyph")
+        name = self._operator_spelling()
         self.advance()
         canonical = name.name if isinstance(name, Backslash) else name.ch
         spellings = [f"\\{canonical}" if isinstance(name, Backslash) else canonical]
@@ -483,7 +505,10 @@ class _Parser:
             if not isinstance(name, Backslash):
                 raise self.error_at_current("a paired declaration starts with a backslash name")
             self.advance()
-            glyph = self.expect(CustomOp, "one unused mathematical glyph")
+            glyph = self._operator_spelling()
+            if not isinstance(glyph, CustomOp):
+                raise self.error_at_current("expected one unused glyph or punctuation spelling")
+            self.advance()
             spellings.append(glyph.ch)
         for spelling in spellings:
             if spelling in self.operators or spelling in self.aliases:
@@ -495,6 +520,8 @@ class _Parser:
         self.expect(Eq, "`=`")
         for spelling in spellings:
             self.operators[spelling] = (canonical, precedence)
+        if isinstance(self.tokens, TokenBuffer):
+            self.tokens.reset(self.pos)
         body = self._func_body()
         return FuncDef(name=canonical, params=params, body=body,
                        spelling=spellings[0], param_spellings=param_spellings,
@@ -835,8 +862,7 @@ class _Parser:
         except ParseError as error:
             stack = []
             has_newline = has_semicolon = False
-            for index in range(saved[0], len(self.tokens)):
-                token = self.tokens[index]
+            for index, token in self._tokens_from(saved[0]):
                 # Statement parsing cannot repair an error inside a nested expression.
                 if index == self.pos and stack:
                     raise error
@@ -1453,23 +1479,25 @@ class _Parser:
         if isinstance(self.peek(), LParen):
             depth = 0
             brackets = 0
-            for index in range(self.pos, len(self.tokens)):
-                if isinstance(self.tokens[index], LParen):
+            for index, token in self._tokens_from(self.pos):
+                if isinstance(token, Eof):
+                    break
+                if isinstance(token, LParen):
                     depth += 1
-                elif isinstance(self.tokens[index], RParen):
+                elif isinstance(token, RParen):
                     depth -= 1
                     if depth == 0:
                         group_end = index
                         break
-                elif isinstance(self.tokens[index], _OPENERS):
+                elif isinstance(token, _OPENERS):
                     brackets += 1
-                elif isinstance(self.tokens[index], _CLOSERS):
+                elif isinstance(token, _CLOSERS):
                     brackets -= 1
                 elif (depth == 1 and brackets == 0
-                        and isinstance(self.tokens[index], (Semi, Newline))):
+                        and isinstance(token, (Semi, Newline))):
                     has_separator = True
         if (group_end is not None and has_separator
-                and isinstance(self.tokens[group_end + 1], RParen)):
+                and isinstance(self._token(group_end + 1), RParen)):
             saved = self.pos, self._nl, self._section_operand
             self.advance()
             self.depth += 1
@@ -1517,8 +1545,7 @@ class _Parser:
         closes = {}
         equations: dict[int, list[int]] = {}
         end = start
-        for end in range(start, len(self.tokens)):
-            tok = self.tokens[end]
+        for end, tok in self._tokens_from(start):
             if isinstance(tok, RParen) and not stack:
                 break
             if isinstance(tok, (LParen, *_OPENERS)):
@@ -1823,15 +1850,12 @@ def parse_program(src: str, aliases: dict[str, str] | None = None,
     session aliases (docs/grammar.md, `## Name aliases`). `operators` uses the same
     registration rules for custom infix spellings and precedence."""
     try:
-        tokens = tokenize(src)
+        parser = _Parser(TokenBuffer(src), aliases, src, operators)
+        node = parser.program()
     except UnterminatedString as e:
-        # An open quote at EOF is incomplete input, not a dead end — the REPL offers a
-        # continuation prompt exactly like an unclosed parenthesis.
         raise IncompleteInput(e.msg, e.span) from e
     except LexError as e:
         raise ParseError(e.msg, e.span) from e
-    parser = _Parser(tokens, aliases, src, operators)
-    node = parser.program()
     if aliases is not None:
         aliases.update(parser.aliases)
     if operators is not None:

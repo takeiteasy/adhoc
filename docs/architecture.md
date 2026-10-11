@@ -24,7 +24,7 @@ See [runtime lowering](lowering.md) for the operation mapping.
 | Module | Responsibility |
 |---|---|
 | `span` | Zero-based, half-open byte spans |
-| `lexer` | Literals, names, operators and punctuation |
+| `lexer` | Literals, names, operators, punctuation and buffered lookahead |
 | `syntax` | Frozen AST dataclasses |
 | `parser` | Precedence climbing, aliases and custom operator declarations |
 | `expression` | Frozen expression values and parseable display |
@@ -63,6 +63,10 @@ Errors therefore point to the failing subexpression:
 
 `diagnostic.render` converts byte offsets to character columns and accepts a
 message and span. Both drivers share this renderer.[^spans]
+
+The parser reads a buffered token stream. A custom punctuation declaration
+invalidates unread lookahead and updates longest-match scanning before its body.
+Consumed token indices and byte spans stay stable.
 
 Names also retain their written spelling for diagnostics and fresh declaration
 echoes. Canonical names determine lookup, protection, recursion and identity.[^spelling]

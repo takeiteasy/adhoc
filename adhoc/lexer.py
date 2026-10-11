@@ -21,7 +21,9 @@ parser maps to `IncompleteInput` so the REPL offers a continuation prompt exactl
 unclosed parenthesis.
 """
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field, replace
+from string import punctuation
 from unicodedata import category
 
 from .span import Span
@@ -505,29 +507,42 @@ def _superscript_tokens(entries: list[tuple[int, str]], first: int, last: int,
     return tuple(mapped)
 
 
-def tokenize(src: str) -> list[Token]:
+def _scan(src: str, entries: list[tuple[int, str]], start: int,
+          spellings: dict[str, tuple[str, ...]], declaration: bool = False) -> Iterator[Token]:
     """Tokenize source text. Token spans are byte offsets; entries carry (byte_off, char)
     pairs so scanning walks code points while spans stay in bytes."""
-    entries: list[tuple[int, str]] = []
-    off = 0
-    for ch in src:
-        entries.append((off, ch))
-        off += len(ch.encode("utf-8"))
     n = len(entries)
-    eof_off = len(src.encode("utf-8"))
-    tokens: list[Token] = []
-    i = 0
+    eof_off = entries[-1][0] + len(entries[-1][1].encode("utf-8")) if entries else 0
+    i = start
 
     while i < n:
         pos, c = entries[i]
 
         if c == "\n":
-            tokens.append(Newline(span=Span(pos, pos + 1)))
+            yield Newline(span=Span(pos, pos + 1))
             i += 1
             continue
 
         if c.isspace():
             i += 1
+            continue
+
+        if declaration:
+            declaration = False
+            if c in punctuation and c not in "(),;\\":
+                j = i + 1
+                while j < n and entries[j][1] in punctuation and entries[j][1] not in "(),;\\":
+                    j += 1
+                end = entries[j][0] if j < n else eof_off
+                yield CustomOp(ch=src[i:j], span=Span(pos, end))
+                i = j
+                continue
+
+        spelling = next((op for op in spellings.get(c, ()) if src.startswith(op, i)), None)
+        if spelling is not None:
+            end = entries[i + len(spelling)][0] if i + len(spelling) < n else eof_off
+            yield CustomOp(ch=spelling, span=Span(pos, end))
+            i += len(spelling)
             continue
 
         if c == "-" and i + 1 < n and entries[i + 1][1] == "-":
@@ -539,7 +554,7 @@ def tokenize(src: str) -> list[Token]:
         if c == "↦" or (c == "-" and i + 1 < n and entries[i + 1][1] == ">"):
             width = 1 if c == "↦" else 2
             end = entries[i + width][0] if i + width < n else eof_off
-            tokens.append(MapsTo(span=Span(pos, end)))
+            yield MapsTo(span=Span(pos, end))
             i += width
             continue
 
@@ -572,7 +587,7 @@ def tokenize(src: str) -> list[Token]:
             span = Span(pos, end)
             if j >= n:
                 raise UnterminatedString("unterminated string literal", span)
-            tokens.append(Str(text="".join(parts), span=span))
+            yield Str(text="".join(parts), span=span)
             i = j + 1
             continue
 
@@ -594,7 +609,7 @@ def tokenize(src: str) -> list[Token]:
                     j += 1
             j = _take_exponent(entries, n, j)
             end = entries[j][0] if j < n else eof_off
-            tokens.append(Number(text=src[i:j], span=Span(pos, end)))
+            yield Number(text=src[i:j], span=Span(pos, end))
             i = j
             continue
 
@@ -608,7 +623,7 @@ def tokenize(src: str) -> list[Token]:
                 j += 1
             j = _take_exponent(entries, n, j)
             end = entries[j][0] if j < n else eof_off
-            tokens.append(Number(text=src[i:j], span=Span(pos, end)))
+            yield Number(text=src[i:j], span=Span(pos, end))
             i = j
             continue
 
@@ -629,9 +644,9 @@ def tokenize(src: str) -> list[Token]:
             if not name:
                 raise LexError("bare `\\` with no name following", span)
             if name == "mapsto":
-                tokens.append(MapsTo(span=span))
+                yield MapsTo(span=span)
             else:
-                tokens.append(Backslash(name=name, span=span))
+                yield Backslash(name=name, span=span)
             i = j
             continue
 
@@ -643,8 +658,8 @@ def tokenize(src: str) -> list[Token]:
             text = "".join(SUPERSCRIPTS[entries[k][1]] for k in range(i, j))
             if not any(ch.isalnum() for ch in text):
                 raise LexError("a superscript needs digits or letters", Span(pos, end))
-            tokens.append(Superscript(tokens=_superscript_tokens(entries, i, j, text),
-                                      span=Span(pos, end)))
+            yield Superscript(tokens=_superscript_tokens(entries, i, j, text),
+                                      span=Span(pos, end))
             i = j
             continue
 
@@ -653,12 +668,12 @@ def tokenize(src: str) -> list[Token]:
                            Span(pos, pos + len(c.encode("utf-8"))))
 
         if c == _TRANSPOSE_GLYPH:
-            tokens.append(Prime(glyph=c, span=Span(pos, pos + len(c.encode("utf-8")))))
+            yield Prime(glyph=c, span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
         if c in "∅∀∃∫∂":
-            tokens.append(Ident(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
+            yield Ident(ch=c, span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
@@ -681,13 +696,13 @@ def tokenize(src: str) -> list[Token]:
                         if all(ch in ASCII_SUBSCRIPTS for ch in run) else spelling)
                 j = k
             end = entries[j][0] if j < n else eof_off
-            tokens.append(Ident(ch=name, spelling=spelling, span=Span(pos, end)))
+            yield Ident(ch=name, spelling=spelling, span=Span(pos, end))
             i = j
             continue
 
         if c in _ROOT_INDEX:
-            tokens.append(NthRoot(ch=c, index=_ROOT_INDEX[c],
-                                  span=Span(pos, pos + len(c.encode("utf-8")))))
+            yield NthRoot(ch=c, index=_ROOT_INDEX[c],
+                                  span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
@@ -696,15 +711,15 @@ def tokenize(src: str) -> list[Token]:
                 raise LexError("`!=` is not an operator; use `≠` or `\\neq`",
                                Span(pos, entries[i + 1][0] + 1))
             if i + 1 < n and entries[i + 1][1] == "!":
-                tokens.append(DoubleBang(span=Span(pos, entries[i + 1][0] + 1)))
+                yield DoubleBang(span=Span(pos, entries[i + 1][0] + 1))
                 i += 2
             else:
-                tokens.append(Bang(span=Span(pos, pos + 1)))
+                yield Bang(span=Span(pos, pos + 1))
                 i += 1
             continue
 
         if c == "‼":
-            tokens.append(DoubleBang(span=Span(pos, pos + len(c.encode("utf-8")))))
+            yield DoubleBang(span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
@@ -712,23 +727,23 @@ def tokenize(src: str) -> list[Token]:
             # The radical: a math symbol (not `isalpha`), so it is its own token —
             # the parser's prefix rule rewrites it to a `\sqrt(...)` application.
             end = pos + len(c.encode("utf-8"))
-            tokens.append(Radical(span=Span(pos, end)))
+            yield Radical(span=Span(pos, end))
             i += 1
             continue
 
         if c in DELIMITERS:
-            tokens.append(Delim(ch=DELIMITERS[c], span=Span(pos, pos + len(c.encode("utf-8")))))
+            yield Delim(ch=DELIMITERS[c], span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
         if c in _INFIX_GLYPHS:
             end = pos + len(c.encode("utf-8"))
-            tokens.append(InfixOp(name=_INFIX_GLYPHS[c], span=Span(pos, end)))
+            yield InfixOp(name=_INFIX_GLYPHS[c], span=Span(pos, end))
             i += 1
             continue
 
         if c == "#" and i + 1 < n and entries[i + 1][1] == "[":
-            tokens.append(HashBracket(span=Span(pos, entries[i + 1][0] + 1)))
+            yield HashBracket(span=Span(pos, entries[i + 1][0] + 1))
             i += 2
             continue
 
@@ -736,46 +751,46 @@ def tokenize(src: str) -> list[Token]:
             # The only use of `:` is the import member-list separator; statement-level
             # binding is plain `=`.
             end = pos + len(c.encode("utf-8"))
-            tokens.append(Colon(span=Span(pos, end)))
+            yield Colon(span=Span(pos, end))
             i += 1
             continue
 
         if c == "." and i + 1 < n and entries[i + 1][1] == ".":
-            tokens.append(DotDot(span=Span(pos, entries[i + 1][0] + 1)))
+            yield DotDot(span=Span(pos, entries[i + 1][0] + 1))
             i += 2
             continue
 
         if c in "≤≥":
             cls = LessEq if c == "≤" else GreaterEq
-            tokens.append(cls(span=Span(pos, pos + len(c.encode("utf-8")))))
+            yield cls(span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
         if c in "<>":
             if i + 1 < n and entries[i + 1][1] == "=":
                 cls = LessEq if c == "<" else GreaterEq
-                tokens.append(cls(span=Span(pos, entries[i + 1][0] + 1)))
+                yield cls(span=Span(pos, entries[i + 1][0] + 1))
                 i += 2
                 continue
             cls = Less if c == "<" else Greater
-            tokens.append(cls(span=Span(pos, pos + 1)))
+            yield cls(span=Span(pos, pos + 1))
             i += 1
             continue
 
         if c in "·⋅_":
-            tokens.append(Placeholder(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
+            yield Placeholder(ch=c, span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
         cls = _SINGLE_CHAR_TOKENS.get(c)
         if cls is not None:
             end = pos + len(c.encode("utf-8"))
-            tokens.append(cls(span=Span(pos, end)))
+            yield cls(span=Span(pos, end))
             i += 1
             continue
 
-        if not c.isascii() and c != "≡" and category(c) == "Sm":
-            tokens.append(CustomOp(ch=c, span=Span(pos, pos + len(c.encode("utf-8")))))
+        if c in "&~" or (not c.isascii() and c != "≡" and category(c) == "Sm"):
+            yield CustomOp(ch=c, span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue
 
@@ -783,5 +798,69 @@ def tokenize(src: str) -> list[Token]:
             f"unexpected character `{c}`", Span(pos, pos + len(c.encode("utf-8")))
         )
 
-    tokens.append(Eof(span=Span.point(eof_off)))
-    return tokens
+    yield Eof(span=Span.point(eof_off))
+
+
+PUNCTUATION_OPERATORS = frozenset("+-*/^%@<>&~")
+_RESERVED_PUNCTUATION = frozenset("+-*/^%@<>") | {"<=", ">=", "--", "->"}
+
+
+def is_punctuation_operator(spelling: str) -> bool:
+    return (bool(spelling) and all(ch in PUNCTUATION_OPERATORS for ch in spelling)
+            and spelling not in _RESERVED_PUNCTUATION
+            and "--" not in spelling and "->" not in spelling)
+
+
+def _entries(src: str) -> list[tuple[int, str]]:
+    entries = []
+    offset = 0
+    for ch in src:
+        entries.append((offset, ch))
+        offset += len(ch.encode("utf-8"))
+    return entries
+
+
+def _punctuation_spellings(operators: Iterable[str]) -> dict[str, tuple[str, ...]]:
+    groups: dict[str, list[str]] = {}
+    for spelling in operators:
+        if is_punctuation_operator(spelling):
+            groups.setdefault(spelling[0], []).append(spelling)
+    return {first: tuple(sorted(group, key=len, reverse=True))
+            for first, group in groups.items()}
+
+
+def tokenize(src: str, operators: Iterable[str] = ()) -> list[Token]:
+    """Return tokens with byte spans, matching the longest declared punctuation spelling."""
+    return list(_scan(src, _entries(src), 0, _punctuation_spellings(operators)))
+
+
+class TokenBuffer:
+    """Cache lookahead and rewind unread source when the operator registry changes."""
+
+    def __init__(self, source: str):
+        self.source = source
+        self.entries = _entries(source)
+        self.offsets = {offset: index for index, (offset, _) in enumerate(self.entries)}
+        self.offsets[len(source.encode("utf-8"))] = len(self.entries)
+        self.operators: Iterable[str] = ()
+        self.tokens: list[Token] = []
+        self.reset(0)
+
+    def reset(self, index: int, *, declaration: bool = False) -> None:
+        offset = self.tokens[index - 1].span.end if index else 0
+        del self.tokens[index:]
+        self.scanner = _scan(self.source, self.entries, self.offsets[offset],
+                             _punctuation_spellings(self.operators), declaration)
+
+    def __getitem__(self, index: int) -> Token:
+        while index >= len(self.tokens) and (not self.tokens or not isinstance(self.tokens[-1], Eof)):
+            self.tokens.append(next(self.scanner))
+        return self.tokens[min(index, len(self.tokens) - 1)]
+
+    def from_index(self, index: int) -> Iterator[tuple[int, Token]]:
+        while True:
+            token = self[index]
+            yield index, token
+            if isinstance(token, Eof):
+                break
+            index += 1

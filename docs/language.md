@@ -282,13 +282,14 @@ ad collections convert to Python lists or frozensets. See
 ## Custom operators
 
 `\infix(11) \blend, ⊕(a,b) = a+b` declares a function as an infix operator with
-an optional glyph. Declarations persist in the REPL and stay local to each
+an optional glyph or punctuation spelling. For example,
+`\infix(11) \blend, <+>(a,b) = a+b` gives `2<+>3` infix syntax. Declarations persist in the REPL and stay local to each
 script or module. See [custom operators](operators.md) for precedence and examples.
 
 ## Limitations
 
 - Graphing is not implemented (#30).
-- Custom operators omit punctuation sequences and sections; see
+- Custom operator sections are not implemented; see
   [operator limitations](operators.md#limitations).
 - Set construction and membership compare elements pairwise; construction is
   quadratic in set size: [#4](https://github.com/takeiteasy/adhoc/issues/4).
