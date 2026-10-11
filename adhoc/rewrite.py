@@ -19,7 +19,7 @@ from .expression import ExpressionValue
 from .tensor import ArrayValue
 from .span import Span
 from .syntax import (
-    BackslashRef, BinOp, BinOperator, Call, Node, NumLit, PowCall, Seq, UnaryOperator, UnOp,
+    BackslashRef, BinOp, BinOperator, Call, Equation, Node, NumLit, PowCall, Seq, UnaryOperator, UnOp,
     Var, is_short_name,
 )
 
@@ -295,6 +295,15 @@ def bridge_value(value: Any) -> Source:
     raise RewriteError("needs an expression quote or a user-defined function")
 
 
+def _bridge_equation(value: Any) -> Source:
+    if (isinstance(value, ExpressionValue) and not value.statement_body
+            and isinstance(value.node, Equation)):
+        bridge = Bridge(value.node.span)
+        expr = bridge.to_sympy(value.node.lhs) - bridge.to_sympy(value.node.rhs)
+        return Source(expr, bridge, value.source)
+    return bridge_value(value)
+
+
 def quote(expr: sympy.Expr, bridge: Bridge, source: str) -> ExpressionValue:
     return ExpressionValue(bridge.to_node(expr), source)
 
@@ -361,11 +370,11 @@ def _candidates(origin: Source) -> list[sympy.Symbol]:
 
 
 def solve(value: Any, unknown: Any = None) -> Any:
-    """The solutions of `value = 0` over the complex numbers, as an ad set."""
+    """Solve an equation or `value = 0` over the complex numbers, as an ad set."""
     from .runtime import SetValue, _dedup
     if isinstance(value, ArrayValue) or isinstance(unknown, ArrayValue):
         return _solve_system(value, unknown)
-    origin = bridge_value(value)
+    origin = _bridge_equation(value)
     symbol = _unknown(origin, unknown)
     solutions = run_limited(sympy.solveset, origin.expr, symbol, sympy.S.Complexes)
     if solutions is sympy.S.EmptySet:
@@ -402,7 +411,7 @@ def _solve_system(value: Any, unknowns: Any) -> Any:
     values = value.items if isinstance(value, ArrayValue) else (value,)
     if not values:
         raise RewriteError("needs at least one equation in the array")
-    equations = [bridge_value(item).expr for item in values]
+    equations = [_bridge_equation(item).expr for item in values]
     solutions = run_limited(_system_solutions, equations, symbols)
     bridge = Bridge(Span(0, 0))
     items = []

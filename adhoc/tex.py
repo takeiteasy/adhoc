@@ -10,7 +10,7 @@ import sympy
 from . import tensor as tn
 from .syntax import (
     SUBSCRIPTS, is_short_name,
-    Assign, ArrayLit, BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Diff,
+    Assign, ArrayLit, BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Diff, Equation,
     Eval, Fold, Hole, IfExpr, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OpRef,
     Piecewise, PowCall, Quote, Range, SetBuilder, SetLit, StrLit, TensorLit, Transpose,
     UnaryOperator, UnOp, Var, WholeAxis,
@@ -166,6 +166,9 @@ def node_tex(node: Node, prec: int = 0) -> str:
             return _wrap(f"{node_tex(lhs, level)} {symbol} {node_tex(rhs, right)}", prec, level)
         case Compare(op=op, lhs=lhs, rhs=rhs):
             text = f"{node_tex(lhs, _COMPARE + 1)} {_CMP[op]} {node_tex(rhs, _COMPARE + 1)}"
+            return _wrap(text, prec, _COMPARE)
+        case Equation(lhs=lhs, rhs=rhs):
+            text = f"{node_tex(lhs, _COMPARE + 1)} = {node_tex(rhs, _COMPARE + 1)}"
             return _wrap(text, prec, _COMPARE)
         case Range(start=start, second=second, end=end):
             middle = [node_tex(start)] + ([node_tex(second)] if second is not None else [])

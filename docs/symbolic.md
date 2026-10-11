@@ -9,7 +9,7 @@ sets of solutions or arrays of derivative quotes. Free names remain symbols.
 | `\simplify(e)` | Simplified expression quote |
 | `\expand(e)` | Quote with products and powers expanded |
 | `\factor(e)` | Factored quote; numeric arguments use [prime factoring](stdlib.md#factoring) |
-| `\solve(e)` | Set of solutions to `e = 0` over complex numbers |
+| `\solve(e)` | Set of complex solutions to an equation quote, or to `e = 0` |
 | `\solve(⟨e₁, e₂⟩, ⟨\expr(x), \expr(y)⟩)` | Set of solution arrays for simultaneous equations |
 | `\deriv(e)` | Derivative quote; several free names give a gradient |
 | `\grad(e)` | Array of first partial-derivative quotes |
@@ -19,6 +19,7 @@ sets of solutions or arrays of derivative quotes. Free names remain symbols.
 \expand(\expr((x + 1)^2))            ->  = \expr((((x ^ 2) + (2 * x)) + 1))
 \factor(\expr(x^2 - 1))              ->  = \expr(((x + 1) * (x - 1)))
 \solve(\expr(x^2 - 4))               ->  = {-2, 2}
+\solve(\expr(x^2 = 4))               ->  = {-2, 2}
 \solve(\expr(x^2 + 1))               ->  = {-i, i}
 \deriv(\expr(x^3))                   ->  = \expr((3 * (x ^ 2)))
 ```
@@ -40,8 +41,9 @@ protected.
 | Arithmetic and unary minus | `+ - * / ^`, `-x` |
 | Elementary functions | `\sin`, `\sqrt`, `\root`, `\ln`, `\log`, `\abs` |
 | Calls to other names | Undefined symbolic functions: `g(x) + g(x)` simplifies to `2 g(x)` |
+| Equation quotes, for `\solve` | `\expr(x^2 = 4)` |
 
-Sets, comparisons, folds, lambda syntax and statement quotes produce an error
+Sets, other comparisons, folds, lambda syntax and statement quotes produce an error
 naming the unsupported construct. A lambda passed as a function input is supported;
 a lambda expression inside a quote is not.
 
@@ -102,17 +104,41 @@ f(x) = x^2 - 9
 Infinite solution families, or solutions SymPy cannot express in closed form,
 produce typed errors.
 
+## Equation quotes
+
+Write `lhs = rhs` inside `\expr(...)` or a backtick quote. Both sides stay
+unevaluated until passed to `\solve` or `\eval`.
+
+```text
+q = \expr(x^2 = 4)
+\solve(q)              ->  = {-2, 2}
+\eval(q, x=2)          ->  = true
+\eval(q, x=3)          ->  = false
+\tex(q)               ->  = "x^{2} = 4"
+\solve(`(a x = b), `(x)) -> = {\expr((b / a))}
+```
+
+`\eval` evaluates both sides once and compares their values without binding
+names. Equation quotes use the same local bindings and source diagnostics as
+other quotes. `\solve` treats an equation as `lhs - rhs = 0`.
+
+An equation occupies the whole quote body; chained equations are rejected.
+Statement-sequence quotes such as `\expr((x=1; x+1))` contain assignments.
+Outside quotes, `=` retains its bind-or-check and function-definition meanings;
+see [limitations](#limitations). Other symbolic rewrites reject equation quotes.
+
 ## Systems of equations
 
 Pass an array of expression quotes or single-expression functions and an ordered
-array of quoted unknowns. Each input expression equals zero; write `lhs - rhs`
-for an equation with a nonzero right-hand side. Other free names remain symbolic
-parameters, and functions use numeric values from their defining scope.
+array of quoted unknowns. Equation quotes, plain expression quotes and functions
+can mix in the input array. Plain expressions and function bodies equal zero.
+Other free names remain symbolic parameters, and functions use numeric values
+from their defining scope.
 
 ```text
-\solve(⟨`(x+y-3), `(x-y-1)⟩, ⟨`(x), `(y)⟩) -> = {⟨2, 1⟩}
-\solve(⟨`(x^2-1), `(y-x)⟩, ⟨`(x), `(y)⟩)   -> = {⟨-1, -1⟩, ⟨1, 1⟩}
-\solve(⟨`(x-a), `(y-2*x)⟩, ⟨`(x), `(y)⟩)   -> = {⟨\expr(a), \expr((2 * a))⟩}
+\solve(⟨`(x+y=3), `(x-y=1)⟩, ⟨`(x), `(y)⟩) -> = {⟨2, 1⟩}
+\solve(⟨`(x^2=1), `(y=x)⟩, ⟨`(x), `(y)⟩)   -> = {⟨-1, -1⟩, ⟨1, 1⟩}
+\solve(⟨`(x=a), `(y=2*x)⟩, ⟨`(x), `(y)⟩)   -> = {⟨\expr(a), \expr((2 * a))⟩}
 ```
 
 Each solution array follows the unknown order. Reversing ``⟨`(x), `(y)⟩`` to
@@ -153,7 +179,8 @@ path.[^worker]
 
 | Limit | Ticket |
 |---|---|
-| `\solve(e)` solves `e = 0`; `lhs = rhs` is not equation syntax | [#14](https://github.com/takeiteasy/adhoc/issues/14) |
+| Equality expressions outside quotes are unsupported | [#41](https://github.com/takeiteasy/adhoc/issues/41) |
+| `\simplify`, `\expand` and `\factor` reject equation quotes | [#42](https://github.com/takeiteasy/adhoc/issues/42) |
 | Infinite solution families are errors; no real-domain option | [#15](https://github.com/takeiteasy/adhoc/issues/15) |
 | No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
 | Gradients are arrays of quotes without vector algebra | [#18](https://github.com/takeiteasy/adhoc/issues/18) |

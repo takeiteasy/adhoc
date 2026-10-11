@@ -70,6 +70,9 @@ stored syntax through the same lowering path and runs it in a child frame.
 Binding values evaluate in the caller first. Errors retain the quote's source,
 including across REPL submissions.
 
+Equation quotes store an `Equation` node. Evaluation compares the two values;
+the solver bridge converts the two expressions to `lhs - rhs`.
+
 Function bodies retain their AST and defining source. `\body` wraps a body as
 a statement-sequence expression value. Evaluation keeps its bindings local and
 returns the last statement's value. Nested definitions use the compiled-body

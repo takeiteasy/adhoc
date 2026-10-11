@@ -6,6 +6,13 @@ q = \expr(x^2 - 4)
 r = `(x^2 - 4)
 q = r
 
+-- Equation quotes evaluate to equality without binding either side.
+s = \expr(x^2 = 4)
+\solve(s)
+\eval(s, x=2)
+\eval(s, x=3)
+\tex(s)
+
 -- Unspecified names resolve at the evaluation site.
 y = 5
 \eval(`(x+y), x=2)

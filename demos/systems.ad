@@ -1,18 +1,19 @@
--- Each quoted expression equals zero; coordinates follow the unknown order.
-\solve(⟨`(x+y-3), `(x-y-1)⟩, ⟨`(x), `(y)⟩)
-\solve(⟨`(x+y-3), `(x-y-1)⟩, ⟨`(y), `(x)⟩)
+-- Coordinates follow the unknown order.
+\solve(⟨`(x+y=3), `(x-y=1)⟩, ⟨`(x), `(y)⟩)
+\solve(⟨`(x+y=3), `(x-y=1)⟩, ⟨`(y), `(x)⟩)
 
 -- Nonlinear systems can have several real or complex solutions.
-\solve(⟨`(x^2-1), `(y-x)⟩, ⟨`(x), `(y)⟩)
-\solve(⟨`(x^2+1), `(y-x)⟩, ⟨`(x), `(y)⟩)
+\solve(⟨`(x^2=1), `(y=x)⟩, ⟨`(x), `(y)⟩)
+\solve(⟨`(x^2=-1), `(y=x)⟩, ⟨`(x), `(y)⟩)
 
--- Function inputs use their defining scope and can mix with quotes.
+-- Functions and plain expressions equal zero and can mix with equations.
 a = 3
 f(x, y) = a x + y - 7
-\solve(⟨f, `(x-y-1)⟩, ⟨`(x), `(y)⟩)
+\solve(⟨f, `(x-y=1)⟩, ⟨`(x), `(y)⟩)
+\solve(⟨`(x+y=3), `(x-y-1)⟩, ⟨`(x), `(y)⟩)
 
 -- Names outside the unknown list remain symbolic parameters.
-\solve(⟨`(x-a), `(y-2*x)⟩, ⟨`(x), `(y)⟩)
+\solve(⟨`(x=a), `(y=2*x)⟩, ⟨`(x), `(y)⟩)
 
 -- An unknown array keeps the array result shape for a single equation.
-\solve(`(x^2-4), ⟨`(x)⟩)
+\solve(`(x^2=4), ⟨`(x)⟩)

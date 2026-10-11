@@ -50,6 +50,7 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    Equation,
     Diff,
     Fold,
     FuncDef,
@@ -229,6 +230,9 @@ class _Lowerer:
 
     def expr(self, node: Node) -> pyast.expr:
         match node:
+            case Equation(lhs=lhs, rhs=rhs, span=span):
+                return _call("eq", [self.expr(lhs), self.expr(rhs),
+                                    pyast.Constant(self._push(span))])
             case FuncDef(name=name, params=params, body=body, spelling=spelling,
                          param_spellings=param_spellings, span=span):
                 return self._definition(name, params, body, spelling,

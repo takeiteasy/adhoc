@@ -53,7 +53,7 @@ def test_expression_equality_ignores_spans_and_alias_spelling():
 
 
 def test_quote_rejects_statements_and_eval_rejects_bad_arguments():
-    for source in (r"\expr(x=2; x+1)", r"`(x=2)"):
+    for source in (r"\expr(x=2; x+1)", r"`(x=2;)"):
         with pytest.raises(ParseError):
             parse_program(source)
     with pytest.raises(ParseError, match="one expression value"):
@@ -82,3 +82,74 @@ def test_quote_inside_function_and_fold_uses_its_source():
     run_source(r"f(x)=\expr(x+1)", env)
     assert run_source(r"\eval(f(2), x=4)", env) == ["= 5"]
     assert run_source(r"\sum(i=1..2) \eval(\expr(i), i=i)") == ["= 3"]
+
+
+@pytest.mark.parametrize("source", [
+    r"\expr(x^2=4)", r"`(x^2=4)", r"\expr((x^2=4))",
+    r"`(((x^2=4)))", r"\expr((x+1)^2 = (y+2))", r"\expr(f(x)=4)",
+])
+def test_equation_quotes_round_trip(source):
+    from adhoc.syntax import Equation
+    env = {}
+    run_source("q = " + source, env)
+    assert isinstance(env["q"].node, Equation)
+    assert not env["q"].statement_body
+    display = run_source("q", env)[0][2:]
+    run_source("r = " + display, env)
+    assert env["q"] == env["r"]
+
+
+def test_equation_quote_evaluation_preserves_scope():
+    env = {}
+    run_source(r"x=3; q=\expr(x^2=4)", env)
+    assert run_source(r"\eval(q, x=2); \eval(q, x=3)", env) == ["= true", "= false"]
+    assert env["x"] == 3
+    assert run_source(r"\eval(`(y=4), y=4)", env) == ["= true"]
+    assert "y" not in env
+    assert run_source(r'\eval(`("hi"="hi"))', env) == ["= true"]
+    assert run_source(r"\eval(`(⟨1,2⟩=⟨1,2⟩))", env) == ["= true"]
+    assert run_source(r"\eval(`({1,2}={2,1}))", env) == ["= true"]
+
+
+def test_equation_evaluation_runs_each_side_once():
+    calls = []
+    def record(value):
+        calls.append(value)
+        return value
+    assert run_source(r"\eval(`(\record(1)=\record(2)))", {"record": record}) == ["= false"]
+    assert calls == [1, 2]
+
+
+def test_equation_quote_equality_uses_structure_and_canonical_names():
+    env = {}
+    assert run_source(r"q=\expr(α=π); q=`(α=\pi)", env)[-1] == "true"
+    assert run_source(r"q=\expr(π=α)", env) == ["false"]
+
+
+def test_equation_evaluation_errors_keep_original_source():
+    source = r"q=\expr(α=1/x)"
+    env = {}
+    run_source(source, env)
+    with pytest.raises(EvalError) as failure:
+        run_source(r"\eval(q, α=1, x=0)", env)
+    start = len(source[:source.index("1/x")].encode("utf-8"))
+    assert failure.value.span == Span(start, start + 3)
+    assert failure.value.source == source
+
+
+@pytest.mark.parametrize("source", [
+    r"\expr(x=)", r"\expr(=4)", r"`(x=2=3)", r"\expr((x=2=3))",
+    r"\expr(x=2; x)", r"\expr(1+(x=2))", r"1+2=3", r"(x^2=4)",
+])
+def test_malformed_or_unquoted_equations_are_rejected(source):
+    with pytest.raises(ParseError):
+        parse_program(source)
+
+
+def test_equation_parsing_preserves_bindings_definitions_and_statement_quotes():
+    env = {}
+    assert run_source("x=2; x=2; x=3\nf(x)=x+1\nf(2)", env) == [
+        "x = 2", "true", "false", "f = <fn f(x)>", "= 3",
+    ]
+    assert run_source(r"\eval(\expr((y=1; y+1)))", env) == ["= 2"]
+    assert run_source(r"\eval(\expr(\eval(`(z+1), z=2)))", env) == ["= 3"]

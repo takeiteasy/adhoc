@@ -5,7 +5,7 @@ from dataclasses import dataclass, fields
 from .lexer import SUPERSCRIPTS
 from .syntax import (
     is_short_name,
-    BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Eval,
+    BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Equation, Eval,
     Assign, ArrayLit, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
     PyImport, Quote, Range, Seq, SetBuilder, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var, WholeAxis,
 )
@@ -99,6 +99,8 @@ def show(node: Node) -> str:
             return f"({show(left)} {_BIN[op]} {show(right)})"
         case Compare(op=op, lhs=left, rhs=right):
             return f"({show(left)} {_CMP[op]} {show(right)})"
+        case Equation(lhs=left, rhs=right):
+            return f"{show(left)} = {show(right)}"
         case Range(start=start, second=second, end=end):
             middle = f",{show(second)}" if second is not None else ""
             return f"({show(start)}{middle}..{show(end) if end is not None else ''})"

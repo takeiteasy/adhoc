@@ -16,6 +16,11 @@ def test_fractions_powers_and_roots():
     assert tex(r"\tex(\expr(-(x + 1)^2))") == r"-\left(x + 1\right)^{2}"
 
 
+def test_equation_quotes_render_both_sides():
+    assert tex(r"\tex(`(x^2=4))") == "x^{2} = 4"
+    assert tex(r"\tex(\expr((x+1)/2 = \sqrt(y)))") == r"\frac{x + 1}{2} = \sqrt{y}"
+
+
 def test_juxtaposed_coefficients_and_parentheses():
     assert tex(r"\tex(\expr(2x))") == "2 x"
     assert tex(r"\tex(\expr(2 (x + 1)))") == r"2 \left(x + 1\right)"

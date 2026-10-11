@@ -1108,9 +1108,6 @@ def neq(a: AdValue, b: AdValue) -> bool:
     if isinstance(a, ExpressionValue) or isinstance(b, ExpressionValue):
         return a == b if isinstance(a, ExpressionValue) and isinstance(b, ExpressionValue) else False
     if isinstance(a, str) or isinstance(b, str):
-        # Value equality for string×string (the re-assignment check binds no names, so
-        # this is its only equality surface — the language has no == operator); a
-        # string is never equal to a non-string.
         return a == b if isinstance(a, str) and isinstance(b, str) else False
     if not isinstance(a, _NUMERIC_TYPES) or not isinstance(b, _NUMERIC_TYPES):
         return a is b  # callables and other exotics compare by identity
@@ -3771,6 +3768,7 @@ class Engine:
     def supseteq(self, a, b, sid): return self._binop(nsupseteq, a, b, sid)
     def supset(self, a, b, sid): return self._binop(nsupset, a, b, sid)
     def ne(self, a, b, sid): return self._binop(nnotequal, a, b, sid)
+    def eq(self, a, b, sid): return self._binop(neq, a, b, sid)
     def approx(self, a, b, sid): return self._binop(napprox, a, b, sid)
     def member(self, value, collection, sid): return self._binop(nmember, value, collection, sid)
 

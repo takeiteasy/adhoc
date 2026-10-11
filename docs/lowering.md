@@ -12,6 +12,7 @@ the pipeline and package layout.
 | Variable read | `_e.var` |
 | Backslash-name read | `_e.bref` |
 | Bind or check | `_e.assign`; `\let` selects fresh-only mode |
+| Evaluate an equation quote | `_e.eq(lhs, rhs, sid)`; value equality without binding |
 | Application | `_e.app(head, args, kwargs, sid, spelling)` |
 | Function definition | `_e.define`; separately compiled body |
 | Ternary | `_e.if_expr` with lazy branch thunks |

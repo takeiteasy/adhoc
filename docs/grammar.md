@@ -116,6 +116,7 @@ or misplaced `\let` is an error, and incomplete forms enter the REPL continuatio
 | Form | Behavior |
 |---|---|
 | `\expr(x+1)` or `` `(x+1) `` | Quote an expression without evaluating |
+| `\expr(x^2=4)` or `` `(x^2=4) `` | Quote an equation; `\solve` solves it and `\eval` returns equality |
 | `\expr((x=1; x+1))` | Quote a statement sequence |
 | `\expr((x+1;))` | Quote a single-statement sequence; trailing separator required |
 | `\eval(q, x=3)` | Evaluate a quote with local named bindings |
@@ -127,6 +128,12 @@ Other names resolve in the evaluation scope. Bindings stay local and cannot
 shadow protected names except `i`. Expression values print as parseable
 `\expr(...)` text; binding checks compare AST structure and canonical names.
 Built-ins and Python callables have no reflected body.
+
+An equation occupies the whole expression quote and has one outer `=`. Enclosing
+parentheses are optional: `\expr((x=4))` is an equation quote. Evaluating it
+compares both sides without binding `x`. A separator marks a statement sequence:
+`\expr((x=4;))` quotes an assignment. Equation syntax outside quotes is
+unsupported; see [symbolic limitations](symbolic.md#limitations).
 
 Reduction leaves arithmetic as syntax and named functions as calls. Statement
 quotes are rejected.[^reduction]

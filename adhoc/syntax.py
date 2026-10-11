@@ -135,6 +135,12 @@ class Compare(Node):
 
 
 @dataclass(frozen=True)
+class Equation(Node):
+    lhs: Node
+    rhs: Node
+
+
+@dataclass(frozen=True)
 class Range(Node):
     """Range notation; explicit infinite endpoints denote interval bounds."""
 

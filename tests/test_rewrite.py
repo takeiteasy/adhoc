@@ -56,6 +56,61 @@ def test_solve_quadratic_and_complex_roots():
     assert ev(r"\solve(\expr(x - 1 - x + 1 + x^2))") == "= {0}"
 
 
+@pytest.mark.parametrize("source, expected", [
+    (r"\solve(\expr(x^2=4))", "= {-2, 2}"),
+    (r"\solve(`(4=x^2))", "= {-2, 2}"),
+    (r"\solve(`(x^2=-1))", "= {-i, i}"),
+    (r"\solve(`(x+1=2*x))", "= {1}"),
+    (r"\solve(`(a*x=b), `(x))", r"= {\expr((b / a))}"),
+    (r"\solve(`(2=x+1))", "= {1}"),
+    (r"\solve(`(x=x+1), `(x))", "= {}"),
+    (r"\solve(`(x^2=4), ⟨`(x)⟩)", "= {⟨-2⟩, ⟨2⟩}"),
+    (r"\solve(⟨`(x+y=3), `(x-y=1)⟩, ⟨`(x), `(y)⟩)", "= {⟨2, 1⟩}"),
+    (r"\solve(⟨`(x+y=3), `(x-y-1)⟩, ⟨`(y), `(x)⟩)", "= {⟨1, 2⟩}"),
+    (r"\solve(⟨`(x=1), `(x=2)⟩, ⟨`(x)⟩)", "= {}"),
+    (r"\solve(⟨`(x=a), `(y=2*x)⟩, ⟨`(x), `(y)⟩)",
+     r"= {⟨\expr(a), \expr((2 * a))⟩}"),
+])
+def test_solve_equation_quotes(source, expected):
+    assert ev(source) == expected
+
+
+def test_equations_mix_with_function_inputs():
+    assert ev("a=3\nf(x,y)=a*x+y-7\n"
+              r"\solve(⟨f, `(x-y=1)⟩, ⟨`(x), `(y)⟩)") == "= {⟨2, 1⟩}"
+
+
+def test_equation_roots_retain_exact_values():
+    from adhoc.runtime import nmul, neq
+    env = {}
+    run_source(r"s=\solve(`(x^2=2))", env)
+    assert len(env["s"].items) == 2
+    assert all(neq(nmul(root, root), 2) for root in env["s"].items)
+
+
+@pytest.mark.parametrize("source, fragment", [
+    (r"\solve(`(a*x=b))", "needs the unknown"),
+    (r"\solve(`(x=x), `(x))", "infinitely many"),
+    (r"\solve(`(x=x))", "no unknown"),
+    (r"\solve(`(x+\sin(x)=0))", "closed form"),
+    (r"\solve(`(x<1=2))", "cannot rewrite compare"),
+    (r"\solve(⟨`(x+y=1)⟩, ⟨`(x), `(y)⟩)", "infinitely many"),
+])
+def test_equation_solve_errors(source, fragment):
+    fails(source, fragment)
+
+
+@pytest.mark.parametrize("operation", ["simplify", "expand", "factor", "deriv", "grad"])
+def test_other_symbolic_operations_reject_equations(operation):
+    fails("\\" + operation + r"(`(x^2=4))", "cannot rewrite equation")
+
+
+def test_equation_solve_respects_timeout(monkeypatch):
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
+    fails(r"\solve(`(x^2=4))", "took longer than 0.1s")
+
+
 def test_solve_with_no_solutions_is_the_empty_set():
     assert ev("f(x) = 1\n\\solve(f)") == "= {}"
 

@@ -130,6 +130,7 @@ from .syntax import (
     Call,
     Compare,
     CompareOperator,
+    Equation,
     Diff,
     Fold,
     FuncDef,
@@ -1421,11 +1422,52 @@ class _Parser:
                        span=statements[0].span.to(statements[-1].span))
             return Quote(body=body, source=self.source, statement_body=True,
                          span=head.span.to(self.tokens[self.pos - 1].span))
-        body = self.expr()
+        wrappers = self._quoted_equation_wrappers()
+        if wrappers is None:
+            body = self.expr()
+        else:
+            for _ in range(wrappers):
+                self.expect(LParen, "`(`")
+            lhs = self.expr()
+            self.expect(Eq, "`=`")
+            rhs = self.expr()
+            body = Equation(lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
+            for _ in range(wrappers):
+                self.expect(RParen, "`)`")
         self.expect(RParen, "`)`")
         if not self._quotable(body):
             raise ParseError("quotes contain one expression, not statements", body.span)
         return Quote(body=body, source=self.source, span=head.span.to(self.tokens[self.pos - 1].span))
+
+    def _quoted_equation_wrappers(self) -> int | None:
+        """Find a root equation without treating binders or keyword arguments as equations."""
+        start = self.pos
+        stack = []
+        closes = {}
+        equation_depths = set()
+        end = start
+        for end in range(start, len(self.tokens)):
+            tok = self.tokens[end]
+            if isinstance(tok, RParen) and not stack:
+                break
+            if isinstance(tok, (LParen, *_OPENERS)):
+                stack.append(end)
+            elif isinstance(tok, (RParen, *_CLOSERS)) and stack:
+                closes[stack.pop()] = end
+            elif isinstance(tok, Eq):
+                equation_depths.add(len(stack))
+            elif isinstance(tok, Eof):
+                break
+        wrappers = 0
+        while start < end:
+            if wrappers in equation_depths:
+                return wrappers
+            if not isinstance(self.tokens[start], LParen) or closes.get(start) != end - 1:
+                return None
+            start += 1
+            end -= 1
+            wrappers += 1
+        return None
 
     @staticmethod
     def _quotable(node: Node) -> bool:

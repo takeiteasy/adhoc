@@ -81,7 +81,9 @@ guards     ::= expr ("," expr)* ;
 array      ::= ("⟨" | "#[") (expr ("," expr)*)? ("⟩" | "]")
              | "\\arr" "(" (expr ("," expr)*)? ")" ;
 quote      ::= ("\\expr" | "`") "(" expr ")"
+             | ("\\expr" | "`") "(" equation ")"
              | ("\\expr" | "`") "(" "(" sequence ")" ")" ;
+equation   ::= expr "=" expr | "(" equation ")" ;
 eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
 sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;

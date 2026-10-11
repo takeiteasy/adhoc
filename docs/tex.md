@@ -31,6 +31,7 @@ composes (`"$" + \tex(e) + "$"`) and passes to `\py` for writing to a file.
 | Syntax | LaTeX |
 |---|---|
 | `a/b`, `a^b`, `√x` | `\frac{a}{b}`, `a^{b}`, `\sqrt{x}` |
+| Equation quote `\expr(x^2=4)` | `x^{2} = 4` |
 | `\|x\|`, `‖x‖`, `⌊x⌋` | `\left\| x \right\|`, `\lVert`, `\lfloor` |
 | `Σ`, `Π`, `\lim` | `\sum_{i=1}^{n}`, `\prod`, `\lim_{x \to a}` |
 | `∫`, `∂` | `\int_a^b … \, dx`, `\left.\frac{d}{dx}(…)\right\|_{x=a}` |
