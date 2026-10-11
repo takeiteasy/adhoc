@@ -362,7 +362,9 @@ def _candidates(origin: Source) -> list[sympy.Symbol]:
 
 def solve(value: Any, unknown: Any = None) -> Any:
     """The solutions of `value = 0` over the complex numbers, as an ad set."""
-    from .runtime import NumError, SetValue, _dedup, _sympy_to_ad
+    from .runtime import SetValue, _dedup
+    if isinstance(value, ArrayValue) or isinstance(unknown, ArrayValue):
+        return _solve_system(value, unknown)
     origin = bridge_value(value)
     symbol = _unknown(origin, unknown)
     solutions = run_limited(sympy.solveset, origin.expr, symbol, sympy.S.Complexes)
@@ -374,14 +376,87 @@ def solve(value: Any, unknown: Any = None) -> Any:
         raise RewriteError("has infinitely many solutions")
     items = []
     for solution in sorted(solutions, key=sympy.default_sort_key):
-        if solution.free_symbols:
-            items.append(quote(solution, origin.bridge, origin.source))
-            continue
-        try:
-            items.append(_sympy_to_ad(solution, "sympy expression"))
-        except NumError:
-            items.append(quote(solution, origin.bridge, origin.source))
+        items.append(_solution_value(solution, origin.bridge, origin.source))
     return SetValue(_dedup(items))
+
+
+def _solution_value(solution: sympy.Expr, bridge: Bridge, source: str) -> Any:
+    from .runtime import NumError, _sympy_to_ad
+    if not solution.free_symbols:
+        try:
+            return _sympy_to_ad(solution, "sympy expression")
+        except NumError:
+            pass
+    return quote(solution, bridge, source)
+
+
+def _solve_system(value: Any, unknowns: Any) -> Any:
+    from .expression import show
+    from .parser import parse_program
+    from .runtime import SetValue, _dedup
+    if not isinstance(unknowns, ArrayValue):
+        raise RewriteError("systems need an array of quoted unknowns, like ⟨`(x), `(y)⟩")
+    symbols = _listed(unknowns)
+    if len(set(symbols)) != len(symbols):
+        raise RewriteError("needs distinct unknowns in the array")
+    values = value.items if isinstance(value, ArrayValue) else (value,)
+    if not values:
+        raise RewriteError("needs at least one equation in the array")
+    equations = [bridge_value(item).expr for item in values]
+    solutions = run_limited(_system_solutions, equations, symbols)
+    bridge = Bridge(Span(0, 0))
+    items = []
+    for row in solutions:
+        coordinates = []
+        for solution in row:
+            coordinate = _solution_value(solution, bridge, "")
+            if isinstance(coordinate, ExpressionValue):
+                source = show(coordinate.node)
+                coordinate = ExpressionValue(_single_expression(parse_program(source)), source)
+            coordinates.append(coordinate)
+        items.append(ArrayValue(tuple(coordinates)))
+    return SetValue(_dedup(items))
+
+
+def _system_solutions(equations: list[sympy.Expr], symbols: list[sympy.Symbol]) -> list:
+    from sympy.solvers.solveset import NonlinearError
+    try:
+        try:
+            matrix, rhs = sympy.linear_eq_to_matrix(equations, symbols)
+        except NonlinearError:
+            solutions = sympy.nonlinsolve(equations, symbols)
+        else:
+            solutions = sympy.linsolve((matrix, rhs), symbols)
+    except (NotImplementedError, ValueError, KeyError, sympy.PolynomialError) as error:
+        raise RewriteError("cannot solve this system in closed form") from error
+    if solutions is sympy.S.EmptySet:
+        return []
+    if not isinstance(solutions, sympy.FiniteSet):
+        if isinstance(solutions, sympy.Set) and solutions.is_finite_set is False:
+            raise RewriteError("has infinitely many solutions")
+        raise RewriteError("cannot solve this system in closed form")
+    selected = set(symbols)
+    parameters = set().union(*(equation.free_symbols for equation in equations)) - selected
+    accepted = []
+    for row in sorted(solutions, key=sympy.default_sort_key):
+        if not isinstance(row, sympy.Tuple) or len(row) != len(symbols):
+            raise RewriteError("cannot solve this system in closed form")
+        if any(not isinstance(item, sympy.Expr) for item in row):
+            if any(item.has(sympy.ConditionSet) for item in row):
+                raise RewriteError("cannot solve this system in closed form")
+            raise RewriteError("has infinitely many solutions")
+        residuals = [sympy.simplify(equation.subs(dict(zip(symbols, row)), simultaneous=True))
+                     for equation in equations]
+        if any(residual.is_zero is False for residual in residuals):
+            continue
+        if any(residual.is_zero is not True for residual in residuals):
+            raise RewriteError("cannot solve this system in closed form")
+        if any(item.free_symbols - parameters for item in row):
+            raise RewriteError("has infinitely many solutions")
+        if any(item.has(sympy.nan, sympy.zoo, sympy.oo, -sympy.oo) for item in row):
+            raise RewriteError("cannot solve this system in closed form")
+        accepted.append(row)
+    return accepted
 
 
 def _quoted_name(unknown: Any) -> sympy.Symbol:

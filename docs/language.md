@@ -214,6 +214,7 @@ membership. Whole-line integration requires both tails to converge independently
 | `\body(f)` | Reflect a user function or lambda body |
 | `\reduce(\expr((\fn(x) x + 1)(2)))` | Beta-reduce to `\expr((2 + 1))` |
 | `\solve(\expr(x^2 - 4))` | Solve symbolically: `{-2, 2}` |
+| ``\solve(⟨`(x+y-3), `(x-y-1)⟩, ⟨`(x), `(y)⟩)`` | Solve a system: `{⟨2, 1⟩}` |
 | `\tex(q)` | Return LaTeX text |
 
 Evaluation bindings use the caller's scope and remain local; other names resolve

@@ -10,6 +10,7 @@ sets of solutions or arrays of derivative quotes. Free names remain symbols.
 | `\expand(e)` | Quote with products and powers expanded |
 | `\factor(e)` | Factored quote; numeric arguments use [prime factoring](stdlib.md#factoring) |
 | `\solve(e)` | Set of solutions to `e = 0` over complex numbers |
+| `\solve(⟨e₁, e₂⟩, ⟨\expr(x), \expr(y)⟩)` | Set of solution arrays for simultaneous equations |
 | `\deriv(e)` | Derivative quote; several free names give a gradient |
 | `\grad(e)` | Array of first partial-derivative quotes |
 
@@ -101,6 +102,39 @@ f(x) = x^2 - 9
 Infinite solution families, or solutions SymPy cannot express in closed form,
 produce typed errors.
 
+## Systems of equations
+
+Pass an array of expression quotes or single-expression functions and an ordered
+array of quoted unknowns. Each input expression equals zero; write `lhs - rhs`
+for an equation with a nonzero right-hand side. Other free names remain symbolic
+parameters, and functions use numeric values from their defining scope.
+
+```text
+\solve(⟨`(x+y-3), `(x-y-1)⟩, ⟨`(x), `(y)⟩) -> = {⟨2, 1⟩}
+\solve(⟨`(x^2-1), `(y-x)⟩, ⟨`(x), `(y)⟩)   -> = {⟨-1, -1⟩, ⟨1, 1⟩}
+\solve(⟨`(x-a), `(y-2*x)⟩, ⟨`(x), `(y)⟩)   -> = {⟨\expr(a), \expr((2 * a))⟩}
+```
+
+Each solution array follows the unknown order. Reversing ``⟨`(x), `(y)⟩`` to
+``⟨`(y), `(x)⟩`` reverses its coordinates. Numeric coordinates retain their exact
+value; parameter-dependent coordinates are quotes that support `\eval`.
+
+| Call | Result shape |
+|---|---|
+| `\solve(e, \expr(x))` | Set of scalar solutions |
+| `\solve(e, ⟨\expr(x)⟩)` | Set of one-coordinate arrays |
+| `\solve(e, ⟨\expr(x), \expr(y)⟩)` | Set of two-coordinate arrays |
+| `\solve(⟨e₁, e₂⟩, ⟨\expr(x)⟩)` | Common scalar roots wrapped in one-coordinate arrays |
+
+An equation array requires an unknown array. Both arrays must be nonempty, and
+unknowns must be distinct quoted names. A single quote or function also accepts
+an unknown array. Equation and unknown counts need not match: inconsistent
+systems return `{}`, while redundant equations can still give isolated solutions.
+
+Only finite, isolated solution sets are returned. An unconstrained unknown or a
+family such as `x + y = 1` produces an infinite-solutions error. Unresolved
+solutions produce a closed-form error; see [limitations](#limitations).[^systems]
+
 ## Inverses
 
 For supported user functions, `f⁻¹(y)` solves `f(x) = y` once per function and
@@ -119,7 +153,6 @@ path.[^worker]
 
 | Limit | Ticket |
 |---|---|
-| One unknown; no systems of equations | [#13](https://github.com/takeiteasy/adhoc/issues/13) |
 | `\solve(e)` solves `e = 0`; `lhs = rhs` is not equation syntax | [#14](https://github.com/takeiteasy/adhoc/issues/14) |
 | Infinite solution families are errors; no real-domain option | [#15](https://github.com/takeiteasy/adhoc/issues/15) |
 | No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
@@ -129,3 +162,10 @@ path.[^worker]
     This also enforces the timeout off the main thread. Forking adds per-call
     overhead; the child's SymPy caches are discarded. On systems without `fork`,
     such as Windows, rewriting runs without a time limit.
+
+[^systems]: Linear systems use SymPy's `linsolve`; other systems use
+    `nonlinsolve`. Candidate solutions are substituted into every input expression
+    and their residuals simplified under the same time limit. A candidate with an
+    undecidable residual is rejected with a closed-form error. Parameter-dependent
+    answers follow SymPy's generic parameter conventions, without separate branches
+    for exceptional parameter values.

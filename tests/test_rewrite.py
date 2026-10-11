@@ -79,6 +79,104 @@ def test_solve_errors():
     fails(r"\solve(2)", "expression quote")
 
 
+@pytest.mark.parametrize("src, expected", [
+    (r"\solve(⟨`(x+y-3), `(x-y-1)⟩, ⟨`(x), `(y)⟩)", "= {⟨2, 1⟩}"),
+    (r"\solve(⟨`(x+y-3), `(x-y-1)⟩, ⟨`(y), `(x)⟩)", "= {⟨1, 2⟩}"),
+    (r"\solve(⟨`(x^2-1), `(y-x)⟩, ⟨`(x), `(y)⟩)", "= {⟨-1, -1⟩, ⟨1, 1⟩}"),
+    (r"\solve(⟨`(x^2+1), `(y-x)⟩, ⟨`(x), `(y)⟩)", "= {⟨-i, -i⟩, ⟨i, i⟩}"),
+    (r"\solve(⟨`(x^2-4)⟩, ⟨`(x)⟩)", "= {⟨-2⟩, ⟨2⟩}"),
+    (r"\solve(`(x^2-4), ⟨`(x)⟩)", "= {⟨-2⟩, ⟨2⟩}"),
+    (r"\solve(⟨`(x-1), `(x-2)⟩, ⟨`(x)⟩)", "= {}"),
+    (r"\solve(⟨`(1)⟩, ⟨`(x), `(y)⟩)", "= {}"),
+    (r"\solve(⟨`(x-1), `(y-2), `(2*x-2)⟩, ⟨`(x), `(y)⟩)", "= {⟨1, 2⟩}"),
+    (r"\solve(⟨`(x/(x-1)), `(y-x)⟩, ⟨`(x), `(y)⟩)", "= {⟨0, 0⟩}"),
+    (r"\solve(⟨`(α-1), `(\foo-α)⟩, ⟨`(α), `(\foo)⟩)", "= {⟨1, 1⟩}"),
+])
+def test_solve_systems(src, expected):
+    assert ev(src) == expected
+
+
+def test_solve_system_function_closures_and_mixed_inputs():
+    assert ev("a = 3\nf(x, y) = a x + y - 7\n"
+              r"\solve(⟨f, `(x-y-1)⟩, ⟨`(x), `(y)⟩)") == "= {⟨2, 1⟩}"
+    assert ev("f(x, y) = x+y-3\ng(x, y) = x-y-1\n"
+              r"\solve(⟨f, g⟩, ⟨`(x), `(y)⟩)") == "= {⟨2, 1⟩}"
+    assert ev(r"\solve(x ↦ x^2-4, ⟨`(x)⟩)") == "= {⟨-2⟩, ⟨2⟩}"
+    assert ev("\\maker(a) = (x ↦ x-a)\nf = \\maker(1)\ng = \\maker(2)\n"
+              r"\solve(⟨f, g⟩, ⟨`(x)⟩)") == "= {}"
+    assert ev("f(i, x) = i+x-3\n"
+              r"\solve(⟨f, `(x-1)⟩, ⟨`(i), `(x)⟩)") == "= {⟨2, 1⟩}"
+
+
+def test_solve_system_exact_coordinates():
+    env = {}
+    run_source(r"s = \solve(⟨`(x^2-2), `(y-x)⟩, ⟨`(x), `(y)⟩)", env)
+    rows = env["s"].items
+    from adhoc.runtime import ArrayValue, nsub, nmul, neq
+    assert len(rows) == 2
+    for row in rows:
+        assert isinstance(row, ArrayValue)
+        x, y = row.items
+        assert neq(nmul(x, x), 2)
+        assert neq(nsub(x, y), 0)
+
+
+def test_solve_system_symbolic_coordinates_have_coherent_sources():
+    from adhoc.expression import ExpressionValue
+    from adhoc.parser import parse_program
+    env = {}
+    run_source(r"s = \solve(⟨`(x-α), `(y-2*x)⟩, ⟨`(x), `(y)⟩)", env)
+    row = env["s"].items[0]
+    for coordinate in row.items:
+        assert isinstance(coordinate, ExpressionValue)
+        assert coordinate.node == parse_program(coordinate.source)
+        assert coordinate.node.span.end <= len(coordinate.source.encode("utf-8"))
+    env["q"] = row.items[1]
+    assert run_source(r"\eval(q, α=3)", env) == ["= 6"]
+
+
+@pytest.mark.parametrize("src, fragment", [
+    (r"\solve(⟨`(x-1)⟩)", "array of quoted unknowns"),
+    (r"\solve(⟨`(x-1)⟩, `(x))", "array of quoted unknowns"),
+    (r"\solve(⟨⟩, ⟨`(x)⟩)", "at least one equation"),
+    (r"\solve(`(x-1), ⟨⟩)", "at least one unknown"),
+    (r"\solve(`(x-1), ⟨`(x), `(x)⟩)", "distinct unknowns"),
+    (r"\solve(`(x-1), ⟨`(2)⟩)", "quoted name"),
+    (r"\solve(`(x-1), ⟨1⟩)", "quoted name"),
+    (r"\solve(⟨1⟩, ⟨`(x)⟩)", "expression quote"),
+    (r"\solve(⟨`(x<1)⟩, ⟨`(x)⟩)", "cannot rewrite compare"),
+    (r"\solve(⟨\expr((y=1; y))⟩, ⟨`(x)⟩)", "statement quote"),
+    ("f(x) = (y=x; y+1)\n" r"\solve(⟨f⟩, ⟨`(x)⟩)", "several statements"),
+    (r"\solve(`(x+y-1), ⟨`(x), `(y)⟩)", "infinitely many"),
+    (r"\solve(⟨`(0)⟩, ⟨`(x), `(y)⟩)", "infinitely many"),
+    (r"\solve(⟨`(x-1)⟩, ⟨`(x), `(y)⟩)", "infinitely many"),
+    (r"\solve(⟨`(\sin(x)), `(y-x)⟩, ⟨`(x), `(y)⟩)", "infinitely many"),
+    (r"\solve(⟨`(x+\sin(x)), `(y-x)⟩, ⟨`(x), `(y)⟩)", "closed form"),
+])
+def test_solve_system_errors(src, fragment):
+    fails(src, fragment)
+
+
+def test_solve_system_checks_backend_candidates(monkeypatch):
+    monkeypatch.setattr(rewrite.sympy, "nonlinsolve", lambda *_: rewrite.sympy.FiniteSet(
+        rewrite.sympy.Tuple(1, 1), rewrite.sympy.Tuple(2, 2)))
+    assert ev(r"\solve(⟨`(x^2-1), `(y-x)⟩, ⟨`(x), `(y)⟩)") == "= {⟨1, 1⟩}"
+
+
+@pytest.mark.parametrize("backend, equations", [
+    ("linsolve", "⟨`(x+y-3), `(x-y-1)⟩"),
+    ("nonlinsolve", "⟨`(x^2-1), `(y-x)⟩"),
+    ("simplify", "⟨`(x+y-3), `(x-y-1)⟩"),
+])
+def test_solve_system_timeout_reaps_workers(monkeypatch, backend, equations):
+    import multiprocessing
+    monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
+    monkeypatch.setattr(rewrite.sympy, backend, _spin)
+    before = {child.pid for child in multiprocessing.active_children()}
+    fails(r"\solve(" + equations + r", ⟨`(x), `(y)⟩)", "took longer than 0.1s")
+    assert {child.pid for child in multiprocessing.active_children()} == before
+
+
 def test_unsupported_constructs_name_themselves():
     fails(r"\expand(\expr(x < 1))", "cannot rewrite compare")
     fails(r"\simplify(\expr({1, 2}))", "cannot rewrite setlit")
