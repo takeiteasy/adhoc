@@ -79,5 +79,6 @@ are typed errors at the call site.
   with fixed vector scaling. Float checks require residual tolerances.
 
 [^timeout]: `ADHOC_SYMBOLIC_TIMEOUT` sets the time limit in seconds (default `5`).
-    A nonpositive value disables it. The existing worker mechanism also runs
-    without a time limit on platforms without `fork`.
+    A nonpositive value disables it. Exact eigensystems use the reusable spawn
+    worker on Windows, macOS and Linux; the budget includes result conversion.
+    See [symbolic time limits](symbolic.md#time-limit).

@@ -91,12 +91,12 @@ def test_invalid_or_unsupported_inverse_requests(source, fragment):
     assert fragment in str(failure.value)
 
 
-def test_unresolved_branch_never_returns_a_partial_set(monkeypatch):
+def test_unresolved_branch_never_returns_a_partial_set(worker_patch):
     import sympy
     x = sympy.Symbol("x")
     unresolved = sympy.Union(sympy.FiniteSet(0),
                             sympy.ConditionSet(x, sympy.Eq(x + sympy.sin(x), 0), sympy.S.Reals))
-    monkeypatch.setattr(rewrite.sympy, "solveset", lambda *args: unresolved)
+    worker_patch("sympy", "solveset", unresolved, constant=True)
     with pytest.raises(EvalError, match="closed form"):
         ev("f(x)=x\nf⁻¹(0, \\all=\\true)")
 
@@ -107,21 +107,21 @@ def spin(*args, **kwargs):
 
 
 @pytest.mark.parametrize("operation", ["bridge", "solve"])
-def test_all_preimages_timeout_covers_expansion_and_solving(monkeypatch, operation):
+def test_all_preimages_timeout_covers_expansion_and_solving(worker_patch, monkeypatch, operation):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
     if operation == "bridge":
-        monkeypatch.setattr(rewrite, "_bridge_function", spin)
+        worker_patch("adhoc.rewrite", "_bridge_function", spin)
     else:
-        monkeypatch.setattr(rewrite.sympy, "solveset", spin)
+        worker_patch("sympy", "solveset", spin)
     with pytest.raises(EvalError, match="took longer than 0.1s"):
         ev("f(x)=x^2\nf⁻¹(4, \\all=\\true)")
     assert not multiprocessing.active_children()
 
 
 @pytest.mark.parametrize("operation", [r"\solve(f)", r"\simplify(f)", r"\deriv(f)", r"\grad(f)"])
-def test_function_rewrites_include_expansion_in_timeout(monkeypatch, operation):
+def test_function_rewrites_include_expansion_in_timeout(worker_patch, monkeypatch, operation):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite, "_bridge_function", spin)
+    worker_patch("adhoc.rewrite", "_bridge_function", spin)
     with pytest.raises(EvalError, match="took longer than 0.1s"):
         ev("f(x)=x\n" + operation)
     assert not multiprocessing.active_children()

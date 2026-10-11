@@ -1,9 +1,10 @@
 import multiprocessing
-import time
 
 import numpy as np
 import pytest
 import sympy
+
+from worker_helpers import slow_conversion
 
 from adhoc import eigen, linalg, runtime
 from adhoc.driver import run_source
@@ -199,10 +200,9 @@ def test_constructed_size_limit(monkeypatch):
         eig([[1, 0], [0, 1]])
 
 
-@pytest.mark.skipif("fork" not in multiprocessing.get_all_start_methods(), reason="requires fork")
-def test_timeout_includes_result_conversion(monkeypatch):
+def test_timeout_includes_result_conversion(worker_patch, monkeypatch):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.05")
-    monkeypatch.setattr(runtime, "_sympy_to_ad", lambda *args: time.sleep(1))
+    worker_patch("adhoc.runtime", "_sympy_to_ad", slow_conversion)
     with pytest.raises(NumError, match="took longer"):
         eig([[1]])
     assert not multiprocessing.active_children()

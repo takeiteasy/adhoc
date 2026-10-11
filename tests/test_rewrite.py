@@ -1,5 +1,7 @@
 import pytest
 
+from worker_helpers import boom, die, unpicklable, swallow, side_operation
+
 from adhoc import rewrite
 
 from adhoc.driver import run_source
@@ -211,8 +213,14 @@ def test_rewritten_equation_errors_retain_source_and_byte_spans():
 def test_equation_rewrite_uses_one_limited_call(monkeypatch):
     calls = []
     def limited(fn, *args):
+        if rewrite._IN_WORKER:
+            return fn(*args)
         calls.append(fn)
-        return fn(*args)
+        monkeypatch.setattr(rewrite, "_IN_WORKER", True)
+        try:
+            return fn(*args)
+        finally:
+            monkeypatch.setattr(rewrite, "_IN_WORKER", False)
     monkeypatch.setattr(rewrite, "run_limited", limited)
     assert ev(r"\simplify(`(x+x=y+y))") == r"= \expr(((2 * x) = (2 * y)))"
     assert len(calls) == 1
@@ -224,17 +232,14 @@ def test_rewritten_equations_remain_solver_inputs(operation):
 
 
 @pytest.mark.parametrize("side", ["x", "y"])
-def test_equation_rewrite_timeout_reaps_worker(monkeypatch, side):
+def test_equation_rewrite_timeout_reaps_worker(worker_patch, monkeypatch, side):
     import multiprocessing
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    def operation(expr):
-        if str(expr) == side:
-            _spin()
-        return expr
-    before = {child.pid for child in multiprocessing.active_children()}
+    worker_patch("adhoc.symbolic_worker", "WORKER.test_side", side)
+    operation = side_operation
     with pytest.raises(rewrite.RewriteError, match="took longer than 0.1s"):
         rewrite.rewrite(_quote("x=y"), operation)
-    assert {child.pid for child in multiprocessing.active_children()} == before
+    assert not multiprocessing.active_children()
 
 
 @pytest.mark.parametrize("operation", ["deriv", "grad"])
@@ -242,9 +247,9 @@ def test_other_symbolic_operations_reject_equations(operation):
     fails("\\" + operation + r"(`(x^2=4))", "cannot rewrite equation")
 
 
-def test_equation_solve_respects_timeout(monkeypatch):
+def test_equation_solve_respects_timeout(worker_patch, monkeypatch):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
+    worker_patch("sympy", "solveset", _spin)
     fails(r"\solve(`(x^2=4))", "took longer than 0.1s")
 
 
@@ -348,9 +353,9 @@ def test_solve_system_errors(src, fragment):
     fails(src, fragment)
 
 
-def test_solve_system_checks_backend_candidates(monkeypatch):
-    monkeypatch.setattr(rewrite.sympy, "nonlinsolve", lambda *_: rewrite.sympy.FiniteSet(
-        rewrite.sympy.Tuple(1, 1), rewrite.sympy.Tuple(2, 2)))
+def test_solve_system_checks_backend_candidates(worker_patch):
+    worker_patch("sympy", "nonlinsolve", rewrite.sympy.FiniteSet(
+        rewrite.sympy.Tuple(1, 1), rewrite.sympy.Tuple(2, 2)), constant=True)
     assert ev(r"\solve(⟨`(x^2-1), `(y-x)⟩, ⟨`(x), `(y)⟩)") == "= {⟨1, 1⟩}"
 
 
@@ -359,13 +364,12 @@ def test_solve_system_checks_backend_candidates(monkeypatch):
     ("nonlinsolve", "⟨`(x^2-1), `(y-x)⟩"),
     ("simplify", "⟨`(x+y-3), `(x-y-1)⟩"),
 ])
-def test_solve_system_timeout_reaps_workers(monkeypatch, backend, equations):
+def test_solve_system_timeout_reaps_workers(worker_patch, monkeypatch, backend, equations):
     import multiprocessing
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite.sympy, backend, _spin)
-    before = {child.pid for child in multiprocessing.active_children()}
+    worker_patch("sympy", backend, _spin)
     fails(r"\solve(" + equations + r", ⟨`(x), `(y)⟩)", "took longer than 0.1s")
-    assert {child.pid for child in multiprocessing.active_children()} == before
+    assert not multiprocessing.active_children()
 
 
 def test_unsupported_constructs_name_themselves():
@@ -449,10 +453,10 @@ def _spin(*_, **__):
         pass
 
 
-def test_symbolic_work_has_a_time_limit(monkeypatch):
+def test_symbolic_work_has_a_time_limit(worker_patch, monkeypatch):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
-    monkeypatch.setattr(rewrite.sympy, "diff", _spin)
+    worker_patch("sympy", "solveset", _spin)
+    worker_patch("sympy", "diff", _spin)
     fails(r"\solve(\expr(x^2 - 4))", "\\solve took longer than 0.1s")
     fails(r"\deriv(\expr(x^2))", "\\deriv took longer than 0.1s")
     with pytest.raises(rewrite.RewriteError, match="took longer than 0.1s"):
@@ -461,17 +465,9 @@ def test_symbolic_work_has_a_time_limit(monkeypatch):
     assert ev(r"\solve(\expr(x^2 - 4))") == "= {-2, 2}"
 
 
-def test_time_limit_is_swallow_proof(monkeypatch):
-    def spin_and_swallow(*_, **__):
-        while True:
-            try:
-                while True:
-                    pass
-            except Exception:
-                pass
-
+def test_time_limit_is_swallow_proof(worker_patch, monkeypatch):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite.sympy, "solveset", spin_and_swallow)
+    worker_patch("sympy", "solveset", swallow)
     fails(r"\solve(\expr(x^2 - 4))", "took longer")
 
 
@@ -486,17 +482,16 @@ def test_bad_timeout_names_the_variable(monkeypatch):
     fails(r"\simplify(\expr(x + x))", "ADHOC_SYMBOLIC_TIMEOUT")
 
 
-def test_inverse_falls_back_when_the_exact_solve_times_out(monkeypatch):
+def test_inverse_falls_back_when_the_exact_solve_times_out(worker_patch, monkeypatch):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite.sympy, "solve", _spin)
-    monkeypatch.setattr("adhoc.runtime.sympy.solve", _spin)
+    worker_patch("sympy", "solve", _spin)
     assert ev("f(x) = x^3\nf⁻¹(8)").startswith("= 2.0")
 
 
-def test_time_limit_holds_off_the_main_thread(monkeypatch):
+def test_time_limit_holds_off_the_main_thread(worker_patch, monkeypatch):
     import threading
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
+    worker_patch("sympy", "solveset", _spin)
     outcome = []
 
     def work():
@@ -511,23 +506,15 @@ def test_time_limit_holds_off_the_main_thread(monkeypatch):
     assert outcome and "took longer" in outcome[0]
 
 
-def test_timed_out_workers_are_reaped(monkeypatch):
+def test_timed_out_workers_are_reaped(worker_patch, monkeypatch):
     import multiprocessing
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.1")
-    monkeypatch.setattr(rewrite.sympy, "solveset", _spin)
+    worker_patch("sympy", "solveset", _spin)
     fails(r"\solve(\expr(x^2 - 4))", "took longer")
     assert multiprocessing.active_children() == []
 
 
-def test_worker_errors_and_crashes_surface(monkeypatch):
-    import os
-
-    def boom(*_):
-        raise NotImplementedError("no")
-
-    def die(*_):
-        os._exit(1)
-
+def test_worker_errors_and_crashes_surface():
     with pytest.raises(NotImplementedError):
         rewrite.run_limited(boom)
     with pytest.raises(rewrite.RewriteError, match="stopped unexpectedly"):
@@ -536,4 +523,4 @@ def test_worker_errors_and_crashes_surface(monkeypatch):
 
 def test_unpicklable_results_are_an_error_not_a_hang():
     with pytest.raises(rewrite.RewriteError, match="cannot be sent back"):
-        rewrite.run_limited(lambda: (lambda: 1))
+        rewrite.run_limited(unpicklable)

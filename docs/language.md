@@ -247,7 +247,9 @@ print as `\expr((...))` and return their last statement.
 Reduction leaves arithmetic unevaluated, named functions unexpanded and free
 names free. It rejects statement quotes. [Symbolic rewriting](symbolic.md)
 provides `\simplify`, `\expand`, `\factor`, `\solve`, `\deriv` and `\grad` for
-quotes and functions. See [LaTeX output](tex.md) for rendering.
+quotes and functions. See [symbolic calculus arrays](symbolic-calculus.md) for `\jacobian`, `\hessian`,
+recursive `\eval` and explicit `\tensor` conversion.
+See [LaTeX output](tex.md) for rendering.
 
 ## Strings, imports and Python
 

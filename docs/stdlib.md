@@ -217,6 +217,7 @@ behavior, and [limitations](#limitations) for computation limits.
 | `\eye(n)` | Identity matrix | `\eye(2)` → `[1, 0; 0, 1]` |
 | `\zeros(n, …)`, `\ones(n, …)` | Filled tensor of the given dimensions | `\zeros(2, 3)` → `[0, 0, 0; 0, 0, 0]` |
 | `\diag(v)`, `\diag(A)` | Vector to diagonal matrix; matrix to diagonal vector | `\diag([1, 2])` → `[1, 0; 0, 2]` |
+| `\tensor(xs)` | Rectangular nested numeric array to tensor | `\tensor(⟨⟨1, 2⟩, ⟨3, 4⟩⟩)` → `[1, 2; 3, 4]` |
 | `\reshape(t, n, …)` | Same entries, new dimensions | `\reshape([1, 2, 3, 4], 2, 2)` → `[1, 2; 3, 4]` |
 | `\concat(a, b, …)` | Join arrays or tensors with matching trailing shapes along the first axis | `\concat([1, 2], [3])` → `[1, 2, 3]` |
 | `\stack(a, b, …)` | Numbers form a vector; equal-shape tensors gain an axis | `\stack([1, 2], [3, 4])` → `[1, 2; 3, 4]` |

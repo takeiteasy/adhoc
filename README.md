@@ -68,6 +68,7 @@ Heavyweight tests are marked `slow`;
 | [Calculus](docs/calculus.md) | Derivatives and integrals |
 | [Infinite interval bounds](docs/intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](docs/symbolic.md) | Simplification, expansion, factoring and solving |
+| [Symbolic calculus arrays](docs/symbolic-calculus.md) | Gradients, Jacobians, Hessians and evaluation |
 | [LaTeX output](docs/tex.md) | Rendering quotes, functions and values |
 | [Standard library](docs/stdlib.md) | Prelude constants and functions |
 | [Units](docs/units.md) | Dimensioned quantities, conversion and integration |

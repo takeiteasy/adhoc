@@ -1,0 +1,7 @@
+f(x, y) = ⟨x^2 y, x+y⟩
+j = \jacobian(f)
+\tensor(\eval(j, x=2, y=3))
+\det(\tensor(\eval(j, x=2, y=3)))
+h = \hessian(`(x^2 y+3y^2))
+\tensor(\eval(h, x=2, y=3))
+\tensor(\eval(\grad(`(x^2 y)), x=2, y=3))

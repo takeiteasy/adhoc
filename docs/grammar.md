@@ -119,7 +119,7 @@ or misplaced `\let` is an error, and incomplete forms enter the REPL continuatio
 | `\expr(x^2=4)` or `` `(x^2=4) `` | Quote an equation; `\solve` solves it and `\eval` returns equality |
 | `\expr((x=1; x+1))` | Quote a statement sequence |
 | `\expr((x+1;))` | Quote a single-statement sequence; trailing separator required |
-| `\eval(q, x=3)` | Evaluate a quote with local named bindings |
+| `\eval(q, x=3)` | Evaluate a quote or nested array of quotes with local named bindings |
 | `\body(f)` | Return a user function or lambda's body as an expression value |
 | `\reduce(q)` | Beta-reduce an expression quote |
 
@@ -1081,6 +1081,8 @@ is immutable; `\let` explicitly requires a fresh binding.
 | `\root(x, n)` | `x^(1/n)` for exact positive integer `n`; `∛x` uses `n=3` |
 | `\emptyset` / `∅` | Empty set |
 | `\map` / `\filter` / `\fold` / `\scan` / `\take` | [Higher-order functions](#higher-order-functions) |
+| `\jacobian` / `\hessian` | [Symbolic calculus arrays](symbolic-calculus.md) |
+| `\tensor(xs)` | Rectangular nested numeric array to tensor |
 | `\len` / `\shape` / `\transpose` | Collection length, tensor shape and transpose |
 | `\prec(n)` | RRA display precision, 1–1000 significant digits; returns `n` |
 

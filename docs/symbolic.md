@@ -98,8 +98,9 @@ f(x, y) = x y^2
 \grad(f)                 ->  = ⟨\expr((y ^ 2)), \expr(((2 * x) * y))⟩
 ```
 
-Gradients are arrays because tensors hold numbers only. They support indexing
-and mapping, with no vector algebra; see [limitations](#limitations).
+Gradients are arrays of quotes. Evaluate them with `\eval` and convert numeric
+results with `\tensor` for vector algebra. See [symbolic calculus arrays](symbolic-calculus.md)
+for Jacobians, Hessians and evaluation examples.
 Numeric derivatives at a point use `f'` or `\diff`; see [calculus](calculus.md).
 
 ## Solving
@@ -230,8 +231,9 @@ the same finite and infinite representations as `\solve`. It accepts
 ## Time limit
 
 Rewrites stop after 5 seconds by default. `ADHOC_SYMBOLIC_TIMEOUT` sets the limit
-in seconds; `0` disables it. A timeout reports `took longer than 5s` at the default
-setting. Both sides of an equation share one time limit. `f⁻¹` and `f'` treat a
+in seconds; a nonpositive value disables it. Positive limits must be finite. A timeout reports `took longer than 5s` at the default
+setting. Both sides of an equation share one time limit. Every component of a gradient,
+Jacobian or Hessian shares one limit. `f⁻¹` and `f'` treat a
 timeout as no exact form and use their numeric path.[^worker]
 
 For function inputs, body expansion and rewriting share one time limit.
@@ -267,16 +269,19 @@ membership in a family with different dimensions is false.
 |---|---|
 | Infinite system families are errors | [#43](https://github.com/takeiteasy/adhoc/issues/43) |
 | Conditional real solutions are unsupported; undecidable system realness is an error | [#44](https://github.com/takeiteasy/adhoc/issues/44) |
-| No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
-| Gradients are arrays of quotes without vector algebra | [#18](https://github.com/takeiteasy/adhoc/issues/18) |
 
 Nested user-function expansion does not support recursive calls, statement-body
 callees or dimensioned calls. Python callables are not executed during rewriting.
 
-[^worker]: Each rewrite runs in a forked child that is killed at the limit.
-    This also enforces the timeout off the main thread. Forking adds per-call
-    overhead; the child's SymPy caches are discarded. On systems without `fork`,
-    such as Windows, rewriting runs without a time limit.
+[^worker]: A reusable spawn worker enforces the limit on Windows, macOS and Linux,
+    including off the main thread. The deadline includes preparation, queueing,
+    worker startup, transport and computation. Successful calls reuse SymPy caches;
+    an active timeout or crash kills and reaps the worker, and the next call starts
+    a replacement. A queued timeout does not stop another caller's active request.
+    Cold calls with very small limits may time out during startup. Worker startup
+    failures report errors rather than running without a limit. Python embedding
+    scripts protect calls with `if __name__ == "__main__":` so spawn can safely
+    import their entry point. Worker shutdown occurs at interpreter exit.
 
 [^systems]: Linear systems use SymPy's `linsolve`; other systems use
     `nonlinsolve`. Candidate solutions are substituted into every input expression

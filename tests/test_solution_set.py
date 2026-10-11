@@ -157,11 +157,11 @@ def test_symbolic_set_unsupported_operations(operation, fragment):
     assert "internal error" not in str(error.value)
 
 
-def test_conditions_nested_in_unions_remain_errors(monkeypatch):
+def test_conditions_nested_in_unions_remain_errors(worker_patch):
     x = sympy.Symbol("x")
     unresolved = sympy.Union(sympy.FiniteSet(0),
         sympy.ConditionSet(x, sympy.Eq(x+sympy.sin(x), 0), sympy.S.Reals))
-    monkeypatch.setattr(rewrite.sympy, "solveset", lambda *args: unresolved)
+    worker_patch("sympy", "solveset", unresolved, constant=True)
     with pytest.raises(EvalError, match="closed form"):
         run_source(r"\solve(`(x))", {})
 
@@ -171,17 +171,17 @@ def spin(*args):
         pass
 
 
-def test_membership_timeout(monkeypatch):
+def test_membership_timeout(worker_patch, monkeypatch):
     env = {}
     run_source(r"s=\solve(`(\sin(x)))", env)
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.05")
-    monkeypatch.setattr(sympy.Set, "contains", spin)
+    worker_patch("sympy", "Set.contains", spin)
     with pytest.raises(EvalError, match="took longer than 0.05s"):
         run_source("0 ∈ s", env)
 
 
-def test_real_system_checks_share_solver_timeout(monkeypatch):
+def test_real_system_checks_share_solver_timeout(worker_patch, monkeypatch):
     monkeypatch.setenv("ADHOC_SYMBOLIC_TIMEOUT", "0.05")
-    monkeypatch.setattr(sympy, "simplify", spin)
+    worker_patch("sympy", "simplify", spin)
     with pytest.raises(EvalError, match="took longer than 0.05s"):
         run_source(r'\solve(⟨`(x-1)⟩, ⟨`(x)⟩, \domain="real")', {})

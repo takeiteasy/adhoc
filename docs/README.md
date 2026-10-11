@@ -13,6 +13,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [Calculus](calculus.md) | Derivatives and integrals |
 | [Infinite interval bounds](intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](symbolic.md) | Simplification, expansion, factoring and solving |
+| [Symbolic calculus arrays](symbolic-calculus.md) | Gradients, Jacobians, Hessians and evaluation |
 | [Symbolic solution sets](solution-sets.md) | Infinite scalar families, domains and membership |
 | [LaTeX output](tex.md) | Rendering quotes, functions and values |
 | [Standard library](stdlib.md) | Prelude constants and functions |

@@ -531,6 +531,33 @@ def _grad_call(value: Any, unknown: Any = None, *, dimensions=None) -> ArrayValu
         raise NumError(f"\\grad {error}") from None
 
 
+def _matrix_derivative_call(name):
+    def call(value, unknown=None, *, dimensions=None):
+        from . import rewrite
+        try:
+            return getattr(rewrite, name)(value, unknown, dimensions=dimensions)
+        except rewrite.RewriteError as error:
+            raise NumError(f"\\{name} {error}") from None
+    return PreludeFn(name, call)
+
+
+def _tensor_call(value):
+    if not isinstance(value, ArrayValue):
+        raise NumError("\\tensor needs an array")
+
+    def build(part):
+        if not isinstance(part, ArrayValue):
+            _reject_non_numeric(part)
+            return part
+        if not part.items:
+            raise NumError("\\tensor cannot contain an empty axis")
+        return _linalg(tn.stack, [build(item) for item in part.items])
+
+    result = build(value)
+    units.dimensions(result)
+    return result
+
+
 def _transpose_call(value: Any) -> AdValue:
     return ntranspose(value)
 
@@ -2356,10 +2383,8 @@ class Derivative:
             if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1:
                 from . import rewrite
                 try:
-                    origin = rewrite.bridge_function(self.fn)
-                    form = rewrite.run_limited(sympy.diff, origin.expr, origin.params[0],
-                                               self.order)
-                    self._symbolic = (origin.params[0], form)
+                    symbol, form, _ = rewrite.run_limited(rewrite._derivative_form, self.fn, self.order)
+                    self._symbolic = (symbol, form)
                 except (rewrite.RewriteError, NotImplementedError, NumError):
                     pass
         return self._symbolic
@@ -2374,10 +2399,8 @@ class Derivative:
                 return None
             if dims not in self._dimensional_forms:
                 try:
-                    origin = rewrite.bridge_function(self.fn, {self.fn.params[0]: dims})
-                    form = rewrite.run_limited(sympy.diff, origin.expr, origin.params[0], self.order)
-                    output = units.combine(origin.bridge.result_dimensions, units.power(dims, self.order), -1)
-                    self._dimensional_forms[dims] = (origin.params[0], form, output)
+                    self._dimensional_forms[dims] = rewrite.run_limited(
+                        rewrite._derivative_form, self.fn, self.order, {self.fn.params[0]: dims})
                 except (rewrite.RewriteError, NotImplementedError, NumError):
                     self._dimensional_forms[dims] = None
             if self._dimensional_forms[dims] is None:
@@ -2425,10 +2448,7 @@ class Inverse:
             if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1:
                 from . import rewrite
                 try:
-                    origin = rewrite.bridge_function(self.fn)
-                    roots = rewrite.run_limited(sympy.solve, origin.expr - target,
-                                                origin.params[0])
-                    self._solved = (target, roots)
+                    self._solved = rewrite.run_limited(rewrite._inverse_form, self.fn)
                 except (rewrite.RewriteError, NotImplementedError, NumError):
                     pass
         return self._solved
@@ -3044,6 +3064,9 @@ PRELUDE.update({
     "solve": PreludeFn("solve", _solve_call),
     "deriv": PreludeFn("deriv", _deriv_call),
     "grad": PreludeFn("grad", _grad_call),
+    "jacobian": _matrix_derivative_call("jacobian"),
+    "hessian": _matrix_derivative_call("hessian"),
+    "tensor": PreludeFn("tensor", _tensor_call),
     "gcd": PreludeFn("gcd", _gcd_call),
     "lcm": PreludeFn("lcm", _lcm_call),
     "divmod": PreludeFn("divmod", _divmod_call),
@@ -3503,11 +3526,21 @@ class Engine:
 
     def eval_expr(self, value: Any, names: tuple[str, ...], values: tuple[Any, ...],
                   spellings: tuple[str | None, ...], sid: int) -> Any:
-        if not isinstance(value, ExpressionValue):
-            self._fail("`\\eval` needs an expression value", sid)
         for name, spelling in zip(names, spellings):
             if self._protected(name):
                 self._fail(f"`{_display_name(name, spelling)}` is protected", sid)
+        if isinstance(value, ArrayValue):
+            def validate(part):
+                if isinstance(part, ArrayValue):
+                    for item in part.items:
+                        validate(item)
+                elif not isinstance(part, ExpressionValue):
+                    self._fail("`\\eval` needs expression values at every array leaf", sid)
+            validate(value)
+            return ArrayValue(tuple(self.eval_expr(item, names, values, spellings, sid)
+                                    for item in value.items))
+        if not isinstance(value, ExpressionValue):
+            self._fail("`\\eval` needs an expression value", sid)
         provided = dict(zip(names, values))
         for name, dimension in value.dimensions:
             binding = provided.get(name, self._lookup(name))

@@ -6,10 +6,8 @@ result crosses back as an expression quote. Free names stay symbols; a function'
 supplies its numeric bindings. Only the numeric seam converts ad values to sympy
 (`runtime.value_to_sympy`)."""
 
-import multiprocessing
+import math
 import os
-import pickle
-import warnings
 from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, Callable
@@ -20,7 +18,7 @@ from .expression import ExpressionValue
 from .tensor import ArrayValue
 from .span import Span
 from .syntax import (
-    BackslashRef, BinOp, BinOperator, Call, Equation, Node, NumLit, PowCall, Seq, UnaryOperator, UnOp,
+    ArrayLit, BackslashRef, BinOp, BinOperator, Call, Equation, Node, NumLit, PowCall, Seq, UnaryOperator, UnOp,
     Var, is_short_name,
 )
 
@@ -43,62 +41,43 @@ def _timeout_seconds() -> float:
         raise RewriteError(f"needs ADHOC_SYMBOLIC_TIMEOUT to be a number of seconds, got {text!r}") from None
 
 
-def _child(send: Any, fn: Callable, args: tuple) -> None:
-    global _IN_WORKER
-    _IN_WORKER = True
-    try:
-        payload = ("ok", fn(*args))
-    except BaseException as error:
-        payload = ("error", error)
-    try:
-        pickle.dumps(payload)
-    except Exception:
-        payload = ("error", RewriteError("returned a result that cannot be sent back"))
-    send.send(payload)
-
-
 def run_limited(fn: Callable, *args: Any) -> Any:
-    """`fn(*args)` in a forked child that is killed after the time limit; the result comes
-    back pickled. Nested work shares the worker's deadline. Unlimited without `fork`."""
+    """Run a complete symbolic request under one deadline, reusing a spawn worker."""
     seconds = _timeout_seconds()
-    if seconds <= 0 or _IN_WORKER or "fork" not in multiprocessing.get_all_start_methods():
+    if seconds <= 0 or _IN_WORKER:
         return fn(*args)
-    context = multiprocessing.get_context("fork")
-    receive, send = context.Pipe(duplex=False)
-    child = context.Process(target=_child, args=(send, fn, args), daemon=True)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)  # fork from a threaded process
-        child.start()
-    send.close()
-    try:
-        if not receive.poll(seconds):
-            raise RewriteError(f"took longer than {seconds:g}s")
-        try:
-            status, payload = receive.recv()
-        except EOFError:
-            raise RewriteError("stopped unexpectedly") from None
-    finally:
-        child.kill()
-        child.join()
-        receive.close()
-    if status == "error":
-        raise payload
-    return payload
+    if not math.isfinite(seconds):
+        raise RewriteError("needs ADHOC_SYMBOLIC_TIMEOUT to be finite")
+    from .symbolic_worker import WORKER
+    return WORKER.run(fn, args, seconds)
 
 
 def _function_operation(operation):
     @wraps(operation)
     def limited(value, *args, **kwargs):
-        from .runtime import AdFunction
-        inputs = value.items if isinstance(value, ArrayValue) else (value,)
-        if any(isinstance(item, AdFunction) for item in inputs):
-            return run_limited(_apply_operation, operation, value, args, kwargs)
-        return operation(value, *args, **kwargs)
+        from .runtime import _CALL_ENGINE
+        from .symbolic_worker import QuoteBindings
+        captured = QuoteBindings(value, _CALL_ENGINE.get())
+        return run_limited(_apply_operation, operation.__name__, value, args, kwargs, captured)
     return limited
 
 
-def _apply_operation(operation, value, args, kwargs):
-    return operation(value, *args, **kwargs)
+def _apply_operation(name, value, args, kwargs, captured):
+    from .runtime import Engine, _CALL_ENGINE
+    from .symbolic_worker import QuoteBindings
+    if isinstance(captured, QuoteBindings):
+        captured = captured.capture()
+    token = _CALL_ENGINE.set(Engine(captured, []))
+    try:
+        return globals()[name].__wrapped__(value, *args, **kwargs)
+    finally:
+        _CALL_ENGINE.reset(token)
+
+
+def _is_function(value):
+    from .runtime import AdFunction
+    from .symbolic_worker import FunctionSnapshot
+    return isinstance(value, AdFunction | FunctionSnapshot)
 
 
 _FUNCTIONS = {
@@ -146,9 +125,9 @@ class Bridge:
         if isinstance(node, Call) and isinstance(node.head, Var | BackslashRef):
             label = node.head.ch if isinstance(node.head, Var) else node.head.name
             if self.call_lookup is not None and label not in self.bound:
-                from .runtime import AdFunction, _MISSING
+                from .runtime import _MISSING
                 fn = self.call_lookup(label)
-                if isinstance(fn, AdFunction):
+                if _is_function(fn):
                     if node.kwargs or len(node.args) != len(fn.params):
                         raise RewriteError(f"{label} needs {len(fn.params)} positional arguments")
                     from .dimensional import has_units
@@ -302,6 +281,25 @@ def bridge_function(fn: Any, declared=None) -> Source:
     return run_limited(_function_source, fn, declared)
 
 
+def _derivative_form(fn, order, declared=None):
+    from . import units
+    from .dimensional import DimensionBridge
+    origin = _function_source(fn, declared)
+    symbol = origin.params[0]
+    form = sympy.diff(origin.expr, symbol, order)
+    dims = units.DIMENSIONLESS
+    if isinstance(origin.bridge, DimensionBridge):
+        dims = units.combine(origin.bridge.result_dimensions,
+                             units.power(origin.bridge.declared[symbol.name], order), -1)
+    return symbol, form, dims
+
+
+def _inverse_form(fn):
+    origin = _function_source(fn)
+    target = sympy.Dummy("y")
+    return target, sympy.solve(origin.expr - target, origin.params[0])
+
+
 def _function_source(fn: Any, declared=None) -> Source:
     origin = _bridge_function(fn, declared)
     origin.bridge.lookup = None
@@ -345,8 +343,7 @@ def _closure_lookup(closure: Any) -> Callable[[str], Any]:
 
 
 def bridge_value(value: Any, declared=None) -> Source:
-    from .runtime import AdFunction
-    if isinstance(value, AdFunction):
+    if _is_function(value):
         return bridge_function(value, declared)
     if isinstance(value, ExpressionValue):
         if value.statement_body:
@@ -461,6 +458,59 @@ def _gradient(origin: Source, symbols: list[sympy.Symbol]) -> ArrayValue:
     return ArrayValue(tuple(_diff(origin, [symbol]) for symbol in symbols))
 
 
+@_function_operation
+def jacobian(value: Any, unknown: Any = None, *, dimensions=None) -> ArrayValue:
+    from .dimensional import annotations
+    declared = annotations(dimensions) if dimensions is not None else None
+    if _is_function(value):
+        node = _single_expression(value.body.node)
+        if not isinstance(node, ArrayLit):
+            raise RewriteError("needs an array-bodied function or an array of quotes or scalar functions")
+        from .symbolic_worker import FunctionBody, FunctionSnapshot
+        parts = [FunctionSnapshot(value.name, value.params,
+                                  FunctionBody(item, value.body.source), value.closure)
+                 for item in node.items]
+    elif isinstance(value, ArrayValue):
+        parts = value.items
+    else:
+        raise RewriteError("needs an array-bodied function or an array of quotes or scalar functions")
+    if not parts:
+        raise RewriteError("needs at least one output")
+    origins = [bridge_value(part, declared) for part in parts]
+    if unknown is None:
+        functions = [_is_function(part) for part in parts]
+        if any(functions):
+            if not all(functions) or any(origin.params != origins[0].params for origin in origins):
+                raise RewriteError("needs explicit unknowns for mixed inputs or different function parameters")
+            symbols = _candidates(origins[0])
+        else:
+            symbols = sorted(set().union(*(origin.expr.free_symbols for origin in origins)),
+                             key=lambda symbol: symbol.name)
+            if not symbols:
+                raise RewriteError("has no unknown")
+    else:
+        symbols = _matrix_unknowns(unknown)
+    return ArrayValue(tuple(_gradient(origin, symbols) for origin in origins))
+
+
+@_function_operation
+def hessian(value: Any, unknown: Any = None, *, dimensions=None) -> ArrayValue:
+    from .dimensional import annotations
+    origin = bridge_value(value, annotations(dimensions) if dimensions is not None else None)
+    symbols = _candidates(origin) if unknown is None else _matrix_unknowns(unknown)
+    return ArrayValue(tuple(ArrayValue(tuple(_diff(origin, [row, column])
+                                            for column in symbols)) for row in symbols))
+
+
+def _matrix_unknowns(unknown):
+    if not isinstance(unknown, ArrayValue):
+        raise RewriteError("the unknowns must be an array of quoted names, like ⟨`(x), `(y)⟩")
+    symbols = _listed(unknown)
+    if len(set(symbols)) != len(symbols):
+        raise RewriteError("needs distinct unknowns in the array")
+    return symbols
+
+
 def _listed(unknowns: ArrayValue) -> list[sympy.Symbol]:
     if not unknowns.items:
         raise RewriteError("needs at least one unknown in the array")
@@ -499,6 +549,7 @@ def solve(value: Any, unknown: Any = None, *, domain: str = "complex", dimension
     return _solution_set(solutions, origin, solution_dims)
 
 
+@_function_operation
 def preimages(fn: Any, target: Any, domain: str = "complex") -> Any:
     if not isinstance(domain, str) or domain not in ("complex", "real"):
         raise RewriteError('needs domain="complex" or domain="real"')
@@ -507,12 +558,12 @@ def preimages(fn: Any, target: Any, domain: str = "complex") -> Any:
 
 
 def _preimages(fn: Any, target: Any, domain: str) -> tuple[Source, sympy.Set]:
-    from .runtime import AdFunction, PRELUDE, PreludeFn, value_to_sympy
+    from .runtime import PRELUDE, PreludeFn, value_to_sympy
     from .dimensional import has_units
     point = value_to_sympy(target)
     if point.is_finite is False:
         raise RewriteError("needs a finite numeric target")
-    if isinstance(fn, AdFunction) and len(fn.params) == 1:
+    if _is_function(fn) and len(fn.params) == 1:
         if has_units(fn.body.node, fn.closure._lookup):
             raise RewriteError("dimensioned inverse functions are unsupported")
         origin = _function_source(fn)
