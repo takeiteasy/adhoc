@@ -1,0 +1,9 @@
+x = 2
+\tex(\expr(x²(3)))
+\tex(\expr(x⁻¹(3)))
+\tex(\expr(\sin²(x)))
+\tex(\expr(f²(x)))
+\tex(\expr(f⁻¹(x)))
+
+f(y) = y²(3) + x²(4)
+\tex(f)

@@ -168,6 +168,7 @@ start, `x=3` remains a binding/check and `f(x)=body` remains a definition.
 | Tensor | `[1, 2; 3, 4]` | Uniform numeric entries; 1-based indexing, transpose, scalar broadcast and elementwise arithmetic |
 | Array | `⟨1, [1, 2], "a"⟩` | Ordered values of any kind; ragged nesting, indexing and length |
 | Set | `{3, 1, 3, 2}` | Deduplication; equality ignores order; `∪ ∩ ∖ ∈ ⊆` |
+| [Symbolic solution set](solution-sets.md) | `\solve(\expr(\sin(x)))` | Non-enumerating; numeric membership, display and TeX |
 | Range | `1..10`, `1,3..10`, `1..` | Lazy progression; inclusive endpoint when reached; inferred step or infinite extent |
 
 Tensors nest to higher orders. `m[2, 1]` indexes a matrix; `m'` transposes it.
@@ -224,6 +225,7 @@ membership. Whole-line integration requires both tails to converge independently
 | `\reduce(\expr((\fn(x) x + 1)(2)))` | Beta-reduce to `\expr((2 + 1))` |
 | `\solve(\expr(x^2 - 4))` | Solve symbolically: `{-2, 2}` |
 | `\solve(\expr(x^2 = 4))` | Solve an equation quote: `{-2, 2}` |
+| `\solve(\expr(x^2+1), \domain="real")` | Select real solutions: `{}` |
 | `\eval(\expr(x^2 = 4), x=2)` | Compare both sides without binding: `true` |
 | `\simplify(\expr(x+x = y+y))` | Rewrite both sides: `\expr(((2 * x) = (2 * y)))` |
 | ``\solve(⟨`(x+y=3), `(x-y=1)⟩, ⟨`(x), `(y)⟩)`` | Solve a system: `{⟨2, 1⟩}` |

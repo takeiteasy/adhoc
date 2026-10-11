@@ -135,4 +135,88 @@ def test_inverse_call_renders_as_inverse_function():
     assert tex(r"\tex(\expr((x ↦ 2x)⁻¹(6)))") == r"\left(x \mapsto 2 x\right)^{-1}\left(6\right)"
     assert tex(r"\tex(\expr(f⁻¹(y)))") == r"f^{-1}\left(y\right)"
     assert tex(r"\tex(\expr(\sin⁻¹(y)))") == r"\sin^{-1}\left(y\right)"
-    assert tex(r"\tex(\expr(f²(y)))") == r"\left(f\left(y\right)\right)^{2}"
+    assert tex(r"\tex(\expr(f²(y)))") == r"f^{2}\left(y\right)"
+
+
+@pytest.mark.parametrize("source, expected", [
+    (r"\sin²(x)", r"\sin^{2}\left(x\right)"),
+    (r"\cos³(x+1)", r"\cos^{3}\left(x + 1\right)"),
+    (r"f²(y)", r"f^{2}\left(y\right)"),
+    (r"\myfn²(x, \a=1)", r"\operatorname{myfn}^{2}\left(x, a = 1\right)"),
+    (r"(x ↦ 2x)²(y)", r"\left(x \mapsto 2 x\right)^{2}\left(y\right)"),
+    (r"(f ∘ g)²(y)", r"\left(f \circ g\right)^{2}\left(y\right)"),
+    (r"\sin(x)^2", r"\sin\left(x\right)^{2}"),
+    (r"(2+1)²(x+1)", r"\left(2 + 1\right)^{2} \cdot \left(x + 1\right)"),
+    (r"2/(2+1)²(x+1)", r"\frac{2}{\left(2 + 1\right)^{2} \cdot \left(x + 1\right)}"),
+])
+def test_powered_heads(source, expected):
+    assert tex(r"\tex(\expr(" + source + "))") == expected
+
+
+@pytest.mark.parametrize("source, expected", [
+    (r"x²(3)", r"x^{2} \cdot 3"),
+    (r"x⁻¹(3)", r"x^{-1} \cdot 3"),
+    (r"x²(y+1)", r"x^{2} \cdot \left(y + 1\right)"),
+    (r"(x+1)²(3)", r"\left(x + 1\right)^{2} \cdot 3"),
+    (r"2*x²(3)", r"2 \left(x^{2} \cdot 3\right)"),
+    (r"(x²(3))^2", r"\left(x^{2} \cdot 3\right)^{2}"),
+    (r"\sin²(x²(3))", r"\sin^{2}\left(x^{2} \cdot 3\right)"),
+])
+def test_numeric_head_powers(source, expected):
+    env = {}
+    run_source("x=2", env)
+    assert tex(r"\tex(\expr(" + source + "))", env) == expected
+
+
+def test_scope_applies_to_aliases_and_higher_order_tex_calls():
+    env = {}
+    run_source(r"t=\tex; x=2", env)
+    assert tex(r"t(`(x²(3)))", env) == r"x^{2} \cdot 3"
+    run_source("f(x)=t(`(x²(3)))", env)
+    assert tex("f(4)", env) == r"x^{2} \cdot 3"
+    assert r"x^{2} \\cdot 3" in run_source(r"\map(t, ⟨`(x²(3))⟩)", env)[-1]
+
+
+def test_function_rendering_uses_defining_scope_and_masks_parameters():
+    env = {}
+    run_source("x=2; a=3\nf(x)=x²(3)+a²(4)", env)
+    assert tex(r"\tex(f)", env) == r"f\left(x\right) = x^{2}\left(3\right) + a^{2} \cdot 4"
+    run_source(r"g(a)=\tex(f)", env)
+    assert tex("g(x ↦ x)", env) == r"f\left(x\right) = x^{2}\left(3\right) + a^{2} \cdot 4"
+
+
+@pytest.mark.parametrize("source, expected", [
+    (r"x ↦ x²(3)", r"x \mapsto x^{2}\left(3\right)"),
+    (r"Σ(x=1..3) x²(3)", r"\sum_{x=1}^{3} x^{2}\left(3\right)"),
+    (r"\lim(x=0) x²(3)", r"\lim_{x \to 0} x^{2}\left(3\right)"),
+    (r"∫(x=0..1) x²(3)", r"\int_{0}^{1} x^{2}\left(3\right) \, dx"),
+    (r"∂(x=1) x²(3)", r"\left.\frac{d}{dx}\left(x^{2}\left(3\right)\right)\right|_{x=1}"),
+    (r"{x²(3) | x ∈ 1..3}", r"\{ x^{2}\left(3\right) \mid x \in \{1, \ldots, 3\} \}"),
+])
+def test_binders_mask_outer_bindings(source, expected):
+    env = {}
+    run_source("x=2", env)
+    assert tex(r"\tex(`(" + source + "))", env) == expected
+
+
+def test_rendering_does_not_invoke_heads_arguments_or_exponents():
+    called = []
+
+    def side_effect(*args):
+        called.append(args)
+        return 2
+
+    env = {"f": side_effect}
+    assert tex(r"\tex(`(f²(f(1))))", env) == r"f^{2}\left(f\left(1\right)\right)"
+    assert tex(r"\tex(`((f(1))²(f(2))))", env) == r"f\left(1\right)^{2} \cdot f\left(2\right)"
+    assert tex(r"\tex(`(fᶠ⁽¹⁾(f(2))))", env) == r"f^{f\left(1\right)}\left(f\left(2\right)\right)"
+    assert called == []
+
+
+def test_tex_scope_is_reset_after_a_call():
+    from adhoc.parser import parse_program
+    from adhoc.tex import node_tex
+    env = {}
+    run_source("x=2", env)
+    assert tex(r"\tex(`(x²(3)))", env) == r"x^{2} \cdot 3"
+    assert node_tex(parse_program("x²(3)")) == r"x^{2}\left(3\right)"

@@ -135,7 +135,6 @@ See [operator values](grammar.md#operator-values) for application rules.
 - Set-builder separators and absolute-value bars share `|`. Write `{a*|b|}`
   for a product; `{a |b|}` is read as a set-builder.
 - `f⁻¹` gives one branch — [#17](https://github.com/takeiteasy/adhoc/issues/17).
-- `\tex` of function powers: `\sin²(x)` and non-callable heads render as a power of the call — [#16](https://github.com/takeiteasy/adhoc/issues/16).
 
 [^superscript]: A run of digits, letters, `⁺ ⁻ ⁽ ⁾` is one exponent, read as its ASCII
     spelling: `x⁻¹⁰` is `x^-10`, `2ⁿᵏ` is `2^(n k)`. Glyphs exist for every letter but `q`
@@ -154,6 +153,7 @@ See [operator values](grammar.md#operator-values) for application rules.
     callable must be exactly `⁻¹`. On `\sin \cos \tan \exp \sinh \cosh \tanh` or
     their inverses, this gives the inverse pair (`\sin⁻¹` is `\asin`, also without a call). Any other
     function gives its numeric inverse ([calculus](calculus.md)), and `\sin⁻²(x)` is an error.
+    [LaTeX output](tex.md#function-powers) distinguishes function powers from numeric products.
 [^logic]: `∧` `∨` and `→` skip their right operand once the left decides (`false ∧ …`,
     `true ∨ …`, `false → …`); a non-boolean operand is a typed error at that operand. `∀` and
     `∃` are special forms like `\sum` ([special forms](grammar.md#special-forms-folds-and-limits)) and use the same

@@ -174,6 +174,7 @@ protected or already-visible name is an error. The one shadowable prelude name i
 """
 
 from collections.abc import Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
@@ -196,6 +197,7 @@ from . import tensor as tn
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
+from .solution_set import SymbolicSetValue
 from .expression import ExpressionValue, show_quote
 from .syntax import OP_SYMBOLS, Seq, is_short_name
 from .algebraic import Algebraic
@@ -204,7 +206,7 @@ from .symbolic import DomainError, Symbolic, Unrepresentable
 from .tensor import ArrayValue, SetValue, TensorError, TensorValue
 
 AdValue = (int | Fraction | float | complex | bool | str | Gaussian | Symbolic | Algebraic | RRA
-           | ExpressionValue | TensorValue | ArrayValue | SetValue)
+           | ExpressionValue | TensorValue | ArrayValue | SetValue | SymbolicSetValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -240,6 +242,9 @@ RESERVED_NAMES = frozenset({"infix", "let", "expr", "eval", "contract", "times",
                            "supseteq", "supset"})
 
 
+_CALL_ENGINE = ContextVar("adhoc_call_engine", default=None)
+
+
 class PreludeFn:
     """A seam-native prelude builtin (`\\sqrt`, `\\sin`, ...): the symbolic tier's
     in-place replacement for the original float-tier `math.*` aliases. Displays
@@ -253,8 +258,8 @@ class PreludeFn:
         # app()'s error prefix names the builtin, not its class.
         self.__name__ = name
 
-    def __call__(self, *args):
-        return self.fn(*args)
+    def __call__(self, *args, **kwargs):
+        return self.fn(*args, **kwargs)
 
 
 _CMATH_FNS: dict[str, Callable[[complex], complex]] = {
@@ -479,10 +484,11 @@ def _rewrite_call(name: str, operation: Callable[[sympy.Expr], sympy.Expr]) -> P
     return PreludeFn(name, call)
 
 
-def _solve_call(value: Any, unknown: Any = None) -> SetValue:
+def _solve_call(value: Any, unknown: Any = None, *,
+                domain: str = "complex") -> SetValue | SymbolicSetValue:
     from . import rewrite
     try:
-        return rewrite.solve(value, unknown)
+        return rewrite.solve(value, unknown, domain=domain)
     except rewrite.RewriteError as error:
         raise NumError(f"\\solve {error}") from None
 
@@ -510,12 +516,15 @@ def _transpose_call(value: Any) -> AdValue:
 def _tex_call(value: Any) -> str:
     from .tex import TexError, value_tex
     try:
-        return value_tex(value, nshow)
+        engine = _CALL_ENGINE.get()
+        return value_tex(value, nshow, lookup=engine._lookup if engine is not None else None)
     except TexError as e:
         raise NumError(e.args[0]) from None
 
 
 def _len_call(value: Any) -> int:
+    if isinstance(value, SymbolicSetValue):
+        raise NumError("symbolic sets do not support length")
     if isinstance(value, TensorValue):
         return value.shape[0]
     if isinstance(value, ArrayValue | SetValue):
@@ -717,7 +726,7 @@ def _reject_non_numeric(*vals: AdValue) -> None:
     for v in vals:
         if isinstance(v, ArrayValue):
             raise NumError("arrays do not support arithmetic")
-        if isinstance(v, SetValue):
+        if isinstance(v, SetValue | SymbolicSetValue):
             raise NumError("sets do not support arithmetic")
         if isinstance(v, bool):
             raise NumError("booleans are not numbers")
@@ -1089,6 +1098,8 @@ def _dedup(items) -> tuple:
 
 
 def neq(a: AdValue, b: AdValue) -> bool:
+    if isinstance(a, SymbolicSetValue) or isinstance(b, SymbolicSetValue):
+        return a == b
     if isinstance(a, IntervalValue) or isinstance(b, IntervalValue):
         return (isinstance(a, IntervalValue) and isinstance(b, IntervalValue)
                 and neq(a.start, b.start)
@@ -1171,6 +1182,8 @@ def _show_tensor(t: TensorValue, digits: int | None) -> str:
 
 
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
+    if isinstance(v, SymbolicSetValue):
+        return v.render()
     if isinstance(v, SetValue):
         return "{" + ", ".join(nshow(x, digits) for x in v.items) + "}"
     if isinstance(v, ArrayValue):
@@ -1868,7 +1881,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
         raise NumError("the call returned nothing")
     if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | Derivative | Inverse
                       | ExpressionValue
-                      | TensorValue | ArrayValue | SetValue):
+                      | TensorValue | ArrayValue | SetValue | SymbolicSetValue):
         return value
     if isinstance(value, RangeValue | IntervalValue | LazySeq):
         return value
@@ -2043,6 +2056,8 @@ def ncompare(op: str, a: AdValue, b: AdValue) -> bool:
 
 
 def _need_sets(symbol: str, a: AdValue, b: AdValue) -> None:
+    if isinstance(a, SymbolicSetValue) or isinstance(b, SymbolicSetValue):
+        raise NumError(f"`{symbol}` does not support symbolic sets")
     if not isinstance(a, SetValue) or not isinstance(b, SetValue):
         raise NumError(f"`{symbol}` needs two sets, got {nshow(a)} and {nshow(b)}")
 
@@ -2086,6 +2101,8 @@ def _range_contains(r: RangeValue, x: AdValue) -> bool:
 
 
 def _membership(symbol: str, value: AdValue, collection: AdValue) -> bool:
+    if isinstance(collection, SymbolicSetValue):
+        return collection.contains(value)
     if isinstance(collection, SetValue | ArrayValue):
         return _contains(collection.items, value)
     if isinstance(collection, RangeValue):
@@ -2553,6 +2570,8 @@ def _keeps(predicate: Any, x: Any) -> bool:
 def _elements(value: Any) -> Any:
     """The elements a range or collection iterates (tensors by outer slice), or
     None when the value is not iterable."""
+    if isinstance(value, SymbolicSetValue):
+        raise NumError("symbolic sets cannot be enumerated")
     if isinstance(value, RangeValue | LazySeq):
         return value
     if isinstance(value, TensorValue):
@@ -3539,6 +3558,8 @@ class Engine:
         display_name = _display_name(name, var_spelling)
         if self._protected(name):
             self._fail(f"`{display_name}` is protected", sid)
+        if isinstance(value, SymbolicSetValue):
+            self._fail("symbolic sets cannot be enumerated", sid)
         items = _elements(value)
         if items is None:
             self._fail(f"{label} folds over a range or collection, got {nshow(value)}", sid)
@@ -3720,6 +3741,8 @@ class Engine:
         label = "set-builder"
         if self._protected(name):
             self._fail(f"`{_display_name(name, var_spelling)}` is protected", sid)
+        if isinstance(domain, SymbolicSetValue):
+            self._fail("symbolic sets cannot be enumerated", sid)
         items = _elements(domain)
         if items is None:
             self._fail(f"{label} ranges over a range or collection, got {nshow(domain)}", sid)
@@ -3802,7 +3825,7 @@ class Engine:
                 return tn.index(head, selectors)
             except TensorError as e:
                 self._fail(e.args[0], sid)
-        if isinstance(head, SetValue):
+        if isinstance(head, SetValue | SymbolicSetValue):
             self._fail("sets are unordered and cannot be indexed", sid)
         if isinstance(head, ArrayValue):
             if len(items) != 1:
@@ -4028,6 +4051,7 @@ class Engine:
         (`\\py("math.isclose")(1, 2, \\rel_tol=0.5)`); user-defined functions reject
         them — their parameters are positional."""
         if callable(fn):
+            token = _CALL_ENGINE.set(self)
             try:
                 return _invoke(fn, args, kwargs, spelling)
             except NumError as e:
@@ -4035,6 +4059,8 @@ class Engine:
                 if isinstance(fn, PreludeFn):
                     message = _display_builtin_error(message, fn.name, spelling)
                 self._fail(message, sid)
+            finally:
+                _CALL_ENGINE.reset(token)
         if not kwargs and len(args) == 1:
             return self.mul(fn, args[0], sid)
         self._fail(f"{nshow(fn)} is not a function", sid)

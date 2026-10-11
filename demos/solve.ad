@@ -1,0 +1,13 @@
+-- Scalar families remain symbolic; membership does not enumerate them.
+s = \solve(\expr(\sin(x) = 0))
+\pi ∈ s
+\pi/2 ∉ s
+\tex(s)
+
+r = \solve(\expr(e^x = 5))
+\ln(5) + 2*\pi*i ∈ r
+\solve(\expr(e^x = 5), \domain="real")
+\solve(\expr(x^2 + 1), \domain="real")
+\solve(\expr(x=x), \expr(x), \domain="real")
+
+\solve(⟨`(x^3-1), `(y=x)⟩, ⟨`(x), `(y)⟩, \domain="real")

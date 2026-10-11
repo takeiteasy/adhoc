@@ -382,20 +382,24 @@ def _candidates(origin: Source) -> list[sympy.Symbol]:
     return names
 
 
-def solve(value: Any, unknown: Any = None) -> Any:
-    """Solve an equation or `value = 0` over the complex numbers, as an ad set."""
+def solve(value: Any, unknown: Any = None, *, domain: str = "complex") -> Any:
+    """Solve an equation or `value = 0` in the selected domain, as an ad set."""
     from .runtime import SetValue, _dedup
+    from .solution_set import SymbolicSetValue
+    if not isinstance(domain, str) or domain not in ("complex", "real"):
+        raise RewriteError('needs domain="complex" or domain="real"')
     if isinstance(value, ArrayValue) or isinstance(unknown, ArrayValue):
-        return _solve_system(value, unknown)
+        return _solve_system(value, unknown, domain)
     origin = _bridge_equation(value)
     symbol = _unknown(origin, unknown)
-    solutions = run_limited(sympy.solveset, origin.expr, symbol, sympy.S.Complexes)
+    solutions = run_limited(sympy.solveset, origin.expr, symbol,
+                            sympy.S.Reals if domain == "real" else sympy.S.Complexes)
     if solutions is sympy.S.EmptySet:
         return SetValue(())
     if not isinstance(solutions, sympy.FiniteSet):
-        if isinstance(solutions, sympy.ConditionSet):
+        if not isinstance(solutions, sympy.Set) or solutions.has(sympy.ConditionSet):
             raise RewriteError("cannot solve this equation in closed form")
-        raise RewriteError("has infinitely many solutions")
+        return SymbolicSetValue(solutions, tuple(origin.bridge.nodes.items()))
     items = []
     for solution in sorted(solutions, key=sympy.default_sort_key):
         items.append(_solution_value(solution, origin.bridge, origin.source))
@@ -412,7 +416,7 @@ def _solution_value(solution: sympy.Expr, bridge: Bridge, source: str) -> Any:
     return quote(solution, bridge, source)
 
 
-def _solve_system(value: Any, unknowns: Any) -> Any:
+def _solve_system(value: Any, unknowns: Any, domain: str) -> Any:
     from .expression import show
     from .parser import parse_program
     from .runtime import SetValue, _dedup
@@ -425,7 +429,7 @@ def _solve_system(value: Any, unknowns: Any) -> Any:
     if not values:
         raise RewriteError("needs at least one equation in the array")
     equations = [_bridge_equation(item).expr for item in values]
-    solutions = run_limited(_system_solutions, equations, symbols)
+    solutions = run_limited(_system_solutions, equations, symbols, domain)
     bridge = Bridge(Span(0, 0))
     items = []
     for row in solutions:
@@ -440,7 +444,8 @@ def _solve_system(value: Any, unknowns: Any) -> Any:
     return SetValue(_dedup(items))
 
 
-def _system_solutions(equations: list[sympy.Expr], symbols: list[sympy.Symbol]) -> list:
+def _system_solutions(equations: list[sympy.Expr], symbols: list[sympy.Symbol],
+                      domain: str = "complex") -> list:
     from sympy.solvers.solveset import NonlinearError
     try:
         try:
@@ -477,6 +482,12 @@ def _system_solutions(equations: list[sympy.Expr], symbols: list[sympy.Symbol]) 
             raise RewriteError("has infinitely many solutions")
         if any(item.has(sympy.nan, sympy.zoo, sympy.oo, -sympy.oo) for item in row):
             raise RewriteError("cannot solve this system in closed form")
+        if domain == "real":
+            reality = [sympy.simplify(item).is_real for item in row]
+            if any(real is False for real in reality):
+                continue
+            if any(real is None for real in reality):
+                raise RewriteError("cannot determine whether this system solution is real")
         accepted.append(row)
     return accepted
 

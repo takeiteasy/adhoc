@@ -304,6 +304,7 @@ Arguments convert in the other direction:
 | Tensor | Nested row-major lists |
 | Array | List of converted elements |
 | Set | `frozenset`; list when an element is unhashable |
+| Symbolic solution set | Unchanged non-enumerating value |
 | Other value | Unchanged |
 
 ```text

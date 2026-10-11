@@ -30,6 +30,7 @@ See [runtime lowering](lowering.md) for the operation mapping.
 | `expression` | Frozen expression values and parseable display |
 | `reduction` | Beta reduction of quoted expressions |
 | `rewrite` | Bridge between quotes or function bodies and SymPy |
+| `solution_set` | Non-enumerating symbolic solution sets, membership and rendering |
 | `tex` | LaTeX rendering of syntax and values |
 | `tensor` | Tensors, arrays and sets; indexing, slicing and tensor operations |
 | `linalg` | Matrix elimination, constructors and tensor products |

@@ -2,6 +2,8 @@
 
 Formatting only: nothing here evaluates or does arithmetic on a user value."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from fractions import Fraction
 import math
 
@@ -49,6 +51,7 @@ _CMP = {
 _PAIRS = {"abs": ("|", "|"), "norm": (r"\lVert", r"\rVert"), "floor": (r"\lfloor", r"\rfloor"),
           "ceil": (r"\lceil", r"\rceil")}
 _ATOM, _UNARY, _POW, _LOOSE, _COMPARE = 16, 14, 15, 2, 9
+_SCOPE = ContextVar("adhoc_tex_scope", default=(None, frozenset()))
 
 
 def _text(s: str) -> str:
@@ -127,6 +130,40 @@ def _head(head: Node) -> str:
     return node_tex(head, _ATOM)
 
 
+@contextmanager
+def _scope(lookup, bound=frozenset()):
+    token = _SCOPE.set((lookup, frozenset(bound)))
+    try:
+        yield
+    finally:
+        _SCOPE.reset(token)
+
+
+def _bound_tex(node: Node, names, prec: int = 0) -> str:
+    lookup, bound = _SCOPE.get()
+    with _scope(lookup, bound | frozenset(names)):
+        return node_tex(node, prec)
+
+
+def _numeric_head(node: Node) -> bool:
+    from .runtime import _NUMERIC_TYPES
+    match node:
+        case NumLit():
+            return True
+        case Var(ch=name) | BackslashRef(name=name):
+            lookup, bound = _SCOPE.get()
+            if lookup is None or name in bound:
+                return False
+            value = lookup(name)
+            return isinstance(value, _NUMERIC_TYPES) and not isinstance(value, bool)
+        case UnOp(op=UnaryOperator.NEG, operand=operand):
+            return _numeric_head(operand)
+        case BinOp(op=op, lhs=lhs, rhs=rhs) if op in (
+                BinOperator.ADD, BinOperator.SUB, BinOperator.MUL, BinOperator.DIV, BinOperator.POW):
+            return _numeric_head(lhs) and _numeric_head(rhs)
+    return False
+
+
 def node_tex(node: Node, prec: int = 0) -> str:
     """The LaTeX for an expression node, parenthesized where `prec` (the surrounding
     operator's binding strength) requires it."""
@@ -194,13 +231,12 @@ def node_tex(node: Node, prec: int = 0) -> str:
         case Call(head=head, args=args, kwargs=kwargs):
             values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
             return rf"{_head(head)}\left({', '.join(values)}\right)"
-        case PowCall(head=head, exponent=UnOp(op=UnaryOperator.NEG, operand=NumLit(text="1")),
-                     args=args, kwargs=kwargs):
-            values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
-            return rf"{_head(head)}^{{-1}}\left({', '.join(values)}\right)"
         case PowCall(head=head, exponent=exponent, args=args, kwargs=kwargs):
-            call = Call(head=head, args=args, kwargs=kwargs, span=node.span)
-            return rf"\left({node_tex(call)}\right)^{{{node_tex(exponent)}}}"
+            if _numeric_head(head) and len(args) == 1 and not kwargs:
+                text = rf"{node_tex(head, _ATOM)}^{{{node_tex(exponent)}}} \cdot {node_tex(args[0], 13)}"
+                return _wrap(text, prec, 12)
+            values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
+            return rf"{_head(head)}^{{{node_tex(exponent)}}}\left({', '.join(values)}\right)"
         case KwArg(name=name, value=value):
             label = _name(name) if is_short_name(name) else _long_name(name)
             return f"{label} = {node_tex(value)}"
@@ -210,10 +246,10 @@ def node_tex(node: Node, prec: int = 0) -> str:
             return rf"\operatorname{{expr}}\left({node_tex(body)}\right)"
         case Fold(op=op, var=var, bound=bound, body=body, member_binder=member):
             name = _name(var) if is_short_name(var) else _long_name(var)
-            body_text = node_tex(body, 12)
+            body_text = _bound_tex(body, (var,), 12)
             if op in (BinOperator.AND, BinOperator.OR):
                 quantifier = r"\forall" if op is BinOperator.AND else r"\exists"
-                return _wrap(rf"{quantifier} {name} \in {node_tex(bound)},\ {node_tex(body)}",
+                return _wrap(rf"{quantifier} {name} \in {node_tex(bound)},\ {_bound_tex(body, (var,))}",
                              prec, _LOOSE)
             symbol = r"\sum" if op is BinOperator.ADD else r"\prod"
             limits = _bounds(bound)
@@ -223,22 +259,22 @@ def node_tex(node: Node, prec: int = 0) -> str:
             return _wrap(rf"{symbol}_{{{name} \in {node_tex(bound)}}} {body_text}", prec, _LOOSE)
         case Limit(var=var, point=point, body=body):
             name = _name(var) if is_short_name(var) else _long_name(var)
-            return _wrap(rf"\lim_{{{name} \to {node_tex(point)}}} {node_tex(body, 12)}",
+            return _wrap(rf"\lim_{{{name} \to {node_tex(point)}}} {_bound_tex(body, (var,), 12)}",
                          prec, _LOOSE)
         case Diff(var=var, point=point, body=body, order=order):
             name = _name(var) if is_short_name(var) else _long_name(var)
             degree = "" if order is None else rf"^{{{node_tex(order)}}}"
-            return _wrap(rf"\left.\frac{{d{degree}}}{{d{name}{degree}}}\left({node_tex(body)}\right)\right|_{{{name}={node_tex(point)}}}",
+            return _wrap(rf"\left.\frac{{d{degree}}}{{d{name}{degree}}}\left({_bound_tex(body, (var,))}\right)\right|_{{{name}={node_tex(point)}}}",
                          prec, _LOOSE)
         case Integral(var=var, bound=bound, body=body):
             name = _name(var) if is_short_name(var) else _long_name(var)
             limits = _bounds(bound)
             scope = f"_{{{limits[0]}}}^{{{limits[1]}}}" if limits else rf"_{{{node_tex(bound)}}}"
-            return _wrap(rf"\int{scope} {node_tex(body)} \, d{name}", prec, _LOOSE)
+            return _wrap(rf"\int{scope} {_bound_tex(body, (var,))} \, d{name}", prec, _LOOSE)
         case Lambda(params=params, body=body):
             names = [_name(p) if is_short_name(p) else _long_name(p) for p in params]
             head = names[0] if len(names) == 1 else rf"\left({', '.join(names)}\right)"
-            return _wrap(rf"{head} \mapsto {node_tex(body)}", prec, _LOOSE)
+            return _wrap(rf"{head} \mapsto {_bound_tex(body, params)}", prec, _LOOSE)
         case TensorLit(items=items, row_length=row_length):
             if row_length is None:
                 return _matrix([[node_tex(i)] for i in items])
@@ -250,11 +286,13 @@ def node_tex(node: Node, prec: int = 0) -> str:
             return r"\{" + _args(items) + r"\}" if items else r"\emptyset"
         case SetBuilder(var=var, domain=domain, element=element, guards=guards):
             name = _name(var) if is_short_name(var) else _long_name(var)
-            tests = _args(guards)
+            lookup, bound = _SCOPE.get()
+            with _scope(lookup, bound | {var}):
+                tests = _args(guards)
             if element is None:
                 return rf"\{{ {name} \in {node_tex(domain)} \mid {tests} \}}"
             tail = f", {tests}" if guards else ""
-            return rf"\{{ {node_tex(element)} \mid {name} \in {node_tex(domain)}{tail} \}}"
+            return rf"\{{ {_bound_tex(element, (var,))} \mid {name} \in {node_tex(domain)}{tail} \}}"
         case WholeAxis():
             return r"\ldots"
         case Index(head=head, items=items):
@@ -284,39 +322,49 @@ def _scalar(value, show) -> str:
     return text.replace("...", r"\ldots").replace("Inf", r"\infty").replace("NaN", r"\mathrm{NaN}")
 
 
-def value_tex(value, show) -> str:
+def value_tex(value, show, *, lookup=None) -> str:
+    with _scope(lookup):
+        return _value_tex(value, show)
+
+
+def _value_tex(value, show) -> str:
     """The LaTeX for an evaluated value; `show` is the runtime's display function."""
     from .expression import ExpressionValue
+    from .solution_set import SymbolicSetValue
     from .runtime import AdFunction, IntervalValue, RangeValue
+    if isinstance(value, SymbolicSetValue):
+        return value.render(tex=True)
     if isinstance(value, ExpressionValue):
         return node_tex(value.node)
     if isinstance(value, AdFunction):
         params = [_name(p) if is_short_name(p) else _long_name(p) for p in value.params]
+        with _scope(value.closure._lookup, value.params):
+            body = node_tex(value.body.node)
         if not value.name:
             head = params[0] if len(params) == 1 else rf"\left({', '.join(params)}\right)"
-            return rf"{head} \mapsto {node_tex(value.body.node)}"
+            return rf"{head} \mapsto {body}"
         label = _name(value.name) if is_short_name(value.name) else _long_name(value.name)
-        return rf"{label}\left({', '.join(params)}\right) = {node_tex(value.body.node)}"
+        return rf"{label}\left({', '.join(params)}\right) = {body}"
     if isinstance(value, IntervalValue):
-        start, end = value_tex(value.start, show), value_tex(value.end, show)
+        start, end = _value_tex(value.start, show), _value_tex(value.end, show)
         left = "(" if isinstance(value.start, float) and math.isinf(value.start) else "["
         right = ")" if isinstance(value.end, float) and math.isinf(value.end) else "]"
         return rf"\left{left}{start}, {end}\right{right}"
     if isinstance(value, RangeValue):
-        parts = [value_tex(value.start, show)]
+        parts = [_value_tex(value.start, show)]
         if value.second is not None:
-            parts.append(value_tex(value.second, show))
+            parts.append(_value_tex(value.second, show))
         parts.append(r"\ldots")
         if value.end is not None:
-            parts.append(value_tex(value.end, show))
+            parts.append(_value_tex(value.end, show))
         return r"\{" + ", ".join(parts) + r"\}"
     if isinstance(value, tn.TensorValue):
         if value.order == 2:
-            return _matrix([[value_tex(x, show) for x in tn.slices(row)] for row in tn.slices(value)])
-        return _matrix([[value_tex(x, show)] for x in tn.slices(value)])
+            return _matrix([[_value_tex(x, show) for x in tn.slices(row)] for row in tn.slices(value)])
+        return _matrix([[_value_tex(x, show)] for x in tn.slices(value)])
     if isinstance(value, tn.SetValue):
-        return r"\{" + ", ".join(value_tex(x, show) for x in value.items) + r"\}" \
+        return r"\{" + ", ".join(_value_tex(x, show) for x in value.items) + r"\}" \
             if value.items else r"\emptyset"
     if isinstance(value, tn.ArrayValue):
-        return rf"\langle {', '.join(value_tex(x, show) for x in value.items)} \rangle"
+        return rf"\langle {', '.join(_value_tex(x, show) for x in value.items)} \rangle"
     return _scalar(value, show)

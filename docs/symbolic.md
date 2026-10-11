@@ -2,14 +2,15 @@
 
 `\simplify`, `\expand`, `\factor`, `\solve`, `\deriv` and `\grad` rewrite an
 expression quote or a user function using SymPy. Results are expression quotes,
-sets of solutions or arrays of derivative quotes. Free names remain symbols.
+finite or symbolic solution sets, or arrays of derivative quotes. Free names remain symbols.
 
 | Function | Result |
 |---|---|
 | `\simplify(e)` | Simplified expression quote |
 | `\expand(e)` | Quote with products and powers expanded |
 | `\factor(e)` | Factored quote; numeric arguments use [prime factoring](stdlib.md#factoring) |
-| `\solve(e)` | Set of complex solutions to an equation quote, or to `e = 0` |
+| `\solve(e)` | Complex solution set for an equation quote, or for `e = 0` |
+| `\solve(e, \domain="real")` | Real solution set |
 | `\solve(⟨e₁, e₂⟩, ⟨\expr(x), \expr(y)⟩)` | Set of solution arrays for simultaneous equations |
 | `\deriv(e)` | Derivative quote; several free names give a gradient |
 | `\grad(e)` | Array of first partial-derivative quotes |
@@ -88,21 +89,33 @@ Numeric derivatives at a point use `f'` or `\diff`; see [calculus](calculus.md).
 ## Solving
 
 `\solve` infers the unknown when there is one free name or one function parameter.
-With several names, select one explicitly. It returns a set:
+With several names, select one explicitly. The default domain is complex; pass
+`\domain="real"` to select real solutions. The keyword applies to scalar
+solves and systems. It returns a set:
 
 | Solution | Representation |
 |---|---|
 | Exact number or closed form | Numeric value, such as `2`, `i` or exact `√2` |
 | Depends on other names | Expression quote |
 | No solutions | `{}` |
+| Infinite scalar family or domain-restricted scalar result | Non-enumerating [symbolic set](solution-sets.md) |
 
 ```text
 f(x) = x^2 - 9
 \solve(f)              ->  = {-3, 3}
 ```
 
-Infinite solution families, or solutions SymPy cannot express in closed form,
-produce typed errors.
+```text
+\solve(\expr(x^2 + 1), \domain="real") -> = {}
+\solve(\expr(e^x = 5), \domain="real") -> = {1.6094379124341...}
+s = \solve(\expr(\sin(x) = 0))
+\pi ∈ s                              -> = true
+```
+
+Scalar infinite families remain symbolic rather than being enumerated. An identity
+such as `\solve(\expr(x=x), \expr(x))` returns the whole selected domain.
+Unresolved equations produce closed-form errors; see
+[solution-set limitations](solution-sets.md#limitations).
 
 ## Equation quotes
 
@@ -173,9 +186,18 @@ unknowns must be distinct quoted names. A single quote or function also accepts
 an unknown array. Equation and unknown counts need not match: inconsistent
 systems return `{}`, while redundant equations can still give isolated solutions.
 
-Only finite, isolated solution sets are returned. An unconstrained unknown or a
+Systems return only finite, isolated solution sets. An unconstrained unknown or a
 family such as `x + y = 1` produces an infinite-solutions error. Unresolved
 solutions produce a closed-form error; see [limitations](#limitations).[^systems]
+
+With `\domain="real"`, a solution row is returned only when every coordinate is
+provably real. Rows containing a provably non-real coordinate are discarded. An
+undecidable coordinate, such as a free parameter `a`, produces a typed realness
+error. Parameters do not acquire real assumptions automatically.
+
+```text
+\solve(⟨`(x^2+1), `(y=x)⟩, ⟨`(x), `(y)⟩, \domain="real") -> = {}
+```
 
 ## Inverses
 
@@ -195,7 +217,8 @@ timeout as no exact form and use their numeric path.[^worker]
 
 | Limit | Ticket |
 |---|---|
-| Infinite solution families are errors; no real-domain option | [#15](https://github.com/takeiteasy/adhoc/issues/15) |
+| Infinite system families are errors | [#43](https://github.com/takeiteasy/adhoc/issues/43) |
+| Conditional real solutions are unsupported; undecidable system realness is an error | [#44](https://github.com/takeiteasy/adhoc/issues/44) |
 | No time limit on Windows | [#19](https://github.com/takeiteasy/adhoc/issues/19) |
 | Gradients are arrays of quotes without vector algebra | [#18](https://github.com/takeiteasy/adhoc/issues/18) |
 

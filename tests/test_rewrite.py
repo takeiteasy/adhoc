@@ -90,7 +90,6 @@ def test_equation_roots_retain_exact_values():
 
 @pytest.mark.parametrize("source, fragment", [
     (r"\solve(`(a*x=b))", "needs the unknown"),
-    (r"\solve(`(x=x), `(x))", "infinitely many"),
     (r"\solve(`(x=x))", "no unknown"),
     (r"\solve(`(x+\sin(x)=0))", "closed form"),
     (r"\solve(`(x<1=2))", "cannot rewrite compare"),
@@ -214,7 +213,6 @@ def test_solve_irrational_roots_are_values():
 def test_solve_errors():
     fails(r"\solve(\expr(a x - b))", "needs the unknown")
     fails(r"\solve(\expr(1 + 0 x), \expr(2))", "quoted name")
-    fails(r"\solve(\expr(\sin(x)))", "infinitely many")
     fails(r"\solve(\expr(x + \sin(x)))", "closed form")
     fails(r"\solve(\expr(x - x))", "no unknown")
     fails(r"\solve(2)", "expression quote")

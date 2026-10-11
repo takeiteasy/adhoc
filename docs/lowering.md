@@ -20,12 +20,17 @@ the pipeline and package layout.
 
 A callable head applies. A non-callable head with one positional argument and
 no keywords multiplies; other non-callable calls fail at the call span.
-Keyword arguments pass through to Python callables.
+Keyword arguments pass through to Python callables and prelude functions that
+accept them, such as `\solve` with `\domain="real"`.
 
 Calls create local frames with parent read-through. Body writes stay local;
 recursion pre-binds the function in its call frame. Internal prelude and user
 functions preserve booleans; external Python results use the
 [conversion matrix](numerics.md#the-python-boundary-conversion-matrix).
+
+`\tex` reads the calling frame when rendering quotes. The call context follows
+aliases and higher-order application and is restored after each call. Rendering
+a function reads its defining frame and masks parameters and binders.
 
 ## Imports
 
