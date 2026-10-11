@@ -74,7 +74,7 @@ Heavyweight tests are marked `slow`;
 | [Architecture](docs/architecture.md) | Package layout and evaluation pipeline |
 | [Runtime lowering](docs/lowering.md) | Engine calls, scope and error mapping |
 
-See [the roadmap](ROADMAP.md) for planned work.
+Planned work is tracked in [GitHub issues](https://github.com/takeiteasy/adhoc/issues).
 
 ## License
 

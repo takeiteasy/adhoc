@@ -352,7 +352,7 @@ def test_fold_and_limit_lower_through_engine_calls():
 
 def test_prelude_constants_are_bound():
     # π and e are exact symbolic reals now: 15 significant digits, trailing
-    # ellipsis — the value is exact, the digits are a truncation (DESIGN.md).
+    # ellipsis — the value is exact, the digits are a truncation (docs/numerics.md#display).
     assert last("π") == "= 3.14159265358979..."
     assert last("\\pi") == "= 3.14159265358979..."
     assert last("e") == "= 2.71828182845905..."

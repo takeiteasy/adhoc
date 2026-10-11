@@ -1,12 +1,12 @@
-"""The symbolic closed-form tier: the first tier above exact rationals (DESIGN.md,
-`## exact arithmetic (internals)`, tier 3). Backed by sympy, but only the numeric
+"""The symbolic closed-form tier: the first tier above exact rationals (docs/numerics.md,
+tier 3). Backed by sympy, but only the numeric
 seam (`adhoc/runtime.py`) dispatches into this module — it computes with the tier's
 own values and the exact tiers, never with values above the seam (docs/numerics.md).
 
 ## Value shape
 
 A symbolic value is a **rational coefficient times exactly one recognized atom** —
-the strict shape the DESIGN tier list names — real or pure-imaginary:
+the strict shape docs/numerics.md names — real or pure-imaginary:
 
 - `πⁿ` — `π` itself and integer powers (`π·π` is `π²`, kept exact);
 - `√r` — square root of a positive rational, normalized by sympy (`√8` is `2√2`,
@@ -59,7 +59,7 @@ import sympy.core.numbers as _symnums
 
 from .gauss import Gaussian, make, to_sympy
 
-# Significant digits shown before the ellipsis (DESIGN.md display examples).
+# Significant digits shown before the ellipsis (docs/numerics.md#display).
 DISPLAY_DIGITS = 15
 
 

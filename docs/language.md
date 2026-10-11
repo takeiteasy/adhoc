@@ -2,8 +2,7 @@
 
 `ad` evaluates math notation with exact arithmetic, immutable bindings and
 first-class functions. This guide covers supported features. See the
-[grammar](grammar.md) for precise syntax and the [design](../DESIGN.md) for the
-target language.
+[grammar](grammar.md) for precise syntax.
 
 ## Running programs
 
@@ -262,7 +261,7 @@ script or module. See [custom operators](operators.md) for precedence and exampl
 
 ## Limitations
 
-- Graphing is not implemented. See [the roadmap](../ROADMAP.md).
+- Graphing is not implemented (#30).
 - Custom operators omit punctuation sequences and sections; see
   [operator limitations](operators.md#limitations).
 - Set construction and membership compare elements pairwise; construction is

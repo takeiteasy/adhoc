@@ -1103,7 +1103,7 @@ the rational, symbolic and algebraic tiers (minimal-polynomial fallback included
 and the Richardson–Fitch heuristic for any RRA-involved pair ([numerics](numerics.md)).
 Custom infix declarations are described in [custom operators](operators.md).
 Name aliases cover names only (see [Name aliases](#name-aliases)).
-See [the roadmap](../ROADMAP.md) for planned work.
+Planned work is tracked in [GitHub issues](https://github.com/takeiteasy/adhoc/issues).
 
 [^bars]: `|a|b||` reads as `|a|·b·|` and fails at the last bar. Inside `{ }` the first item
     reads with a separator bar on the stack, so `{a |b|}` is set-builder and needs `{a*|b|}`

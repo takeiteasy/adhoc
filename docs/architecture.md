@@ -83,9 +83,6 @@ The user environment is separate from Python execution globals. Reads walk
 parent frames; bindings and checks stay local. Functions, binders and probes use
 child frames. See [runtime lowering](lowering.md) for scope and dispatch details.
 
-CPython lowering is the evaluation engine. The interaction-net design in
-[DESIGN.md](../DESIGN.md#interaction-combinators) is an unscheduled alternative.
-
 [^spans]: Spans use `[start, end)` byte offsets. Never apply them directly to a
     Python string slice, which uses character offsets. The parser tags spans at
     construction; `(expr)` retains the inner node's narrower span.

@@ -1,5 +1,5 @@
 """The Recursive Real Arithmetic (RRA) fallback tier: the tier above algebraic
-numbers (DESIGN.md, `## exact arithmetic (internals)`, tier 5). Backed by sympy,
+numbers (docs/numerics.md, tier 5). Backed by sympy,
 but only the numeric seam (`adhoc/runtime.py`) dispatches into this module — it
 computes with the tier's own values and the exact tiers below it, never with
 values above the seam (docs/numerics.md).
@@ -76,7 +76,7 @@ import sympy
 from .gauss import Gaussian, make, to_sympy
 
 # Default significant digits shown before the ellipsis — the symbolic tier's
-# policy (DESIGN.md display examples). Tunable at runtime through the seam's
+# policy (docs/numerics.md#display). Tunable at runtime through the seam's
 # `\prec` setting; `show` reads the session value below, never this constant
 # directly.
 DISPLAY_DIGITS = 15
@@ -382,8 +382,8 @@ def approximate(v: RRA, tolerance: int | Fraction | float) -> Fraction:
 
 
 def to_function(v: RRA) -> Callable[[int | Fraction | float], Fraction]:
-    """An RRA value as a `tolerance -> rational` function — the representation
-    DESIGN.md names. `approximate` does the work; this is the calling shape."""
+    """An RRA value as a `tolerance -> rational` function, the tier's
+    representation. `approximate` does the work; this is the calling shape."""
     return lambda tolerance: approximate(v, tolerance)
 
 

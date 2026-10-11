@@ -185,7 +185,7 @@ def test_imports_are_scoped_to_their_session_registry(tmp_path):
 
 
 def test_module_const_does_not_join_importer_protected_set(tmp_path):
-    # Protection-on-import is future work (ROADMAP): an imported const lands as an
+    # TODO: protection-on-import (#40). An imported const lands as an
     # ordinary binding — rebinding it *compares* instead of erroring like a
     # protected name would.
     make_lib(tmp_path, text="k = 5; f(x) = x")

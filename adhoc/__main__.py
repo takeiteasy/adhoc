@@ -1,4 +1,4 @@
-"""Entry point for the `adhoc` binary. Two modes per DESIGN.md's execution-modes section:
+"""Entry point for the `adhoc` binary. Two modes:
 
     adhoc                 -- REPL
     adhoc run script.ad   -- script mode: same grammar fed a whole file, one `< ...`

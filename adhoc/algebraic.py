@@ -1,5 +1,5 @@
-"""The algebraic-number tier: the tier above symbolic closed forms (DESIGN.md,
-`## exact arithmetic (internals)`, tier 4). Backed by sympy, but only the numeric
+"""The algebraic-number tier: the tier above symbolic closed forms (docs/numerics.md,
+tier 4). Backed by sympy, but only the numeric
 seam (`adhoc/runtime.py`) dispatches into this module — it computes with the tier's
 own values and the exact tiers below it, never with values above the seam
 (docs/numerics.md).
@@ -64,7 +64,7 @@ import sympy
 from .gauss import Gaussian, make, to_sympy
 
 # Significant digits shown before the ellipsis — the symbolic tier's policy
-# (DESIGN.md display examples); the RRA display rule governs RRA display, not this tier.
+# (docs/numerics.md#display); the RRA display rule governs RRA display, not this tier.
 DISPLAY_DIGITS = 15
 
 

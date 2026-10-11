@@ -39,7 +39,7 @@ function bodies may contain semicolon-separated statements. `\\let name = expr` 
 fresh-only spelling of an assignment; `\\let f(params) = body` reuses the top-level
 function-definition path.
 
-Two builtin heads are *special forms* (DESIGN.md, "equality and =" case 3): their first
+Two builtin heads are *special forms* (docs/grammar.md, "Special forms"): their first
 argument is a binding, not an application argument. `\\sum`/`\\prod`/`Σ`/`Π` parse
 `(i=a..b)` into a range and rewrite to `Fold`; `\\lim(x=a)` rewrites to `Limit`. In both,
 the body extends greedily over the rest of the current expression, up to the enclosing
@@ -1074,7 +1074,7 @@ class _Parser:
     _NAMEISH = (Var, BackslashRef, Call, Lambda, Eval, Index, OpRef)
     _INDEXABLE = _NAMEISH + (Transpose,)
 
-    # Special forms recognized in postfix position (DESIGN.md "equality and =", case 3):
+    # Special forms recognized in postfix position (docs/grammar.md, "Special forms"):
     # a closed list of builtins whose first argument is a binding, not a general
     # equality expression. The unicode spellings `Σ`/`Π` are not listed: the alias
     # map normalizes them to `\sum`/`\prod` before this table is consulted (and a

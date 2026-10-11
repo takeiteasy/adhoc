@@ -1135,7 +1135,7 @@ def neq(a: AdValue, b: AdValue) -> bool:
             return a == b
         return neq(a, b)
     if isinstance(a, RRA) or isinstance(b, RRA):
-        # Richardson–Fitch heuristic (DESIGN `## exact arithmetic`): structural
+        # Richardson–Fitch heuristic (docs/numerics.md#comparisons): structural
         # identity first, then escalating `approximate` probes on the
         # difference (on its modulus when complex) — equal while
         # indistinguishable from zero (Schanuel's conjecture; an accepted
