@@ -8,6 +8,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [Grammar](grammar.md) | Syntax, lexical rules and precedence |
 | [Formal grammar](grammar-ebnf.md) | EBNF parser productions |
 | [Collection slicing](slicing.md) | Range selectors, tensor shapes and bounds |
+| [Integer congruence](congruence.md) | Modular comparisons and reusable predicates |
 | [Notation](notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](operators.md) | Spellings, declarations, precedence, sections and scope |
 | [Calculus](calculus.md) | Derivatives and integrals |

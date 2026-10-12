@@ -1,0 +1,12 @@
+17 ≡ 2 (mod 5)
+17 \equiv 3 (\mod 5)
+-7 ≡ 2 (mod -3)
+17.0 ≡ 2 (mod 2^2+1)
+f(x)=x+1
+g(x)=x-1
+f(16) ≡ g(3) (mod 5)
+\congruent(17,2,5)
+\filter(\congruent(·,2,5), ⟨1,2,7,8,17⟩)
+q=\expr(x ≡ 2 (mod 5))
+\eval(q,x=17)
+\tex(q)

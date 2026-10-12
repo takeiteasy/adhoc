@@ -135,6 +135,13 @@ class Compare(Node):
 
 
 @dataclass(frozen=True)
+class Congruence(Node):
+    lhs: Node
+    rhs: Node
+    modulus: Node
+
+
+@dataclass(frozen=True)
 class Equation(Node):
     lhs: Node
     rhs: Node

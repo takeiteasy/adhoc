@@ -129,6 +129,7 @@ from .syntax import (
     BinOp,
     BinOperator,
     Call,
+    Congruence,
     Compare,
     CompareOperator,
     Equation,
@@ -226,7 +227,7 @@ _COMPARE_INFIX = {"in": CompareOperator.IN, "subseteq": CompareOperator.SUBSETEQ
                   "notin": CompareOperator.NOTIN, "subset": CompareOperator.SUBSET,
                   "supseteq": CompareOperator.SUPSETEQ, "supset": CompareOperator.SUPSET}
 _INFIX_NAMES = frozenset(_ADDITIVE_INFIX) | frozenset(_MULTIPLICATIVE_INFIX) | frozenset(_ANGLE_INFIX) | frozenset(_LOGIC_INFIX) | {"not"} \
-    | frozenset(_COMPARE_INFIX)
+    | frozenset(_COMPARE_INFIX) | {"equiv"}
 
 # Lambda heads: the unicode spelling and the ASCII one. A `\`-name head followed by
 # a parameter-list paren parses as an anonymous function (docs/grammar.md, `## Lambdas`);
@@ -280,6 +281,7 @@ class _Parser:
         # statement: "a line break was consumed since the last statement ended".
         self._nl = False
         self._equation_delimiters: set[int] = set()
+        self._congruence_rhs = False
         # True while parsing the items of a comma-separated list (call arguments,
         # tensor/array/set literals, index brackets): there `,` always separates
         # items, so `a, b..c` is never a stepped range (docs/grammar.md, `## Ranges`).
@@ -289,11 +291,13 @@ class _Parser:
 
     @contextmanager
     def _list_context(self, in_list: bool):
+        saved_suffix, self._congruence_rhs = self._congruence_rhs, False
         saved, self._in_list = self._in_list, in_list
         saved_bars, self._bars = self._bars, []
         try:
             yield
         finally:
+            self._congruence_rhs = saved_suffix
             self._in_list = saved
             self._bars = saved_bars
 
@@ -541,6 +545,8 @@ class _Parser:
             op = symbols.get(type(self.peek())) or names.get(self._infix_name())
             if custom is not None and custom[1] == level:
                 op = custom
+            elif level == 9 and self._infix_name() == "equiv":
+                op = Congruence
             elif (isinstance(self.peek(), Eq) and level == 9
                   and self.pos not in self._equation_delimiters):
                 op = Equation
@@ -552,6 +558,21 @@ class _Parser:
             token = self.advance()
             self._skip_newlines()
             read_rhs = right if not isinstance(op, tuple) and association == "right" else operand
+            if op is Congruence:
+                with self._suffix_context(True):
+                    rhs = read_rhs()
+                marker = self._modulus_marker()
+                if not marker:
+                    raise self.error_at_current("congruence needs a `(mod n)` suffix")
+                for _ in range(marker):
+                    self.advance()
+                with self._suffix_context(False):
+                    modulus = self.expr()
+                close = self.expect(RParen, "`)` after the modulus")
+                lhs = Congruence(lhs=lhs, rhs=rhs, modulus=modulus,
+                                 span=lhs.span.to(close.span))
+                consumed = previous_nonassoc = True
+                continue
             rhs = read_rhs()
             if isinstance(op, tuple):
                 spelling = f"\\{token.name}" if isinstance(token, Backslash) else token.ch
@@ -1136,7 +1157,7 @@ class _Parser:
     # statements instead of multiplying through.
     def juxtaposed(self) -> Node:
         lhs = self.unary()
-        while self._is_atom_starter():
+        while self._is_atom_starter() and not self._at_modulus_suffix():
             rhs = self.unary()
             lhs = BinOp(op=BinOperator.MUL, lhs=lhs, rhs=rhs, span=lhs.span.to(rhs.span))
         return lhs
@@ -1220,7 +1241,7 @@ class _Parser:
                 continue
             if isinstance(self.peek(), Superscript):
                 if (isinstance(node, (Var, BackslashRef, Lambda)) or self._is_function_value(node)) \
-                        and isinstance(self.look(1), LParen):
+                        and isinstance(self.look(1), LParen) and not self._at_modulus_suffix(1):
                     tok = self.advance()
                     exponent = self._exponent(tok)
                     args, kwargs, rparen = self._call_arguments()
@@ -1240,6 +1261,8 @@ class _Parser:
                 tick = self.advance()
                 node = Transpose(operand=node, glyph=tick.glyph, span=node.span.to(tick.span))
                 continue
+            if self._at_modulus_suffix():
+                break
             if not (self._is_call_head(node) and isinstance(self.peek(), LParen)):
                 break
             args, kwargs, rparen = self._call_arguments()
@@ -1731,12 +1754,39 @@ class _Parser:
         return Call(head=BackslashRef(name=name, span=opener.span, spelling=f"\\{name}"),
                     args=(inner,), span=span)
 
-    # atom ::= number | string | identifier | "\"-name | "(" sequence ")"
-    #          | lambda | radical ;
+    @contextmanager
+    def _suffix_context(self, active: bool):
+        saved, self._congruence_rhs = self._congruence_rhs, active
+        try:
+            yield
+        finally:
+            self._congruence_rhs = saved
+
+    def _modulus_marker(self, offset: int = 0) -> int:
+        if not isinstance(self.look(offset), LParen):
+            return 0
+        token = self.look(offset + 1)
+        if isinstance(token, Backslash) and token.name == "mod":
+            return 2
+        letters = [self.look(offset + i) for i in range(1, 4)]
+        if not all(isinstance(t, Ident) and t.ch == ch
+                   for t, ch in zip(letters, "mod")):
+            return 0
+        if not all(a.span.end == b.span.start for a, b in zip(letters, letters[1:])):
+            return 0
+        return 4 if letters[-1].span.end < self.look(offset + 4).span.start else 0
+
+    def _at_modulus_suffix(self, offset: int = 0) -> bool:
+        return self._congruence_rhs and bool(self._modulus_marker(offset))
+
     def atom(self) -> Node:
-        # An operand may start on the line after the operator that demands it
-        # (`1 +` NL `2`): mid-expression, a newline never separates statements.
         self._skip_newlines()
+        if self._congruence_rhs and isinstance(self.peek(), (LParen, *_OPENERS, Delim, Backtick)):
+            with self._suffix_context(False):
+                return self._atom()
+        return self._atom()
+
+    def _atom(self) -> Node:
         tok = self.peek()
         match tok:
             case Number():

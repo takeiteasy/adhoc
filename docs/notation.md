@@ -25,6 +25,7 @@ for parsing rules and the [standard library](stdlib.md) for functions.
 | `=` | `=` | Value equality in expressions; see [syntax contexts](grammar.md#equality-expressions) | comparison |
 | `≤` `≥` | `<=` `>=` | ordering | comparison |
 | `≠` | `\neq` | Not equal; uses numeric-tier equality | comparison |
+| `≡` | `\equiv` | [Integer congruence](congruence.md), with `(mod n)` or `(\mod n)` | comparison |
 | `≈` | `\approx` | approximately equal[^approx] | comparison |
 | `∉` | `\notin` | not a member | comparison |
 | `⊂` `⊇` `⊃` | `\subset` `\supseteq` `\supset` | proper subset, superset, proper superset | comparison |

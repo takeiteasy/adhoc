@@ -12,7 +12,7 @@ import sympy
 from . import tensor as tn
 from .syntax import (
     SUBSCRIPTS, is_short_name,
-    Assign, ArrayLit, BackslashRef, BinOp, BinOperator, Call, Compare, CompareOperator, Diff, Equation,
+    Assign, ArrayLit, BackslashRef, BinOp, BinOperator, Call, Congruence, Compare, CompareOperator, Diff, Equation,
     Eval, Fold, Hole, IfExpr, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OpRef,
     Piecewise, PowCall, Quote, Range, SetBuilder, Generator, Guard, SetLit, StrLit, TensorLit, Transpose,
     UnaryOperator, UnOp, Var, WholeAxis,
@@ -201,6 +201,10 @@ def node_tex(node: Node, prec: int = 0) -> str:
             level, symbol = _BIN[op]
             right = level + 1 if op is not BinOperator.IMPLIES else level
             return _wrap(f"{node_tex(lhs, level)} {symbol} {node_tex(rhs, right)}", prec, level)
+        case Congruence(lhs=lhs, rhs=rhs, modulus=modulus):
+            text = (f"{node_tex(lhs, _COMPARE + 1)} \\equiv "
+                    f"{node_tex(rhs, _COMPARE + 1)} \\pmod{{{node_tex(modulus)}}}")
+            return _wrap(text, prec, _COMPARE)
         case Compare(op=op, lhs=lhs, rhs=rhs):
             text = f"{node_tex(lhs, _COMPARE + 1)} {_CMP[op]} {node_tex(rhs, _COMPARE + 1)}"
             return _wrap(text, prec, _COMPARE)

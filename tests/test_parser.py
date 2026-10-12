@@ -417,8 +417,8 @@ def test_def_attempt_with_non_ident_param_reparses_as_application():
 # --- the declaration operators are gone outright ---
 
 
-def test_identical_to_char_is_a_lex_error():
-    with pytest.raises(ParseError, match="unexpected character `≡`"):
+def test_congruence_requires_a_modulus_suffix():
+    with pytest.raises(ParseError, match="congruence needs"):
         parse_program("x ≡ 5")
 
 

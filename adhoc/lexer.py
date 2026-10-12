@@ -452,7 +452,7 @@ _SINGLE_CHAR_TOKENS = {
 }
 
 _INFIX_GLYPHS = {"∪": "cup", "∩": "cap", "∖": "setminus", "∈": "in", "⊆": "subseteq",
-                  "∘": "circ", "≠": "neq", "≈": "approx", "∉": "notin", "⊂": "subset",
+                  "≡": "equiv", "∘": "circ", "≠": "neq", "≈": "approx", "∉": "notin", "⊂": "subset",
                   "⊇": "supseteq", "⊃": "supset", "%": "mod", "∠": "angle",
                   "∧": "and", "∨": "or", "×": "times", "⊗": "otimes", "→": "implies", "↔": "iff", "¬": "not"}
 _GLYPH_SYMBOLS = {name: symbol for symbol, name in _INFIX_GLYPHS.items()}
@@ -789,7 +789,7 @@ def _scan(src: str, entries: list[tuple[int, str]], start: int,
             i += 1
             continue
 
-        if c in "&~" or (not c.isascii() and c != "≡" and category(c) == "Sm"):
+        if c in "&~" or (not c.isascii() and category(c) == "Sm"):
             yield CustomOp(ch=c, span=Span(pos, pos + len(c.encode("utf-8"))))
             i += 1
             continue

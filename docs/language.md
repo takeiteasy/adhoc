@@ -160,6 +160,9 @@ A parenthesized group supplies a branch with several statements.
 
 See [logic](notation.md#logic) and [conditionals](grammar.md#conditionals-the-ternary).
 
+`a ≡ b (mod n)` compares exact integers modulo a nonzero integer.
+`\congruent(a,b,n)` is the callable form; see [integer congruence](congruence.md).
+
 Equality has comparison precedence and does not chain. `(x=3)` compares an
 existing value; `(x=3;)` binds or checks in a statement group. At statement
 start, `x=3` remains a binding/check and `f(x)=body` remains a definition.

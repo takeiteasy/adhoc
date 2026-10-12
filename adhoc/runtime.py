@@ -241,7 +241,7 @@ SHADOWABLE_PRELUDE = frozenset({"i"})
 RESERVED_NAMES = frozenset({"infix", "let", "expr", "eval", "contract", "times", "otimes", "arr", "cup", "cap", "setminus",
                            "in", "subseteq", "circ", "mod", "angle", "and", "or", "not", "implies",
                            "iff", "neq", "approx", "notin", "subset",
-                           "supseteq", "supset", "per"})
+                           "supseteq", "supset", "per", "equiv"})
 
 
 _CALL_ENGINE = ContextVar("adhoc_call_engine", default=None)
@@ -279,7 +279,7 @@ class PreludeFn:
             if self.name not in {"convert", "magnitude", "unit", "norm", "det", "inv", "tr",
                                  "rank", "rref", "linsolve", "kron", "outer", "cross", "diag",
                                  "stack", "concat", "reshape", "polar", "tex", "min", "max",
-                                 "mean", "median", "stdev", "sstdev", "root"}:
+                                 "mean", "median", "stdev", "sstdev", "root", "congruent"}:
                 args = tuple(units.dimensionless(v, self.name) for v in args)
         return self.fn(*args, **kwargs)
 
@@ -2953,6 +2953,18 @@ def _exact_int(v: AdValue, label: str) -> int:
     return n
 
 
+def ncongruent(a: AdValue, b: AdValue, modulus: AdValue) -> bool:
+    a, b, modulus = (_exact_int(value, "congruence") for value in (a, b, modulus))
+    if modulus == 0:
+        raise NumError("congruence needs a nonzero modulus")
+    return (a - b) % modulus == 0
+
+
+def _congruent_call(*args: AdValue) -> bool:
+    _takes("congruent", args, 3, 3, "three arguments: a, b, modulus")
+    return ncongruent(*args)
+
+
 def _exact_rational(v: AdValue, label: str) -> Fraction:
     if isinstance(v, bool) or not isinstance(v, int | Fraction):
         raise NumError(f"{label} needs an exact rational, got {nshow(v)}")
@@ -3067,6 +3079,7 @@ PRELUDE.update({
     "jacobian": _matrix_derivative_call("jacobian"),
     "hessian": _matrix_derivative_call("hessian"),
     "tensor": PreludeFn("tensor", _tensor_call),
+    "congruent": PreludeFn("congruent", _congruent_call),
     "gcd": PreludeFn("gcd", _gcd_call),
     "lcm": PreludeFn("lcm", _lcm_call),
     "divmod": PreludeFn("divmod", _divmod_call),
@@ -4333,6 +4346,12 @@ class Engine:
 
     def div(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         return self._binop(ndiv, a, b, sid)
+
+    def congruent(self, a: AdValue, b: AdValue, modulus: AdValue, sid: int) -> bool:
+        try:
+            return ncongruent(a, b, modulus)
+        except NumError as error:
+            self._fail(error.args[0], sid)
 
     def mod(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         return self._binop(nmod, a, b, sid)

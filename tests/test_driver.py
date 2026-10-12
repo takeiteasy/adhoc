@@ -492,9 +492,7 @@ def test_lim_body_producing_a_boolean_reports_a_spanned_error():
 
 
 def test_legacy_declaration_operators_are_gone():
-    # ≡, the == alias, and \const no longer exist; \let is the explicit fresh-only
-    # spelling tested separately.
-    with pytest.raises(ParseError, match="unexpected character `≡`"):
+    with pytest.raises(ParseError, match="congruence needs"):
         run_source("c ≡ 5")
     with pytest.raises(ParseError):
         run_source("k == 3")

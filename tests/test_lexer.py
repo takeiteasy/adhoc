@@ -10,6 +10,7 @@ from adhoc.lexer import (
     Eq,
     Eof,
     Ident,
+    InfixOp,
     LexError,
     LBracket,
     LParen,
@@ -247,12 +248,11 @@ def test_comma_token():
     assert kinds(",") == [Comma, Eof]
 
 
-def test_identical_to_char_is_unexpected():
-    # ≡ has no token anymore: the declaration operator is gone outright.
-    with pytest.raises(LexError) as e:
-        tokenize("π ≡ 3")
-    assert "unexpected character `≡`" in e.value.msg
-    assert e.value.span == Span(3, 6)  # π is 2 bytes, space 1, ≡ is 3 bytes
+def test_congruence_glyph_token_and_span():
+    token = tokenize("π ≡ 3")[1]
+    assert isinstance(token, InfixOp)
+    assert token.name == "equiv"
+    assert token.span == Span(3, 6)
 
 
 def test_double_eq_is_two_eq_tokens():

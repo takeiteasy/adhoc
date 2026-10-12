@@ -97,7 +97,7 @@ letter. `√` is an operator token, so it cannot be bound, aliased or shadowed.
 | `↦`, `->`, `\mapsto` | Lambda arrow; `\mapsto` is not a name |
 
 An unused Unicode mathematical symbol (`Sm`) can be a custom operator glyph.
-Existing lexical meanings and `≡` remain reserved. Declared punctuation operators
+Existing lexical meanings, including congruence `≡` / `\equiv`, are reserved. Declared punctuation operators
 use longest matching over `+ - * / ^ % @ < > & ~`; built-in spellings and runs
 containing `--` or `->` are reserved. See [custom operators](operators.md).
 
@@ -726,6 +726,15 @@ Comparisons `=`, `≠`, `<`, `>`, `<=`, and `>=` return booleans, displayed as `
 Booleans are valid values and conditions but are not numeric operands. There is no
 numeric truthiness: a number is never a condition — `0 ? 1 : 2` is a typed error,
 not a silent pick. Comparisons, boolean values and logical expressions are conditions.
+
+### Integer congruence
+
+`a ≡ b (mod n)` (ASCII `a \equiv b (mod n)`) is a comparison with a
+required parenthesized modulus suffix. `(\mod expression)` is also accepted.
+The suffix terminates the RHS before call or juxtaposition parsing consumes it.
+The modulus is a full expression; operands must be exact integers and the
+modulus nonzero. Congruence does not chain. See [integer congruence](congruence.md)
+for spellings, nesting and examples.
 
 ### Equality expressions
 

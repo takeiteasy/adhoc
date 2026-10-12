@@ -86,6 +86,7 @@ See [lazy sequences](grammar.md#infinite-ranges-and-lazy-sequences) for consumer
 | Function or operator | Result | Example |
 |---|---|---|
 | `a % b`, `a \mod b` | Floored remainder; supports rationals and symbolic reals | `-7 % 3` → `2` |
+| `\congruent(a,b,n)` | [Exact integer congruence](congruence.md); nonzero modulus | `\congruent(17,2,5)` → `true` |
 | `\gcd(…)`, `\lcm(…)` | GCD or LCM of exact rationals or Gaussian rationals | `\gcd(⟨12, 18⟩)` → `6` |
 | `\divmod(a, b)` | `⟨⌊a/b⌋, a % b⟩` | `\divmod(-7, 3)` → `⟨-3, 2⟩` |
 | `\isprime(n)` | Primality boolean for an exact integer | `\isprime(97)` → `true` |

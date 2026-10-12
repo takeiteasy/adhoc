@@ -48,6 +48,7 @@ from .syntax import (
     BinOp,
     BinOperator,
     Call,
+    Congruence,
     Compare,
     CompareOperator,
     Equation,
@@ -285,6 +286,10 @@ class _Lowerer:
                 right = self.expr(rhs)
                 sid = self._push(span)
                 return _call(_BIN_METHODS[op], [left, right, pyast.Constant(sid)])
+            case Congruence(lhs=lhs, rhs=rhs, modulus=modulus, span=span):
+                sid = self._push(span)
+                return _call("congruent", [self.expr(lhs), self.expr(rhs),
+                                           self.expr(modulus), pyast.Constant(sid)])
             case Compare(op=op, lhs=lhs, rhs=rhs, span=span):
                 sid = self._push(span)
                 return _call(_CMP_METHODS[op], [self.expr(lhs), self.expr(rhs), pyast.Constant(sid)])
