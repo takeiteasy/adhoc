@@ -98,9 +98,9 @@ def test_existing_file_is_preserved(tmp_path):
 
 
 def test_missing_directory_error_has_call_span(tmp_path):
-    source = r'\plot(g, \backend="file", \path="' + str(tmp_path / "missing" / "plot.svg") + '")'
+    source = r'\plot(g, \backend="file", \path=p)'
     with pytest.raises(EvalError, match="FileNotFoundError") as error:
-        run_source(source, {"g": graph()})
+        run_source(source, {"g": graph(), "p": str(tmp_path / "missing" / "plot.svg")})
     assert error.value.span == Span(0, len(source.encode()))
     assert not (tmp_path / "missing").exists()
 
