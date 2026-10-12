@@ -92,13 +92,14 @@ letter. `√` is an operator token, so it cannot be bound, aliased or shadowed.
 | `#[` | One array-opening token; a lone `#` is an error |
 | `·`, `⋅`, `_` | Partial-application placeholder; `_` within a backslash name is a name character |
 | Backtick | Expression or statement-sequence quote |
-| `=` | Binding or check; adjacent `==` tokens cannot parse |
+| `=` | Binding or check at statement start; equality in expressions |
+| `==` | Congruence, with a required `(mod n)` or `(\mod n)` suffix |
 | `? :` | Ternary conditional; `:` also separates an import's member list |
 | `↦`, `->`, `\mapsto` | Lambda arrow; `\mapsto` is not a name |
 
 An unused Unicode mathematical symbol (`Sm`) can be a custom operator glyph.
-Existing lexical meanings, including congruence `≡` / `\equiv`, are reserved. Declared punctuation operators
-use longest matching over `+ - * / ^ % @ < > & ~`; built-in spellings and runs
+Existing lexical meanings, including congruence `≡` / `\equiv` / `==`, are reserved.
+Declared punctuation operators use longest matching over `+ - * / ^ % @ < > & ~`; built-in spellings and runs
 containing `--` or `->` are reserved. See [custom operators](operators.md).
 
 The parser recognizes `\λ` and `\fn` as lambda heads when followed by a parameter
@@ -729,8 +730,8 @@ not a silent pick. Comparisons, boolean values and logical expressions are condi
 
 ### Integer congruence
 
-`a ≡ b (mod n)` (ASCII `a \equiv b (mod n)`) is a comparison with a
-required parenthesized modulus suffix. `(\mod expression)` is also accepted.
+`a ≡ b (mod n)` (ASCII `a \equiv b (mod n)` or `a == b (mod n)`) is a comparison
+with a required parenthesized modulus suffix. `(\mod expression)` is also accepted.
 The suffix terminates the RHS before call or juxtaposition parsing consumes it.
 The modulus is a full expression; operands must be exact integers and the
 modulus nonzero. Congruence does not chain. See [integer congruence](congruence.md)
@@ -923,9 +924,9 @@ on input and output.
 < = 2
 ```
 
-Strings compare equal only to strings with the same content. There is no string
-equality expression: `==` cannot parse. A Python `str` returns as an ordinary
-ad string, and ad strings cross into Python as native `str`. See the
+Strings compare equal only to strings with the same content. String
+equality uses `=`, as in `("a"="a")`; `==` denotes integer congruence.
+A Python `str` returns as an ordinary ad string, and ad strings cross into Python as native `str`. See the
 [conversion matrix](numerics.md#the-python-boundary-conversion-matrix).
 
 ## Modules and imports
@@ -1175,10 +1176,8 @@ alias with the same precedence and associativity as `/`. Long unit names such as
 ## Limitations
 
 Graphing is not implemented.
-`==` and `!=` do not exist: `≠` / `\neq` is the inequality operator, and the binding
-rule's check is the only equality, with tier-aware semantics: exact for
-the rational, symbolic and algebraic tiers (minimal-polynomial fallback included)
-and the Richardson–Fitch heuristic for any RRA-involved pair ([numerics](numerics.md)).
+`!=` is unsupported; use `≠` / `\neq`. Equality uses `=`; `==` denotes
+[integer congruence](congruence.md) and requires a modulus suffix.
 Custom infix declarations are described in [custom operators](operators.md).
 Name aliases cover names only (see [Name aliases](#name-aliases)).
 Planned work is tracked in [GitHub issues](https://github.com/takeiteasy/adhoc/issues).

@@ -35,7 +35,7 @@ behavior.
 | Punctuation | One contiguous run of `+ - * / ^ % @ < > & ~`, excluding reserved spellings |
 | Paired declaration | One name and one glyph or punctuation spelling; both refer to the same function |
 
-Letters, delimiters and built-in operators, including `≡` / `\equiv`, are reserved. Previously
+Letters, delimiters and built-in operators, including `≡` / `\equiv` / `==`, are reserved. Previously
 declared operator spellings are rejected. `\alias` and `\dual` cannot extend
 a custom operator; use the paired declaration.
 

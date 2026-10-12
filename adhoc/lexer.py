@@ -782,6 +782,11 @@ def _scan(src: str, entries: list[tuple[int, str]], start: int,
             i += 1
             continue
 
+        if c == "=" and i + 1 < n and entries[i + 1][1] == "=":
+            yield InfixOp(name="equiv", span=Span(pos, entries[i + 1][0] + 1))
+            i += 2
+            continue
+
         cls = _SINGLE_CHAR_TOKENS.get(c)
         if cls is not None:
             end = pos + len(c.encode("utf-8"))

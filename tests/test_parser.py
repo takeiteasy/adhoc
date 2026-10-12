@@ -422,10 +422,8 @@ def test_congruence_requires_a_modulus_suffix():
         parse_program("x ≡ 5")
 
 
-def test_double_eq_is_two_eq_tokens():
-    # `k == 3` lexes as two `=`: the statement rule consumes the first, the second
-    # is an unexpected token.
-    with pytest.raises(ParseError, match="unexpected token `=`"):
+def test_double_eq_requires_a_modulus_suffix():
+    with pytest.raises(ParseError, match="congruence needs"):
         parse_program("x == 5")
 
 

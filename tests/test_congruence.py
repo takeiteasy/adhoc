@@ -11,7 +11,7 @@ from adhoc.span import Span
 from adhoc.tex import node_tex
 
 
-@pytest.mark.parametrize("operator", ["≡", r"\equiv"])
+@pytest.mark.parametrize("operator", ["≡", r"\equiv", "=="])
 @pytest.mark.parametrize("marker", ["mod", r"\mod"])
 def test_spellings(operator, marker):
     assert run_source(f"17 {operator} 2 ({marker} 5)") == ["= true"]
@@ -114,6 +114,21 @@ def test_operands_evaluate_once_in_order():
 def test_modulo_and_bare_letters_are_unchanged():
     assert run_source(r"17 \mod 5; 17 % 5") == ["= 2", "= 2"]
     assert run_source("m=2;o=3;d=4;mod")[-1] == "= 24"
+
+
+def test_double_equal_alias_in_expression_contexts():
+    assert run_source("p=17==2(mod 5); p")[-1] == "= true"
+    assert run_source("f(x)=x==2(mod 5)\nf(17)")[-1] == "= true"
+    assert run_source("17==2(mod 5) ∧ 2<3") == ["= true"]
+    quote = run_source(r"\expr(17==2(mod 5))")[0][2:]
+    assert "≡" in quote
+    assert run_source(f"\\eval({quote})") == ["= true"]
+
+
+@pytest.mark.parametrize("source", ["17==2", "17==2(mod 5)==2(mod 5)", "17==2(mod 5)=1", "(==)"])
+def test_double_equal_alias_requires_suffix_and_does_not_chain(source):
+    with pytest.raises(ParseError):
+        parse_program(source)
 
 
 def test_helper_and_operator_names_are_protected():

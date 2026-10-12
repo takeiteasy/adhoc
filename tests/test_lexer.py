@@ -255,9 +255,12 @@ def test_congruence_glyph_token_and_span():
     assert token.span == Span(3, 6)
 
 
-def test_double_eq_is_two_eq_tokens():
-    # `==` is no alias — two adjacent `=` lex as two tokens; a lone `=` stays Eq.
-    assert kinds("x == 5") == [Ident, Eq, Eq, Number, Eof]
+def test_double_eq_is_congruence_token():
+    assert kinds("x == 5") == [Ident, InfixOp, Number, Eof]
+    token = tokenize("π==3")[1]
+    assert token.name == "equiv"
+    assert token.span == Span(2, 4)
+    assert kinds("x = = 5") == [Ident, Eq, Eq, Number, Eof]
     assert kinds("x = 5")[1] is Eq
 
 

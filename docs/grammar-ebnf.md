@@ -41,7 +41,7 @@ and        ::= not (("∧" | "\\and") not)* ;
 not        ::= ("¬" | "\\not") not | range ;
 range      ::= comparison (".." comparison? | "," comparison ".." comparison?)? ;
                                            (* the "," form is not read inside lists *)
-comparison ::= angle (cmp-op angle)? | angle ("≡" | "\\equiv") angle congruence-suffix | angle ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
+comparison ::= angle (cmp-op angle)? | angle ("≡" | "\\equiv" | "==") angle congruence-suffix | angle ("∈" | "\\in" | "∉" | "\\notin") range-tail ;
 congruence-suffix ::= "(" ("mod" | "\\mod") expr ")" ;
 range-tail ::= additive (".." additive? | "," additive ".." additive?) ;   (* membership only *)
 cmp-op     ::= "=" | "<" | ">" | "<=" | "≤" | ">=" | "≥" | "≠" | "\\neq" | "≈" | "\\approx"

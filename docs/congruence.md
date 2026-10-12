@@ -9,11 +9,12 @@ All three values are exact integers, and `n` is nonzero. Negative moduli are val
 |---|---|
 | `17 ≡ 2 (mod 5)` | `true` |
 | `17 \equiv 3 (\mod 5)` | `false` |
+| `17 == 2 (mod 5)` | `true` |
 | `-7 ≡ 2 (mod -3)` | `true` |
 | `17.0 ≡ 2 (mod 2^2+1)` | `true` |
 | `\congruent(17, 2, 5)` | `true` |
 
-Both `≡` and `\equiv` accept `(mod n)` and `(\mod n)`.
+`≡`, `\equiv` and `==` accept `(mod n)` and `(\mod n)`.
 The modulus accepts a full expression, including arithmetic and calls.
 Operands evaluate once, left to right: `a`, `b`, then `n`.
 
@@ -33,7 +34,7 @@ x=1
 
 The first suffix at the right operand's nesting level terminates that operand,
 including a name or call result. Calls and implicit multiplication before the suffix
-keep their usual meaning. The suffix is required. Bare `mod` is a contiguous keyword
+keep their usual meaning. The suffix is required, including with `==`; ordinary equality uses `=`. Bare `mod` is a contiguous keyword
 with whitespace before its operand, only in this suffix; elsewhere `mod` means
 `m*o*d`. Ordinary `%` and `\mod` remain remainder operators.
 
