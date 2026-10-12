@@ -12,6 +12,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [Notation](notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](operators.md) | Spellings, declarations, precedence, sections and scope |
 | [Graph sampling](graph-sampling.md) | Adaptive real sampling, gaps and graph data |
+| [Plotting](plotting.md) | Matplotlib file export and window display |
 | [Calculus](calculus.md) | Derivatives and integrals |
 | [Infinite interval bounds](intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](symbolic.md) | Simplification, expansion, factoring and solving |

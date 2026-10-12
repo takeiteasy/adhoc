@@ -2,8 +2,7 @@
 
 `\graph` samples a real function or expression over a finite range and returns
 immutable graph data. It refines curved regions and preserves gaps around
-undefined points. The result is data for plotting; see [limitations](#limitations)
-for rendering and export.
+undefined points. Use [`\plot`](plotting.md) to render the result to a file or window.
 
 ## Forms
 
@@ -96,7 +95,6 @@ Quoted graph calls round-trip through expression display and render with `\tex`.
 | Complex and dimensioned axes or outputs | [Graphing](https://github.com/takeiteasy/adhoc/issues/30) |
 | Terminal rendering | [#25](https://github.com/takeiteasy/adhoc/issues/25) |
 | Several curves on shared axes | [#26](https://github.com/takeiteasy/adhoc/issues/26) |
-| File export | [#27](https://github.com/takeiteasy/adhoc/issues/27) |
 
 [^adaptive]: Interpolation error is the maximum departure at the midpoint and
     quarter points divided by `max(1, absolute values of the five probes)`.

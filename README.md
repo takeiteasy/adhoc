@@ -66,6 +66,7 @@ Heavyweight tests are marked `slow`;
 | [Notation](docs/notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](docs/operators.md) | Spellings, declarations, precedence, sections and scope |
 | [Graph sampling](docs/graph-sampling.md) | Adaptive real sampling, gaps and graph data |
+| [Plotting](docs/plotting.md) | Matplotlib file export and window display |
 | [Calculus](docs/calculus.md) | Derivatives and integrals |
 | [Infinite interval bounds](docs/intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](docs/symbolic.md) | Simplification, expansion, factoring and solving |

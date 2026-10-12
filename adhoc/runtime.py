@@ -199,6 +199,7 @@ from .gauss import show as _show_gaussian
 from .span import Span
 from .graph import (GraphValue, DEFAULT_TOLERANCE, DEFAULT_MAX_POINTS, INITIAL_POINTS,
                     sample as sample_graph)
+from .plot import plot
 from .solution_set import SymbolicSetValue
 from .expression import ExpressionValue, show_quote
 from .syntax import OP_SYMBOLS, Seq, is_short_name
@@ -3508,6 +3509,7 @@ _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 PRELUDE.update(units.catalogue())
 PRELUDE.update({
+    "plot": PreludeFn("plot", plot),
     "convert": PreludeFn("convert", units.convert),
     "magnitude": PreludeFn("magnitude", units.extract),
     "unit": PreludeFn("unit", units.make_unit),

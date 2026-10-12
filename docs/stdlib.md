@@ -5,6 +5,17 @@ are protected: they cannot be rebound or shadowed. See
 [numerics](numerics.md) for numeric tiers and the
 [prelude](grammar.md#the-prelude) for constants and core functions.
 
+## Graphs
+
+| Function | Result | Example |
+|---|---|---|
+| `\graph(f, x=a..b)` | Immutable sampled graph data | `\graph(x^2, x=-1..1)` |
+| `\plot(g, \backend="file", \path=p)` | Export SVG, PNG or PDF; return `g` | `\plot(g, \backend="file", \path="plot.svg")` |
+| `\plot(g, \backend="window")` | Wait for a plot window to close; return `g` | `\plot(g, \backend="window")` |
+
+See [graph sampling](graph-sampling.md) and [plotting](plotting.md) for options,
+existing-file protection and [rendering limitations](plotting.md#limitations).
+
 ## Complex
 
 | Function or notation | Result | Example |

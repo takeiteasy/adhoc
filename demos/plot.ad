@@ -1,0 +1,3 @@
+"Export sampled data; existing output files are protected"
+g = \graph(1/x, x=-1..1)
+\plot(g, \backend="file", \path="plot.svg")
