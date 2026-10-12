@@ -45,6 +45,7 @@ from .syntax import (
     ArrayLit,
     Assign,
     BackslashRef,
+    BinderPattern,
     BinOp,
     BinOperator,
     Call,
@@ -185,9 +186,11 @@ class _Lowerer:
     def statement(self, stmt: Node) -> str:
         match stmt:
             case FuncDef(name=name, params=params, body=body, spelling=spelling,
-                         param_spellings=param_spellings, span=span):
+                         param_spellings=param_spellings, span=span,
+                         patterns=patterns, fresh_only=fresh_only):
                 return pyast.unparse(self._definition(name, params, body, spelling,
-                                                       param_spellings, span, True))
+                                                       param_spellings, span, True,
+                                                       patterns, fresh_only))
             case Import(path=path, members=members, member_spellings=member_spellings,
                         span=span):
                 sid = self._push(span)
@@ -224,12 +227,18 @@ class _Lowerer:
             kwonlyargs=[], kw_defaults=[], defaults=[]), body=self.expr(node))
 
     def _definition(self, name, params, body, spelling, param_spellings, span,
-                    echo: bool) -> pyast.expr:
+                    echo: bool, patterns=(), fresh_only=False) -> pyast.expr:
         sid = self._push(span)
         self.definitions[sid] = _compile_body(body, self.source)
+        specs = (pyast.Tuple(elts=[
+            pyast.Tuple(elts=[pyast.Constant(p.name), pyast.Constant(None)], ctx=pyast.Load())
+            if isinstance(p, BinderPattern) else
+            pyast.Tuple(elts=[pyast.Constant(None), self.expr(p.value)], ctx=pyast.Load())
+            for p in patterns], ctx=pyast.Load()) if patterns else pyast.Constant(None))
         return _call("define", [pyast.Constant(name), pyast.Constant(params),
                                 pyast.Constant(sid), pyast.Constant(spelling),
-                                pyast.Constant(param_spellings), pyast.Constant(echo)])
+                                pyast.Constant(param_spellings), pyast.Constant(echo),
+                                specs, pyast.Constant(fresh_only)])
 
     def expr(self, node: Node) -> pyast.expr:
         match node:
@@ -237,9 +246,10 @@ class _Lowerer:
                 return _call("eq", [self.expr(lhs), self.expr(rhs),
                                     pyast.Constant(self._push(span))])
             case FuncDef(name=name, params=params, body=body, spelling=spelling,
-                         param_spellings=param_spellings, span=span):
+                         param_spellings=param_spellings, span=span,
+                         patterns=patterns, fresh_only=fresh_only):
                 return self._definition(name, params, body, spelling,
-                                        param_spellings, span, False)
+                                        param_spellings, span, False, patterns, fresh_only)
             case Quote(body=body, source=source, statement_body=statement_body, span=span):
                 sid = self._push(span)
                 self.quotes[sid] = ExpressionValue(body, source, statement_body)

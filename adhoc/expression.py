@@ -6,7 +6,7 @@ from .lexer import SUPERSCRIPTS
 from .syntax import (
     is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Congruence, Compare, CompareOperator, Equation, Eval,
-    Assign, ArrayLit, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, Graph, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
+    Assign, ArrayLit, BinderPattern, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, Graph, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
     PyImport, Quote, Range, Seq, SetBuilder, Generator, Guard, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var, WholeAxis,
 )
 
@@ -73,12 +73,15 @@ def _show(node: Node, *, statement: bool = False) -> str:
             label = spelling or (name if is_short_name(name) else f"\\{name}")
             return f"{prefix}{label} = {_show(value)}"
         case FuncDef(name=name, params=params, body=body, spelling=spelling,
-                     param_spellings=spellings):
+                     param_spellings=spellings, patterns=patterns, fresh_only=fresh):
             label = spelling or (name if is_short_name(name) else f"\\{name}")
             names = [spellings[i] if i < len(spellings) else param
                      for i, param in enumerate(params)]
+            if patterns:
+                names = [p.spelling or (p.name if is_short_name(p.name) else f"\\{p.name}")
+                         if isinstance(p, BinderPattern) else _show(p.value) for p in patterns]
             text = _show(body) if isinstance(body, Seq) else _show(body, statement=True)
-            return f"{label}({', '.join(names)}) = {text}"
+            return f"{'\\let ' if fresh else ''}{label}({', '.join(names)}) = {text}"
         case Import(path=path, members=members, member_spellings=spellings):
             names = [spellings[i] if i < len(spellings) else name
                      for i, name in enumerate(members)]

@@ -16,13 +16,13 @@ statement  ::= func-def
              | name "=" expr
              | expr ;
 let-stmt    ::= "\let" name "=" expr
-             | "\let" name "(" params? ")" "=" statement (";" statement)* ;
+             | "\let" name "(" patterns? ")" "=" statement (";" statement)* ;
 import-stmt   ::= "\import" "(" string (":" member ("," member)*)? ")" ;
 pyimport-stmt ::= "\pyimport" "(" string ":" member ("," member)* ")" ;
 member        ::= identifier | "\"-name ;
 spelling-directive ::= alias-stmt | dual-stmt ;
 alias-stmt  ::= "\alias" name "," single-char ("," single-char)* ;
-dual-stmt   ::= "\dual" name "," single-char params? "=" statement (";" statement)* ;
+dual-stmt   ::= "\dual" name "," single-char ("(" patterns? ")")? "=" statement (";" statement)* ;
 single-char ::= identifier ;                (* aliases are one-character letters *)
 name        ::= identifier | "\"-name ;
 infix-stmt  ::= "\infix" "(" integer ")" infix-head
@@ -69,7 +69,9 @@ operator   ::= "+" | "-" | "*" | "/" | "^" | "@" | "×" | "⊗" | "∘" | "∪" 
              | "!" | "‼" | "\\contract" | "\\times" | "\\otimes" | "\\circ" | "\\cup" | "\\cap" | "\\setminus" | "\\in"
              | "\\notin" | "\\subseteq" | "\\subset" | "\\supseteq" | "\\supset" | "\\neq" | "\\approx" | declared-custom-operator ;
 kwarg      ::= (identifier | "\"-name) "=" (expr | string) ;
-func-def   ::= name "(" params? ")" "=" statement (";" statement)* ;
+func-def   ::= name "(" patterns? ")" "=" statement (";" statement)* ;
+patterns   ::= pattern ("," pattern)* ;
+pattern    ::= name | ("+" | "-")? number | string | "\true" | "\false" ;
 params     ::= name ("," name)* ;
 atom       ::= number | string | identifier | "\"-name | "(" expr ")" | "(" sequence ")"
               | "(" operator ")" | "(" operator operand ")" | "(" operand operator ")"
@@ -97,7 +99,7 @@ lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
 arrow-lambda ::= (name | "(" params? ")") ("↦" | "->" | "\mapsto") expr ;
 ```
 
-Statement heads `name =` and `name(params) =` take priority over expression
+Statement heads `name =` and `name(patterns) =` take priority over expression
 equality; a call argument beginning `name =` takes priority as a named argument.
 Their right-hand sides are expressions, including equality.
 

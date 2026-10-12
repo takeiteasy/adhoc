@@ -30,7 +30,7 @@ finite or symbolic solution sets, or arrays of derivative quotes. Free names rem
 | Input | Names used as symbols | Other names |
 |---|---|---|
 | Expression quote, `\expr(...)` | Free names | `\pi`, `e`, `i` and `\inf` retain their constant meaning |
-| User function or lambda with one expression as its body | Parameters | Numeric values from the defining scope |
+| Single all-name function clause or lambda with one expression as its body | Parameters | Numeric values from the defining scope |
 
 For `a = 3` and `f(x) = a x + x`, `\simplify(f)` returns `\expr((4 * x))`.
 A parameter named `i` shadows the imaginary unit; other prelude constants remain
@@ -269,6 +269,9 @@ membership in a family with different dimensions is false.
 |---|---|
 | Infinite system families are errors | [#43](https://github.com/takeiteasy/adhoc/issues/43) |
 | Conditional real solutions are unsupported; undecidable system realness is an error | [#44](https://github.com/takeiteasy/adhoc/issues/44) |
+
+Patterned and multi-clause functions, including nested calls to them, have
+[symbolic limitations](function-clauses.md#limitations).
 
 Nested user-function expansion does not support recursive calls, statement-body
 callees or dimensioned calls. Python callables are not executed during rewriting.

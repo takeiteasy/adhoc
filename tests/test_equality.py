@@ -130,7 +130,7 @@ def test_equality_evaluates_each_side_once_in_order():
         calls.append(value)
         return value
 
-    assert run_source(r"\record(1)=\record(2)", {"record": record}) == ["= false"]
+    assert run_source(r"(\record(1)=\record(2))", {"record": record}) == ["= false"]
     assert calls == [1, 2]
 
 

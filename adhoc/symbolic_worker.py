@@ -25,6 +25,7 @@ class FunctionSnapshot:
     params: tuple[str, ...]
     body: FunctionBody
     closure: Any = None
+    symbolic_supported: bool = True
 
     def __call__(self, *args):
         raise TypeError("symbolic function snapshots cannot be executed")
@@ -92,7 +93,8 @@ def snapshot(value, memo=None):
         if id(value) in memo:
             return memo[id(value)]
         result = FunctionSnapshot(value.name, value.params,
-                                  FunctionBody(value.body.node, value.body.source))
+                                  FunctionBody(value.body.node, value.body.source),
+                                  symbolic_supported=value.symbolic_supported)
         memo[id(value)] = result
         captured = {}
         for name in set(_names(value.body.node)) - set(value.params):

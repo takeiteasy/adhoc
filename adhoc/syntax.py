@@ -318,16 +318,27 @@ class OpRef(Node):
 
 
 @dataclass(frozen=True)
+class BinderPattern(Node):
+    name: str
+    spelling: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class LiteralPattern(Node):
+    value: Node
+
+
+@dataclass(frozen=True)
 class FuncDef(Node):
-    """A function definition with a semicolon-sequenced body. Definitions are
-    declarations: a protected or already-visible name is an error — nothing ever
-    redefines, and identity comparison would make a check meaningless anyway."""
+    """An ordered named-function clause with a semicolon-sequenced body."""
 
     name: str
     params: tuple[str, ...]
     body: Node
     spelling: str | None = field(default=None, compare=False)
     param_spellings: tuple[str, ...] = field(default=(), compare=False)
+    patterns: tuple[BinderPattern | LiteralPattern, ...] = ()
+    fresh_only: bool = False
 
 
 @dataclass(frozen=True)

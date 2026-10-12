@@ -145,9 +145,10 @@ frame, or compares by value against a name already bound in that frame (echoing
 `true`/`false`; `1 = 1.` is true — the tower, not the type). `\\let x = e` uses the
 same binding path but rejects an existing current-frame name. Reads walk the frame
 chain, binds and compares stay frame-local, and no operation ever rebinds an existing
-binding. Function definitions (`Engine.define`) are fresh-only declarations: a
-protected or already-visible name is an error. The one shadowable prelude name is `i`
-(see above).
+binding. Named definitions (`Engine.define`) create or append ordered clauses in
+their defining frame; `\\let` requires a fresh name. Protected names and additions
+through value aliases, imported bindings or enclosing frames are errors. The one
+shadowable prelude name is `i` (see above).
 
 ## Pinned divergences from the rug/MPFR backing (docs/numerics.md)
 
@@ -202,7 +203,7 @@ from .graph import (GraphCollectionValue, GraphValue, DEFAULT_TOLERANCE, DEFAULT
 from .plot import SeriesValue, plot, series
 from .solution_set import SymbolicSetValue
 from .expression import ExpressionValue, show_quote
-from .syntax import OP_SYMBOLS, Seq, is_short_name
+from .syntax import OP_SYMBOLS, Seq, free_names, is_short_name
 from .algebraic import Algebraic
 from .rra import RRA
 from .symbolic import DomainError, Symbolic, Unrepresentable
@@ -499,6 +500,8 @@ def _im_call(v: AdValue) -> AdValue:
 def _body_call(value: Any) -> ExpressionValue:
     if not isinstance(value, AdFunction):
         raise NumError("\\body needs a user-defined function")
+    if not value.symbolic_supported:
+        raise NumError("\\body needs a single clause with name parameters")
     body = value.body
     node = body.node
     if not isinstance(node, Seq):
@@ -1308,6 +1311,8 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
     if isinstance(v, AdFunction):
         if not v.name:
             return f"<λ({', '.join(v.param_spellings)})>"
+        if not v.symbolic_supported:
+            return f"<fn {v.display_name}/{v.arity}; {len(v.clauses)} clauses>"
         return f"<fn {v.display_name}({', '.join(v.param_spellings)})>"
     if isinstance(v, str):
         return _show_str(v)
@@ -1915,27 +1920,71 @@ _MISSING = object()
 _IMPORTING = object()  # module-registry marker: evaluation in progress (cycle guard)
 
 
+@dataclass(frozen=True)
+class FunctionClause:
+    patterns: tuple[tuple[str | None, Any], ...]
+    body: Any
+    closure: Any
+    param_spellings: tuple[str, ...]
+
+
 class AdFunction:
-    def __init__(self, name, params, body, closure, spelling=None, param_spellings=()):
+    def __init__(self, name, params, body, closure, spelling=None, param_spellings=(),
+                 patterns=None):
         self.name, self.params, self.body, self.closure = name, params, body, closure
         self.display_name = _display_name(name, spelling) if name else "λ"
         self.param_spellings = _display_params(params, param_spellings)
+        patterns = tuple((p, None) for p in params) if patterns is None else patterns
+        self.arity = len(patterns)
+        self.clauses = [FunctionClause(patterns, body, closure, self.param_spellings)]
+        self.revision = 0
+
+    @property
+    def symbolic_supported(self):
+        return len(self.clauses) == 1 and all(
+            name is not None for name, _ in self.clauses[0].patterns)
+
+    def append(self, patterns, body, closure, param_spellings):
+        self.clauses.append(FunctionClause(patterns, body, closure, param_spellings))
+        self.revision += 1
+
+    def symbolic_revision(self, seen=None):
+        seen = set() if seen is None else seen
+        if id(self) in seen:
+            return ()
+        seen.add(id(self))
+        dependencies = []
+        for clause in self.clauses:
+            binders = {name for name, _ in clause.patterns if name is not None}
+            for name in sorted(free_names(clause.body.node) - binders - {self.name}):
+                value = clause.closure._lookup(name)
+                if isinstance(value, AdFunction):
+                    dependencies.append(value.symbolic_revision(seen))
+        return (id(self), self.revision, tuple(dependencies))
 
     def __call__(self, *args):
-        if len(args) != len(self.params):
-            raise EvalError(f"{self.display_name} takes {len(self.params)} arguments, "
-                            f"got {len(args)}")
-        frame = dict(zip(self.params, args))
+        if len(args) != self.arity:
+            raise NumError(f"{self.display_name} takes {self.arity} arguments, got {len(args)}")
+        for clause in self.clauses:
+            if all(name is not None or (
+                    isinstance(value, bool) == isinstance(argument, bool) and neq(value, argument))
+                   for (name, value), argument in zip(clause.patterns, args)):
+                break
+        else:
+            raise NumError(f"{self.display_name}: no matching clause")
+        frame = {name: argument for (name, _), argument in zip(clause.patterns, args)
+                 if name is not None}
         if self.name:
             frame[self.name] = self
-        child = Engine(frame, self.body.spans, self.body.definitions, self.closure,
-                       self.closure.modules,
-                       self.closure.base_dir, self.closure.import_chain,
-                       quotes=self.body.quotes)
+        child = Engine(frame, clause.body.spans, clause.body.definitions, clause.closure,
+                       clause.closure.modules, clause.closure.base_dir,
+                       clause.closure.import_chain, quotes=clause.body.quotes)
+        scope = {"_e": child}
         try:
-            scope = {"_e": child}
-            exec(self.body.code, scope)
-        except EvalError:
+            exec(clause.body.code, scope)
+        except EvalError as error:
+            if error.source is None:
+                error.source = clause.body.source
             raise
         return scope["_result"]
 
@@ -2109,9 +2158,9 @@ def _invoke(fn: Any, args: tuple, kwargs: dict | None = None,
     internal = isinstance(fn, _INTERNAL_CALLABLES)
     if kwargs and internal and not isinstance(fn, PreludeFn | Inverse):
         raise NumError("user-defined functions take positional arguments only")
-    if isinstance(fn, AdFunction) and len(args) != len(fn.params):
+    if isinstance(fn, AdFunction) and len(args) != fn.arity:
         label = spelling or fn.display_name
-        raise NumError(f"{label} takes {len(fn.params)} arguments, got {len(args)}")
+        raise NumError(f"{label} takes {fn.arity} arguments, got {len(args)}")
     if not internal:
         args = tuple(_to_py(a) for a in args)
         kwargs = {k: _to_py(v) for k, v in kwargs.items()}
@@ -2418,11 +2467,19 @@ class Derivative:
         self.fn, self.order = fn, order
         self._symbolic: tuple[sympy.Symbol, sympy.Expr] | None | bool = False
         self._dimensional_forms = {}
+        self._revision = None
+
+    def _refresh(self):
+        revision = self.fn.symbolic_revision() if isinstance(self.fn, AdFunction) else None
+        if revision != self._revision:
+            self._symbolic = False
+            self._dimensional_forms.clear()
+            self._revision = revision
 
     def _exact_form(self) -> tuple[sympy.Symbol, sympy.Expr] | None:
         if self._symbolic is False:
             self._symbolic = None
-            if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1:
+            if isinstance(self.fn, AdFunction) and self.fn.symbolic_supported and self.fn.arity == 1:
                 from . import rewrite
                 try:
                     symbol, form, _ = rewrite.run_limited(rewrite._derivative_form, self.fn, self.order)
@@ -2432,9 +2489,11 @@ class Derivative:
         return self._symbolic
 
     def _exact(self, point: AdValue) -> AdValue | None:
+        self._refresh()
         from . import dimensional, rewrite
         raw, dims = units.parts(point)
-        if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1 and (
+        if (isinstance(self.fn, AdFunction) and self.fn.symbolic_supported
+                and self.fn.arity == 1) and (
                 isinstance(point, Quantity | UnitValue) or
                 dimensional.has_units(self.fn.body.node, self.fn.closure._lookup)):
             if _is_inexact(raw):
@@ -2480,14 +2539,19 @@ class Inverse:
     def __init__(self, fn: Any):
         self.fn = fn
         self._solved: tuple[sympy.Dummy, list[sympy.Expr]] | None = None
+        self._revision = None
 
     def _solutions(self) -> tuple[sympy.Dummy, list[sympy.Expr]]:
         """The roots of `f(x) = Y` for a symbolic `Y`, solved once; empty when `f` is not a
         one-parameter user function whose body bridges to sympy."""
+        revision = self.fn.symbolic_revision() if isinstance(self.fn, AdFunction) else None
+        if revision != self._revision:
+            self._solved = None
+            self._revision = revision
         if self._solved is None:
             target = sympy.Dummy("y")
             self._solved = (target, [])
-            if isinstance(self.fn, AdFunction) and len(self.fn.params) == 1:
+            if isinstance(self.fn, AdFunction) and self.fn.symbolic_supported and self.fn.arity == 1:
                 from . import rewrite
                 try:
                     self._solved = rewrite.run_limited(rewrite._inverse_form, self.fn)
@@ -3704,19 +3768,32 @@ class Engine:
             self._fail(f"`{label}` is not bound", sid)
         return value
 
-    def define(self, name, params, sid, spelling=None, param_spellings=(), echo=True):
+    def define(self, name, params, sid, spelling=None, param_spellings=(), echo=True,
+               patterns=None, fresh_only=False):
         param_names = _display_params(params, param_spellings)
         for p, display in zip(params, param_names):
             if self._protected(p):
                 self._fail(f"`{display}` is protected", sid)
-        fn = AdFunction(name, params, self.definitions[sid], self, spelling,
-                        param_spellings)
         display_name = _display_name(name, spelling)
         if self._protected(name):
             self._fail(f"`{display_name}` is protected", sid)
-        if self._lookup(name) is not _MISSING:
-            self._fail(f"`{display_name}` is already bound", sid)
-        self.env[name] = fn
+        if len(set(params)) != len(params):
+            self._fail("function clause binders must be distinct", sid)
+        patterns = tuple((p, None) for p in params) if patterns is None else patterns
+        existing = self._lookup(name)
+        if existing is not _MISSING:
+            if (fresh_only or not isinstance(existing, AdFunction)
+                    or existing.name != name or existing.closure.env is not self.env):
+                self._fail(f"`{display_name}` is already bound", sid)
+            if len(patterns) != existing.arity:
+                self._fail(f"{display_name} clauses take {existing.arity} arguments, "
+                           f"got {len(patterns)}", sid)
+            existing.append(patterns, self.definitions[sid], self, param_names)
+            fn = existing
+        else:
+            fn = AdFunction(name, params, self.definitions[sid], self, spelling,
+                            param_spellings, patterns)
+            self.env[name] = fn
         if echo:
             self.outputs.append(f"{display_name} = {nshow(fn)}")
         return fn
@@ -4236,8 +4313,8 @@ class Engine:
         if isinstance(fn, AdFunction):
             if kwargs:
                 self._fail("user-defined functions take positional arguments only", sid)
-            if len(slots) != len(fn.params):
-                self._fail(f"{spelling or fn.display_name} takes {len(fn.params)} "
+            if len(slots) != fn.arity:
+                self._fail(f"{spelling or fn.display_name} takes {fn.arity} "
                            f"arguments, got {len(slots)}", sid)
         return Partial(fn, tuple(slots), tuple(holes), kwargs)
 

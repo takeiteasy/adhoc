@@ -14,7 +14,7 @@ the pipeline and package layout.
 | Bind or check | `_e.assign`; `\let` selects fresh-only mode |
 | Equality expression or evaluated equation quote | `_e.eq(lhs, rhs, sid)`; value equality without binding |
 | Application | `_e.app(head, args, kwargs, sid, spelling)` |
-| Function definition | `_e.define`; separately compiled body |
+| Function clause | `_e.define`; compiled pattern values and a separately compiled body |
 | Ternary | `_e.if_expr` with lazy branch thunks |
 | Python callable resolution | `_e.py`; results use the conversion matrix |
 
@@ -22,6 +22,11 @@ A callable head applies. A non-callable head with one positional argument and
 no keywords multiplies; other non-callable calls fail at the call span.
 Keyword arguments pass through to Python callables and prelude functions that
 accept them, such as `\solve` with `\domain="real"`.
+
+Named calls match ordered clause patterns before creating a local frame; only the
+selected body runs. Clauses retain their compiled bodies, source and defining
+engines. Additions preserve callable identity and require the original name and
+defining environment dictionary. `\let` selects fresh-only declarations.
 
 Calls create local frames with parent read-through. Body writes stay local;
 recursion pre-binds the function in its call frame. Internal prelude and user

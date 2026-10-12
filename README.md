@@ -60,6 +60,7 @@ Heavyweight tests are marked `slow`;
 | Guide | Contents |
 |---|---|
 | [Language guide](docs/language.md) | Values, bindings, functions, collections and interop |
+| [Function clauses](docs/function-clauses.md) | Ordered literal matching, recursion and live functions |
 | [Grammar](docs/grammar.md) | Syntax, lexical rules and precedence |
 | [Formal grammar](docs/grammar-ebnf.md) | EBNF parser productions |
 | [Collection slicing](docs/slicing.md) | Range selectors, tensor shapes and bounds |

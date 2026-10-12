@@ -86,7 +86,9 @@ the solver bridge converts the two expressions to `lhs - rhs`.
 Symbolic simplification, expansion and factoring bridge each side separately
 and reconstruct an equation quote. Both sides run in one worker under one timeout.
 
-Function bodies retain their AST and defining source. `\body` wraps a body as
+Each function clause retains its AST, defining source and closure. Named functions
+keep an ordered clause list and fixed arity; aliases share the same callable.
+For a single all-name clause or lambda, `\body` wraps the body as
 a statement-sequence expression value. Evaluation keeps its bindings local and
 returns the last statement's value. Nested definitions use the compiled-body
 table and return their callable without adding an output line.

@@ -102,10 +102,11 @@ and displays as `<fn f′>`.
 
 | Function and argument | Method |
 |---|---|
-| One-parameter definition or lambda with a supported symbolic body; exact integer, rational or Gaussian point | Exact derivative, cached on the derivative callable, to any order |
+| Single all-name, one-parameter definition or lambda with a supported symbolic body; exact integer, rational or Gaussian point | Exact derivative, cached on the derivative callable, to any order |
 | Other function or float point | Numeric differences with the same tolerances, agreement checks and budgets as `\diff` |
 
-For `f(x) = x^3`, `f'(1/2)` is exactly `3/4`.
+For `f(x) = x^3`, `f'(1/2)` is exactly `3/4`. Patterned and multi-clause functions
+use [numeric dispatch](function-clauses.md#display-and-consumers).[^clause-cache]
 See [symbolic rewriting](symbolic.md) for supported bodies and `\deriv`.
 
 On tensors, `'` remains transpose. `ᵀ` always means transpose and is an error on
@@ -152,7 +153,7 @@ the root with the larger real part wins. For `f(x) = x^2`, `f⁻¹(4)` is `2`;
 
 | Function and argument | Result |
 |---|---|
-| User function with an exactly solvable body and exact `y` | Exact root; complex `y` supported |
+| Single all-name user-function clause with an exactly solvable body and exact `y` | Exact root; complex `y` supported |
 | Other function or float `y` | Numeric root nearest `y`; real `y` required[^inverse] |
 | No preimage or a jump | Typed “no value maps to” error |
 
@@ -222,3 +223,6 @@ and nested dimensioned function calls.
 [^inverse]: A bracket grows outward from `y` until `f(x) - y` changes sign, then
     bisects. A tangent root falls back to a secant walk. The residual is checked
     before returning.
+
+[^clause-cache]: Adding a clause invalidates cached symbolic derivative and inverse
+    forms, including forms that reference the changed function.

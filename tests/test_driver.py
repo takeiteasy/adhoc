@@ -588,14 +588,14 @@ def test_body_writes_shadow_and_stay_local():
     assert last("y", env) == "= 10"
 
 
-def test_function_redefinition_errors():
-    # Definitions are declarations: identity comparison would make a check
-    # meaningless, so a bound name is an error, not a comparison.
+def test_function_clauses_append_and_fresh_only_definitions_error():
     env: dict = {}
     run_source("\\double(x) = 2x", env)
     assert last("\\double(21)", env) == "= 42"
+    assert run_source("\\double(x) = 3x", env) == [r"\double = <fn \double/1; 2 clauses>"]
+    assert last("\\double(21)", env) == "= 42"
     with pytest.raises(EvalError, match="is already bound"):
-        run_source("\\double(x) = 3x", env)
+        run_source("\\let \\double(x) = 3x", env)
     with pytest.raises(EvalError, match="is protected"):
         run_source("\\sin(x) = x", env)
 
@@ -702,13 +702,13 @@ def test_alias_protected_name_reports_its_occurrence_spelling():
     assert error.value.msg == "`ϖ` is protected"
 
 
-def test_duplicate_definition_uses_the_attempted_alias_spelling():
+def test_fresh_only_definition_uses_the_attempted_alias_spelling():
     env: dict = {}
     aliases: dict[str, str] = {}
     run_source(r"\dual \f, φ(x) = x", env, aliases=aliases)
     aliases["η"] = "f"
     with pytest.raises(EvalError) as error:
-        run_source("η(x) = x", env, aliases=aliases)
+        run_source("\\let η(x) = x", env, aliases=aliases)
     assert error.value.msg == "`η` is already bound"
 
 

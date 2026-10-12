@@ -35,14 +35,14 @@ def test_nested_definition_returns_local_closure_without_echo():
     ]
 
 
-def test_nested_definition_rejects_visible_name_at_its_span():
-    source = "f() = (\ng() = 1\ng() = 2\n)"
+def test_nested_definition_rejects_wrong_clause_arity_at_its_span():
+    source = "f() = (\ng() = 1\ng(x) = 2\n)"
     env = {}
     run_source(source, env)
-    with pytest.raises(EvalError, match="`g` is already bound") as failure:
+    with pytest.raises(EvalError, match="g clauses take 0 arguments") as failure:
         run_source("f()", env)
-    start = source.index("g() = 2")
-    assert failure.value.span == Span(start, start + len("g() = 2"))
+    start = source.index("g(x) = 2")
+    assert failure.value.span == Span(start, start + len("g(x) = 2"))
 
 
 def test_function_parameters_and_writes_are_local():

@@ -18,7 +18,8 @@ composes (`"$" + \tex(e) + "$"`) and passes to `\py` for writing to a file.
 | Input | Output |
 |---|---|
 | Quote | the expression, with parentheses only where precedence needs them |
-| User function or lambda | `f(x) = body` or `x \mapsto body` |
+| Single all-name function clause or lambda | `f(x) = body` or `x \mapsto body` |
+| Patterned or multi-clause function | All heads and bodies, in declaration order, in an `aligned` block |
 | Number | `\frac{a}{b}` for a rational; `sympy.latex` for symbolic and algebraic values; digits followed by `\ldots` for the rest |
 | Tensor | `pmatrix` |
 | Array | `\langle … \rangle` |

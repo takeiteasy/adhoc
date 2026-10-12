@@ -137,6 +137,8 @@ from .syntax import (
     Diff,
     Fold,
     FuncDef,
+    BinderPattern,
+    LiteralPattern,
     Hole,
     IfExpr,
     Import,
@@ -531,7 +533,7 @@ class _Parser:
         body = self._func_body()
         return FuncDef(name=canonical, params=params, body=body,
                        spelling=spellings[0], param_spellings=param_spellings,
-                       span=head.span.to(body.span))
+                       span=head.span.to(body.span), fresh_only=True)
 
     def _binary(self, level, operand, symbols, names, keys, association="left", right=None):
         lhs = operand()
@@ -693,18 +695,15 @@ class _Parser:
         # function definition with the ordinary greedy `;`-separated body; without
         # one it is a plain binding whose value is a single expression, exactly
         # like statement-level `=`.
-        params: tuple[str, ...] = ()
-        param_spellings: tuple[str, ...] = ()
         spelling = _spelling(end)
-        if isinstance(self.peek(), LParen):
+        function = isinstance(self.peek(), LParen)
+        if function:
             self.advance()
-            params, param_spellings = self._func_params()
+            patterns = self._clause_patterns()
         self.expect(Eq, "`=`")
-        if params:
+        if function:
             body = self._func_body()
-            return FuncDef(name=canonical, params=params, body=body,
-                           span=head.span.to(body.span), spelling=spelling,
-                           param_spellings=param_spellings)
+            return self._clause(canonical, spelling, patterns, body, head.span.to(body.span))
         value = self.expr()
         return Assign(name=canonical, value=value, span=head.span.to(value.span),
                       spelling=spelling)
@@ -732,12 +731,11 @@ class _Parser:
                     head.span.to(name_tok.span),
                 )
             self.advance()
-            params, param_spellings = self._func_params()
+            patterns = self._clause_patterns()
             self.expect(Eq, "`=`")
             body = self._func_body()
-            return FuncDef(name=name, params=params, body=body,
-                           span=head.span.to(body.span), spelling=spelling,
-                           param_spellings=param_spellings)
+            return self._clause(name, spelling, patterns, body,
+                                head.span.to(body.span), fresh_only=True)
         self.expect(Eq, "`=`")
         value = self.expr()
         return Assign(name=name, value=value, fresh_only=True,
@@ -786,6 +784,50 @@ class _Parser:
         self.expect(RParen, "`)`")
         return tuple(params), tuple(param_spellings)
 
+    def _clause_patterns(self) -> tuple[Node, ...]:
+        self._skip_newlines()
+        values = []
+        while not isinstance(self.peek(), RParen):
+            plus = self.advance() if isinstance(self.peek(), Plus) else None
+            with self._list_context(True):
+                value = self.expr()
+            if plus is not None:
+                if not isinstance(value, NumLit):
+                    raise ParseError("a positive literal pattern needs a number", plus.span)
+                value = NumLit(text="+" + value.text, span=plus.span.to(value.span))
+            values.append(value)
+            if not isinstance(self.peek(), Comma):
+                break
+            self.advance()
+            self._skip_newlines()
+        self.expect(RParen, "`)`")
+        return tuple(values)
+
+    def _clause(self, name, spelling, values, body, span, fresh_only=False):
+        patterns = []
+        binders = set()
+        for value in values:
+            binder = (value.ch if isinstance(value, Var) else
+                      value.name if isinstance(value, BackslashRef) else None)
+            if (isinstance(value, NumLit | StrLit)
+                    or isinstance(value, UnOp) and value.op is UnaryOperator.NEG
+                    and isinstance(value.operand, NumLit)
+                    or binder in ("true", "false")):
+                patterns.append(LiteralPattern(value=value, span=value.span))
+            elif binder is not None:
+                if binder in binders:
+                    raise ParseError("function clause binders must be distinct", value.span)
+                binders.add(binder)
+                patterns.append(BinderPattern(name=binder, spelling=value.spelling,
+                                              span=value.span))
+            else:
+                raise ParseError("function clause patterns must be names or literals", value.span)
+        names = [p for p in patterns if isinstance(p, BinderPattern)]
+        spellings = tuple(p.spelling or p.name for p in names)
+        return FuncDef(name=name, params=tuple(p.name for p in names), body=body, span=span,
+                       spelling=spelling, param_spellings=spellings,
+                       patterns=tuple(patterns), fresh_only=fresh_only)
+
     def _func_body(self) -> Node:
         self.depth += 1
         try:
@@ -803,34 +845,14 @@ class _Parser:
         return Seq(statements=tuple(body_stmts),
                    span=body_stmts[0].span.to(body_stmts[-1].span))
 
-    # func-def ::= name "(" params? ")" "=" statement (";" statement)* ;
-    # Speculative: parse the head shape, and only commit when an `=` follows the
-    # closing paren; anything else restores the position so `f(x)` reparses as an
-    # application. Parameter validity is enforced only once committed. Newlines are
-    # whitespace where an operand is expected, so the parameter list may span lines.
+    # Commit pattern validation only after the closing paren is followed by `=`.
     def _func_def_or_none(self) -> FuncDef | None:
         ident_tok = self.advance()
         self.advance()  # LParen — caller verified peek2
-        self._skip_newlines()
-        params: list[str] = []
-        param_spellings: list[str] = []
-        while True:
-            tok = self.peek()
-            if isinstance(tok, Ident | Backslash):
-                params.append(self._canonical(tok.ch) if isinstance(tok, Ident) else tok.name)
-                param_spellings.append(_spelling(tok))
-                self.advance()
-            elif isinstance(tok, RParen):
-                break
-            else:
-                return None
-            if isinstance(self.peek(), Comma):
-                self.advance()
-            else:
-                break
-        if not isinstance(self.peek(), RParen):
+        try:
+            values = self._clause_patterns()
+        except ParseError:
             return None
-        close = self.advance()
         if not isinstance(self.peek(), Eq):
             return None
         self.advance()  # `=`
@@ -838,8 +860,7 @@ class _Parser:
         span = ident_tok.span.to(body.span)
         name = (self._canonical(ident_tok.ch) if isinstance(ident_tok, Ident)
                 else ident_tok.name)
-        return FuncDef(name=name, params=tuple(params), body=body, span=span,
-                       spelling=_spelling(ident_tok), param_spellings=tuple(param_spellings))
+        return self._clause(name, _spelling(ident_tok), values, body, span)
 
     # The statement list of a parenthesized group: statements separated by a newline
     # run or a single `;` (blank lines are free, `;;` an error, a trailing `;` before

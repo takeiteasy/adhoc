@@ -77,7 +77,15 @@ def _apply_operation(name, value, args, kwargs, captured):
 def _is_function(value):
     from .runtime import AdFunction
     from .symbolic_worker import FunctionSnapshot
-    return isinstance(value, AdFunction | FunctionSnapshot)
+    if isinstance(value, AdFunction | FunctionSnapshot):
+        _require_symbolic_function(value)
+        return True
+    return False
+
+
+def _require_symbolic_function(fn):
+    if not fn.symbolic_supported:
+        raise RewriteError("symbolic operations need a single clause with name parameters")
 
 
 _FUNCTIONS = {
@@ -309,6 +317,7 @@ def _function_source(fn: Any, declared=None) -> Source:
 
 
 def _bridge_function(fn: Any, declared=None, active=()) -> Source:
+    _require_symbolic_function(fn)
     if any(fn is caller for caller in active):
         raise RewriteError("cannot rewrite recursive function calls")
     node = _single_expression(fn.body.node)

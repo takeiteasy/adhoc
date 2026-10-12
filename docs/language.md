@@ -127,6 +127,8 @@ Define functions with `f(x) = x^2` or `\fact(n) = body`. Functions are first-cla
 support recursion, and accept positional parameters. Every call has local
 parameters and bindings; reads fall through to enclosing scopes. A nested
 function definition binds locally and returns its callable when it ends the body.
+Repeated definitions add [ordered clauses](function-clauses.md) through the original
+name in its defining frame; name and literal patterns select the first matching body.
 
 | Form | Meaning |
 |---|---|
@@ -250,7 +252,7 @@ membership. Whole-line integration requires both tails to converge independently
 |---|---|
 | `q = \expr(x^2 - 4)` or ``q = `(x^2 - 4)`` | Store syntax without evaluating it |
 | `\eval(q, x=3)` | Evaluate the quote: `5` |
-| `\body(f)` | Reflect a user function or lambda body |
+| `\body(f)` | Reflect a single all-name clause or lambda body |
 | `\reduce(\expr((\fn(x) x + 1)(2)))` | Beta-reduce to `\expr((2 + 1))` |
 | `\solve(\expr(x^2 - 4))` | Solve symbolically: `{-2, 2}` |
 | `\solve(\expr(x^2 = 4))` | Solve an equation quote: `{-2, 2}` |

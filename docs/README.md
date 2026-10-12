@@ -5,6 +5,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | Guide | Contents |
 |---|---|
 | [Language guide](language.md) | Values, bindings, functions, collections and interop |
+| [Function clauses](function-clauses.md) | Ordered literal matching, recursion and live functions |
 | [Grammar](grammar.md) | Syntax, lexical rules and precedence |
 | [Formal grammar](grammar-ebnf.md) | EBNF parser productions |
 | [Collection slicing](slicing.md) | Range selectors, tensor shapes and bounds |

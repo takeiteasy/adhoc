@@ -1,0 +1,32 @@
+"Ordered clauses: the first matching head supplies the result."
+\fact(0) = 1
+\fact(n) = n*\fact(n-1)
+\fact(5)
+(\fact(0) = 1)
+
+"Literal patterns and a catch-all."
+f(-2) = 20
+f("yes") = 30
+f(\true) = 40
+f(x) = 50
+f(-2.)
+f("yes")
+f(\true)
+f(1)
+
+"Aliases and partials see later additions."
+g(0,x) = x
+h = g
+p = g(2,·)
+g(n,x) = n+x
+h(2,3)
+p(3)
+
+"Each nested function captures its defining call."
+k(a) = (
+r(0) = a
+r(n) = n+r(n-1)
+r
+)
+s = k(10)
+s(3)

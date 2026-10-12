@@ -123,14 +123,15 @@ or misplaced `\let` is an error, and incomplete forms enter the REPL continuatio
 | `\expr((x=1; x+1))` | Quote a statement sequence |
 | `\expr((x+1;))` | Quote a single-statement sequence; trailing separator required |
 | `\eval(q, x=3)` | Evaluate a quote or nested array of quotes with local named bindings |
-| `\body(f)` | Return a user function or lambda's body as an expression value |
+| `\body(f)` | Return a single all-name clause or lambda body as an expression value |
 | `\reduce(q)` | Beta-reduce an expression quote |
 
 Evaluation bindings are computed in the caller's scope before the quote runs.
 Other names resolve in the evaluation scope. Bindings stay local and cannot
 shadow protected names except `i`. Expression values print as parseable
 `\expr(...)` text; binding checks compare AST structure and canonical names.
-Built-ins and Python callables have no reflected body.
+Built-ins and Python callables have no reflected body. Patterned and multi-clause
+functions have [reflection limitations](function-clauses.md#limitations).
 
 An equation occupies the whole expression quote and has one outer `=`. Enclosing
 parentheses are optional: `\expr((x=4))` is an equation quote. Evaluating it
@@ -306,14 +307,18 @@ binders mask their variables and quotes do not read names. See [graph sampling](
 
 ## Functions and conditionals
 
+Named functions contain [ordered clauses](function-clauses.md): the first matching
+head runs. Heads accept name binders and numeric, string or Boolean literal patterns.
+All clauses have the same arity; duplicate binders are errors.
+
 Function definitions are callable values. Multi-character function and parameter names use
 the backslash sigil:
 
 ```
 f(x) = x^2 + 1
 f(3)                         ->  = 10
-f(a,b) = c = ab; cc          -- c and the parameters are call-local
-f(3,4)                       ->  = 144
+g(a,b) = c = ab; cc          -- c and the parameters are call-local
+g(3,4)                       ->  = 144
 \fact(n) = n <= 1 ? 1 : n*\fact(n-1)
 ```
 
@@ -321,7 +326,9 @@ Function bodies are semicolon-separated statements; a parenthesized group ([Grou
 gives a def a multi-line body. A call gets a fresh local frame;
 reads fall through to globals, while assignments never escape the call. The function's
 own name is installed in that frame before the body runs, enabling recursion. Definitions
-are first-class and display as `<fn f(x)>` or `<fn \fact(n)>`.
+are first-class. A single all-name clause displays as `<fn f(x)>` or
+`<fn \fact(n)>`; other functions show arity and clause count, such as
+`<fn f/1; 2 clauses>`.
 
 A definition inside a function or quoted statement body binds locally without an echo. Its
 value is the new callable. A newline separates a nested definition from a following call:
@@ -1071,9 +1078,10 @@ Reads search locals, enclosing scopes, globals and the prelude. Binding and
 checking stay in the current frame. A local `y = expr` shadows a global `y`;
 repeating it checks the local value without changing the global.
 
-Function definitions always declare: defining `f(x) = body` on a bound or
-protected name is an error. The top-level `\let f(x) = body` form has the same
-fresh-only behavior. Within call arguments, `name=value` passes a keyword
+A bare `f(...) = body` creates a function or appends a clause through its original
+canonical name in its defining frame. Additions through value aliases, imported
+bindings or enclosing scopes are errors; protected names remain errors. The
+top-level `\let f(...) = body` form requires a fresh name. Within call arguments, `name=value` passes a keyword
 argument and never binds.
 
 Top-level groups flatten into statements with individual echo lines and create

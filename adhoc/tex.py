@@ -373,6 +373,18 @@ def _value_tex(value, show) -> str:
     if isinstance(value, ExpressionValue):
         return node_tex(value.node)
     if isinstance(value, AdFunction):
+        if not value.symbolic_supported:
+            label = _name(value.name) if is_short_name(value.name) else _long_name(value.name)
+            rows = []
+            for clause in value.clauses:
+                params = [(_name(name) if is_short_name(name) else _long_name(name))
+                          if name is not None else _value_tex(literal, show)
+                          for name, literal in clause.patterns]
+                binders = [name for name, _ in clause.patterns if name is not None]
+                with _scope(clause.closure._lookup, binders):
+                    body = node_tex(clause.body.node)
+                rows.append(rf"{label}\left({', '.join(params)}\right) &= {body}")
+            return r"\begin{aligned} " + r" \\ ".join(rows) + r" \end{aligned}"
         params = [_name(p) if is_short_name(p) else _long_name(p) for p in value.params]
         with _scope(value.closure._lookup, value.params):
             body = node_tex(value.body.node)
