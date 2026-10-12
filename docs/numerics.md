@@ -41,6 +41,40 @@ right-hand sides do not affect that choice. The cutoff is independent of `\prec`
 and is not user-configurable. See [matrix numerics](matrix-numerics.md) for
 singularity, RREF and range-error behavior.
 
+## Numeric introspection
+
+`\exact(v)` returns whether a numeric scalar is stored in an exact tier.
+`\tier(v)` returns its stored tier as a lowercase string. Both inspect the
+evaluated value without simplifying it or changing its display precision.
+
+| Tier string | `\exact(v)` | Example |
+|---|---|---|
+| `"integer"` | `true` | `3` |
+| `"rational"` | `true` | `0.5` |
+| `"gaussian"` | `true` | `2+3i` |
+| `"symbolic"` | `true` | `π`, `πi` |
+| `"algebraic"` | `true` | `2^(1/3)`, `1+√2i` |
+| `"rra"` | `true` | `π+1`, `\sin(1+i)` |
+| `"float"` | `false` | `1.`, `5e-1`, `\inf`, `\nan` |
+| `"complex-float"` | `false` | `1.+i` |
+
+```text
+\tier(√2 * √2)         -> = "integer"
+\exact(π + 1)          -> = true
+\exact(0.5)            -> = true
+\exact(5e-1)           -> = false
+\map(\exact, ⟨1, 1.⟩)  -> = ⟨true, false⟩
+```
+
+Exactness describes the representation, including RRA values with approximate
+display digits. It does not certify an approximate method's accuracy or an
+[RRA equality decision](#limitations).
+
+Each function takes one positional argument. Booleans, strings, collections,
+tensors, functions, expression quotes, units and quantities produce typed
+errors. Extract a quantity's magnitude explicitly:
+`\tier(\magnitude(2\metre, \metre))` returns `"integer"`.
+
 ## Powers and roots
 
 Integer exponents preserve exactness, including negative exponents: `2^-1` is

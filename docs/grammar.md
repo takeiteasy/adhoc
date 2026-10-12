@@ -1100,6 +1100,7 @@ is immutable; `\let` explicitly requires a fresh binding.
 | `\true` / `\false` | Boolean constants |
 | `\sin` `\cos` `\tan` `\ln` `\sqrt` | Elementary functions; exact arguments stay exact |
 | `\isnan` / `\isinf` / `\isfinite` | Numeric finiteness tests; exact tiers are finite |
+| `\exact(v)` / `\tier(v)` | Numeric scalar exactness boolean or [stored tier string](numerics.md#numeric-introspection) |
 | `\complex(re, im)` | Build a complex value; zero imaginary part collapses to real |
 | `\re` / `\im` | Real and imaginary components |
 | `\root(x, n)` | `x^(1/n)` for exact positive integer `n`; `∛x` uses `n=3` |

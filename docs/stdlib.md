@@ -5,6 +5,18 @@ are protected: they cannot be rebound or shadowed. See
 [numerics](numerics.md) for numeric tiers and the
 [prelude](grammar.md#the-prelude) for constants and core functions.
 
+## Numeric introspection
+
+| Function | Result | Example |
+|---|---|---|
+| `\exact(v)` | Boolean: whether a numeric scalar uses an exact tier | `\exact(π+1)` → `true` |
+| `\tier(v)` | Stored numeric tier as a lowercase string | `\tier(0.5)` → `"rational"` |
+
+Both take one positional numeric scalar. Other values, including booleans,
+collections and quantities, produce typed errors. See
+[numeric introspection](numerics.md#numeric-introspection) for all eight tier
+strings and explicit quantity magnitude extraction.
+
 ## Graphs
 
 | Function | Result | Example |

@@ -282,7 +282,8 @@ class PreludeFn:
             if self.name not in {"convert", "magnitude", "unit", "norm", "det", "inv", "tr",
                                  "rank", "rref", "linsolve", "kron", "outer", "cross", "diag",
                                  "stack", "concat", "reshape", "polar", "tex", "min", "max",
-                                 "mean", "median", "stdev", "sstdev", "root", "congruent"}:
+                                 "mean", "median", "stdev", "sstdev", "root", "congruent",
+                                 "exact", "tier"}:
                 args = tuple(units.dimensionless(v, self.name) for v in args)
         return self.fn(*args, **kwargs)
 
@@ -415,6 +416,22 @@ def _predicate_fn(name: str, float_fn: Callable[[float], bool], exact: bool) -> 
             return getattr(cmath, name)(v)
         return exact
     return PreludeFn(name, call)
+
+
+def _tier_call(v: AdValue, /) -> str:
+    if isinstance(v, bool | Quantity | UnitValue):
+        raise NumError("numeric introspection needs a numeric scalar")
+    for kind, name in ((int, "integer"), (Fraction, "rational"),
+                       (Gaussian, "gaussian"), (Symbolic, "symbolic"),
+                       (Algebraic, "algebraic"), (RRA, "rra"),
+                       (float, "float"), (complex, "complex-float")):
+        if isinstance(v, kind):
+            return name
+    raise NumError("numeric introspection needs a numeric scalar")
+
+
+def _exact_call(v: AdValue, /) -> bool:
+    return _tier_call(v) not in {"float", "complex-float"}
 
 
 def _prec_call(v: AdValue) -> AdValue:
@@ -622,6 +639,8 @@ PRELUDE: dict[str, Any] = {
     "isnan": _predicate_fn("isnan", math.isnan, False),
     "isinf": _predicate_fn("isinf", math.isinf, False),
     "isfinite": _predicate_fn("isfinite", math.isfinite, True),
+    "exact": PreludeFn("exact", _exact_call),
+    "tier": PreludeFn("tier", _tier_call),
     "complex": PreludeFn("complex", _complex_call),
     "re": PreludeFn("re", _re_call),
     "im": PreludeFn("im", _im_call),

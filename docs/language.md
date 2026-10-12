@@ -113,6 +113,11 @@ the stored value remains exact.[^display]
 `\isnan`, `\isinf` and `\isfinite` inspect numeric values. Exact values are finite;
 non-numeric arguments produce typed errors.
 
+`\exact(v)` tests a numeric scalar's stored exactness: `\exact(π+1)` is `true`,
+while `\exact(1.)` is `false`. `\tier(v)` returns its
+[numeric tier string](numerics.md#numeric-introspection), such as `"rational"`
+for `0.5`. Both reject quantities; extract their magnitude explicitly.
+
 ## Functions and application
 
 Define functions with `f(x) = x^2` or `\fact(n) = body`. Functions are first-class,

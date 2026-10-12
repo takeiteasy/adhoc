@@ -42,3 +42,12 @@ i*i;            -- -1
 \re(2+3i);
 \im(2+3i);
 \complex(0.5, 0.25);   -- builds from components: 1/2+1/4i
+
+-- inspect stored exactness independently of approximate display digits
+\exact(π + 1);
+\exact(0.5);
+\exact(5e-1);
+\tier(0.5);
+\tier(√2 * √2);
+\tier(1. + i);
+\map(\exact, ⟨1, π + 1, 1.⟩);
