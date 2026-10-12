@@ -197,6 +197,8 @@ from . import tensor as tn
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
+from .graph import (GraphValue, DEFAULT_TOLERANCE, DEFAULT_MAX_POINTS, INITIAL_POINTS,
+                    sample as sample_graph)
 from .solution_set import SymbolicSetValue
 from .expression import ExpressionValue, show_quote
 from .syntax import OP_SYMBOLS, Seq, is_short_name
@@ -208,7 +210,7 @@ from .units import Quantity, UnitValue
 from .tensor import ArrayValue, SetValue, TensorError, TensorValue
 
 AdValue = (int | Fraction | float | complex | bool | str | Gaussian | Symbolic | Algebraic | RRA
-           | ExpressionValue | TensorValue | ArrayValue | SetValue | SymbolicSetValue | Quantity | UnitValue)
+           | ExpressionValue | TensorValue | ArrayValue | SetValue | SymbolicSetValue | GraphValue | Quantity | UnitValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -238,7 +240,7 @@ _NUMERIC_TYPES = (int, float, complex, Fraction, Gaussian, Symbolic, Algebraic, 
 #: unit literal and the conventional loop-binder variable, handled like any
 #: other identifier clash.
 SHADOWABLE_PRELUDE = frozenset({"i"})
-RESERVED_NAMES = frozenset({"infix", "let", "expr", "eval", "contract", "times", "otimes", "arr", "cup", "cap", "setminus",
+RESERVED_NAMES = frozenset({"graph", "infix", "let", "expr", "eval", "contract", "times", "otimes", "arr", "cup", "cap", "setminus",
                            "in", "subseteq", "circ", "mod", "angle", "and", "or", "not", "implies",
                            "iff", "neq", "approx", "notin", "subset",
                            "supseteq", "supset", "per", "equiv"})
@@ -306,7 +308,7 @@ def _complex_fn(name: str, z: complex) -> AdValue:
     try:
         return _inexact(fn(z))
     except (ValueError, OverflowError, ZeroDivisionError) as e:
-        raise NumError(f"\\{name}: {e}") from e
+        raise NumericDomainError(f"\\{name}: {e}") from e
 
 
 def _float_fn(name: str, float_fn: Callable, x: float) -> AdValue:
@@ -314,14 +316,15 @@ def _float_fn(name: str, float_fn: Callable, x: float) -> AdValue:
     principal value exists (`\\sqrt(-2.)`, `\\asin(2.)`) gives that value."""
     try:
         return float_fn(x)
-    except ValueError:
-        if name not in _CMATH_FNS:
-            raise
-        try:
-            return _inexact(_CMATH_FNS[name](x))
-        except ValueError:
-            pass
-        raise
+    except ValueError as error:
+        if name in _CMATH_FNS:
+            try:
+                return _inexact(_CMATH_FNS[name](x))
+            except ValueError:
+                pass
+        raise NumericDomainError(f"\\{name}: ValueError: {error}") from error
+    except (OverflowError, ZeroDivisionError) as error:
+        raise NumericDomainError(f"\\{name}: {type(error).__name__}: {error}") from error
 
 
 def _float_fall(name: str, float_fn: Callable, v: AdValue) -> AdValue:
@@ -342,8 +345,7 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
     on the inexact tiers: `math.*` with the complex principal value where a
     domain error has one (`\\sqrt(-2.)`), `cmath.*` for a complex float.
     Exact-tier domain failures (`\\ln(0)`, `\\tan(π/2)`) are typed NumErrors at the
-    call's span; the float tier keeps `math.*`'s own raising behavior (`\\ln(0.)` →
-    ValueError, wrapped and spanned by `app`)."""
+    call's span; float-tier domain failures retain that category and span."""
     def call(v: AdValue) -> AdValue:
         _reject_non_numeric(v)
         if isinstance(v, float):
@@ -356,7 +358,7 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
             try:
                 return rra.apply(name, v)
             except rra.DomainError as e:
-                raise NumError(e.args[0])
+                raise NumericDomainError(e.args[0])
             except rra.Unrepresentable:
                 return _float_fall(name, float_fn, v)
         if isinstance(v, Algebraic):
@@ -368,7 +370,7 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
                 try:
                     return rra.apply(name, v)
                 except rra.DomainError as e:
-                    raise NumError(e.args[0])
+                    raise NumericDomainError(e.args[0])
                 except rra.Unrepresentable:
                     return _float_fall(name, float_fn, v)
             try:
@@ -376,13 +378,13 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
             except algebraic.Unrepresentable:
                 pass
             except algebraic.DomainError as e:
-                raise NumError(e.args[0])
+                raise NumericDomainError(e.args[0])
         try:
             return symbolic.apply(name, v)
         except Unrepresentable:
             pass
         except DomainError as e:
-            raise NumError(e.args[0])
+            raise NumericDomainError(e.args[0])
         if name == "sqrt":
             # `sqrt` preserves algebraicity for symbolic arguments too
             # (`\sqrt(√2)` is `2^(1/4)`), so it routes through the algebraic
@@ -393,13 +395,13 @@ def _prelude_fn(name: str, float_fn: Callable) -> PreludeFn:
             except algebraic.Unrepresentable:
                 pass
             except algebraic.DomainError as e:
-                raise NumError(e.args[0])
+                raise NumericDomainError(e.args[0])
         try:
             return rra.apply(name, v)
         except rra.Unrepresentable:
             return _float_fall(name, float_fn, v)
         except rra.DomainError as e:
-            raise NumError(e.args[0])
+            raise NumericDomainError(e.args[0])
     return PreludeFn(name, call)
 
 
@@ -426,7 +428,7 @@ def _prec_call(v: AdValue) -> AdValue:
     try:
         return rra.set_precision(v)
     except rra.DomainError as e:
-        raise NumError(e.args[0])
+        raise NumericDomainError(e.args[0])
 
 
 def _complex_call(*args: AdValue) -> AdValue:
@@ -669,8 +671,13 @@ class RangeValue:
 
 
 class NumError(Exception):
-    """Typed numeric failure raised by the seam. Callers attach the offending
-    expression's span to it rather than letting evaluation abort uncaught."""
+    """Typed numeric failure; callers attach the offending expression's span."""
+
+    domain = False
+
+
+class NumericDomainError(NumError):
+    domain = True
 
 
 def _is_float(v: AdValue) -> bool:
@@ -742,7 +749,7 @@ def _cpow(a: complex, b: complex) -> complex:
     try:
         return a ** b
     except ZeroDivisionError:
-        raise NumError(DIVISION_BY_ZERO) from None
+        raise NumericDomainError(DIVISION_BY_ZERO) from None
     except OverflowError:
         # Saturate per component like the real float tier.
         log_r, theta = math.log(abs(a)), cmath.phase(a)
@@ -804,13 +811,13 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
     except Unrepresentable:
         pass
     except DomainError as e:
-        raise NumError(e.args[0])
+        raise NumericDomainError(e.args[0])
     try:
         return algebraic.combine(op, a, b)
     except algebraic.Unrepresentable:
         pass
     except algebraic.DomainError as e:
-        raise NumError(e.args[0])
+        raise NumericDomainError(e.args[0])
     try:
         return rra.combine(op, a, b)
     except rra.Unrepresentable:
@@ -818,7 +825,7 @@ def _exact_combine(op: str, a: AdValue, b: AdValue,
             return _complex_binary(op, a, b)
         return float_fallback()
     except rra.DomainError as e:
-        raise NumError(e.args[0])
+        raise NumericDomainError(e.args[0])
 
 
 def _tensor_op(f: Callable, a: AdValue, b: AdValue) -> AdValue:
@@ -909,11 +916,11 @@ def ndiv(a: AdValue, b: AdValue) -> AdValue:
         # A Gaussian divisor never vanishes (the imaginary part cannot), so the
         # zero check only fires on a bare exact 0.
         if b == 0:
-            raise NumError(DIVISION_BY_ZERO)
+            raise NumericDomainError(DIVISION_BY_ZERO)
         return gauss.div(a, b)
     divisor = Fraction(b)
     if divisor == 0:
-        raise NumError(DIVISION_BY_ZERO)
+        raise NumericDomainError(DIVISION_BY_ZERO)
     return _normalize(Fraction(a) / divisor)
 
 
@@ -933,7 +940,7 @@ def nmod(a: AdValue, b: AdValue) -> AdValue:
             return math.nan
     if isinstance(a, (int, Fraction)) and isinstance(b, (int, Fraction)):
         if b == 0:
-            raise NumError(DIVISION_BY_ZERO)
+            raise NumericDomainError(DIVISION_BY_ZERO)
         return _normalize(Fraction(a) % Fraction(b))
     quotient = ndiv(a, b)
     return nsub(a, nmul(b, _integral(quotient, "floor")))
@@ -1061,7 +1068,7 @@ def _pow_exact_base(a: AdValue, n: int) -> AdValue:
     # Negative integer exponent on an exact value: invert then raise. `0^-n` is the
     # same failure as `1/0` and must be reported the same way.
     if base == 0:
-        raise NumError(DIVISION_BY_ZERO)
+        raise NumericDomainError(DIVISION_BY_ZERO)
     return _normalize(Fraction(1) / base ** (-n))
 
 
@@ -1255,6 +1262,10 @@ def _show_tensor(t: TensorValue, digits: int | None) -> str:
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
     if isinstance(v, Quantity | UnitValue):
         return units.show(v, lambda x: nshow(x, digits))
+    if isinstance(v, GraphValue):
+        status = "complete" if v.complete else "incomplete: " + ", ".join(v.stopping_reasons)
+        return (f"<graph {v.axis_spelling}={nshow(v.bounds[0], digits)}..{nshow(v.bounds[1], digits)}; "
+                f"{v.evaluations} samples; {len(v.breaks)} gaps; {status}>")
     if isinstance(v, SymbolicSetValue):
         return v.render()
     if isinstance(v, SetValue):
@@ -1296,7 +1307,7 @@ def nshow(v: AdValue | str, digits: int | None = None) -> str:
         try:
             return rra.show(v, digits)
         except rra.DomainError as e:
-            raise NumError(e.args[0])
+            raise NumericDomainError(e.args[0])
     if isinstance(v, Inverse) and id(v.fn) in _INVERSES:
         return nshow(_INVERSES[id(v.fn)], digits)
     if isinstance(v, Composed | Partial | OperatorFn | Derivative | Inverse):
@@ -1864,11 +1875,13 @@ class _ComplexTailEstimator:
 class EvalError(Exception):
     """A runtime failure with its message and, when known, the offending span."""
 
-    def __init__(self, msg: str, span: Span | None = None, source: str | None = None):
+    def __init__(self, msg: str, span: Span | None = None, source: str | None = None,
+                 *, domain: bool = False):
         super().__init__(msg)
         self.msg = msg
         self.span = span
         self.source = source
+        self.domain = domain
 
 
 _MISSING = object()
@@ -1960,7 +1973,7 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
         raise NumError("the call returned nothing")
     if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | Derivative | Inverse
                       | ExpressionValue
-                      | TensorValue | ArrayValue | SetValue | SymbolicSetValue | Quantity | UnitValue):
+                      | TensorValue | ArrayValue | SetValue | SymbolicSetValue | GraphValue | Quantity | UnitValue):
         return value
     if isinstance(value, RangeValue | IntervalValue | LazySeq):
         return value
@@ -2080,7 +2093,8 @@ def _invoke(fn: Any, args: tuple, kwargs: dict | None = None,
         raise
     except Exception as e:
         name = spelling or getattr(fn, "__name__", None) or "<callable>"
-        raise NumError(f"{name}: {type(e).__name__}: {e}") from None
+        error_type = NumericDomainError if isinstance(e, (ZeroDivisionError, OverflowError)) else NumError
+        raise error_type(f"{name}: {type(e).__name__}: {e}") from None
     return _to_ad(result, preserve_bool=internal)
 
 
@@ -3528,8 +3542,8 @@ class Engine:
         self.outputs: list[str] = []
         self.result: Any = None
 
-    def _fail(self, msg: str, sid: int) -> NoReturn:
-        raise EvalError(msg, self.spans[sid])
+    def _fail(self, msg: str, sid: int, *, domain: bool = False) -> NoReturn:
+        raise EvalError(msg, self.spans[sid], domain=domain)
 
     def quote(self, sid: int) -> ExpressionValue:
         return self.quotes[sid]
@@ -3742,7 +3756,7 @@ class Engine:
                 raise NumError("range step cannot be zero")
             return RangeValue(start, step, end, second)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def _eval_bound(self, body: Any, bindings: dict[str, AdValue], label: str,
                     sid: int) -> AdValue:
@@ -3757,7 +3771,7 @@ class Engine:
         except EvalError:
             raise
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
         except Exception as e:
             self._fail(f"{label} failed unexpectedly: {type(e).__name__}: {e}", sid)
         return scope["_result"]
@@ -3801,7 +3815,7 @@ class Engine:
             except StopIteration:
                 break
             except NumError as e:
-                self._fail(e.args[0], sid)
+                self._fail(e.args[0], sid, domain=e.domain)
             term = self._eval_bound(body, {name: binding}, label, sid)
             if infinite and isinstance(term, TensorValue):
                 self._fail(f"{label} over an infinite range needs numeric terms", sid)
@@ -3816,7 +3830,7 @@ class Engine:
                 try:
                     limit = progress.observe(term, acc)
                 except NumError as e:
-                    self._fail(e.args[0], sid)
+                    self._fail(e.args[0], sid, domain=e.domain)
                 if limit is not None:
                     return limit
         return acc
@@ -3834,7 +3848,7 @@ class Engine:
             except StopIteration:
                 return not witness
             except NumError as e:
-                self._fail(e.args[0], sid)
+                self._fail(e.args[0], sid, domain=e.domain)
             term = self._eval_bound(body, {name: item}, label, sid)
             if not isinstance(term, bool):
                 self._fail(f"{label} needs a boolean body, got {nshow(term)}", sid)
@@ -3864,7 +3878,7 @@ class Engine:
             _reject_non_numeric(point_value)
             anchor = _as_inexact(point_value)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
         if not _finite(anchor):
             self._fail(f"{label} approaches a finite point", sid)
         if self._protected(name):
@@ -3888,7 +3902,7 @@ class Engine:
                 try:
                     estimate = _as_inexact(raw)
                 except NumError as e:
-                    self._fail(e.args[0], sid)
+                    self._fail(e.args[0], sid, domain=e.domain)
                 if previous is not None and _settled(previous, estimate):
                     converged = True
                     break
@@ -3921,7 +3935,54 @@ class Engine:
                 lambda point: self._eval_bound(body, {name: point}, label, sid),
                 point_value, order, label)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
+
+    def graph(self, name: str, axis_spelling: str | None, label: str, target: Any,
+              bound: Any, options: dict[str, Any], expression_mode: bool, sid: int,
+              spelling: str | None = None) -> GraphValue:
+        if self._protected(name):
+            self._fail(f"`{_display_name(name, axis_spelling)}` is protected", sid)
+        if not isinstance(bound, RangeValue) or bound.end is None or bound.second is not None:
+            self._fail("\\graph takes a finite unstepped range a..b", sid)
+        try:
+            lo, hi = _as_float(bound.start), _as_float(bound.end)
+            if isinstance(bound.start, bool) or isinstance(bound.end, bool) or not all(
+                    math.isfinite(value) for value in (lo, hi)):
+                raise NumError("\\graph bounds must be finite real scalars")
+            tolerance_value = options.get("tol", DEFAULT_TOLERANCE)
+            tolerance = _as_float(tolerance_value)
+            if isinstance(tolerance_value, bool) or not math.isfinite(tolerance) or tolerance <= 0:
+                raise NumError("\\graph tolerance must be finite and positive")
+            maxpoints = _exact_int(options.get("maxpoints", DEFAULT_MAX_POINTS), "\\maxpoints")
+            if maxpoints < INITIAL_POINTS:
+                raise NumError(f"\\maxpoints must be at least {INITIAL_POINTS}")
+            if not expression_mode and not callable(target):
+                raise NumError("\\graph needs a callable or an expression using its axis")
+        except NumError as error:
+            self._fail(error.args[0], sid)
+        body = self.definitions.get(sid)
+
+        def evaluate(point):
+            try:
+                raw = (self._eval_bound(body, {name: point}, spelling or "\\graph", sid)
+                       if expression_mode else self.app(target, (point,), {}, sid))
+            except (NumError, EvalError) as error:
+                if error.domain:
+                    return None
+                raise
+            if isinstance(raw, bool | Quantity | UnitValue) or not isinstance(raw, _NUMERIC_TYPES):
+                self._fail("\\graph samples must be real scalars", sid)
+            if _is_complex(raw):
+                return None
+            try:
+                value = _as_float(raw)
+            except NumError:
+                return None
+            return value if math.isfinite(value) else None
+
+        return sample_graph(evaluate, min(lo, hi), max(lo, hi), axis=name,
+                            axis_spelling=_display_name(name, axis_spelling), label=label,
+                            tolerance=tolerance, maxpoints=maxpoints)
 
     def integral(self, name: str, bound: AdValue | RangeValue | IntervalValue, sid: int,
                  spelling: str | None = None, var_spelling: str | None = None) -> float | complex:
@@ -3956,7 +4017,7 @@ class Engine:
             return units.attach(-result if sign < 0 else result,
                                 units.combine(samples.output_dimensions, dimension))
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def piecewise(self, conditions, values, otherwise, sid):
         """`{c: v; …}` — the first true condition's value; only that branch evaluates."""
@@ -4004,7 +4065,7 @@ class Engine:
             visit(0, {})
             return SetValue(_dedup(kept))
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def tensor(self, items, row_length, sid):
         try:
@@ -4018,7 +4079,7 @@ class Engine:
                 return tn.stack(list(items))
             return tn.from_rows(list(items), row_length)
         except (NumError, TensorError) as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=isinstance(e, NumError) and e.domain)
 
     def array(self, items, sid):
         return ArrayValue(tuple(items))
@@ -4094,7 +4155,7 @@ class Engine:
         try:
             return ntranspose(value)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def dot(self, a, b, sid):
         return self._binop(ndot, a, b, sid)
@@ -4303,7 +4364,7 @@ class Engine:
                 message = e.args[0]
                 if isinstance(fn, PreludeFn):
                     message = _display_builtin_error(message, fn.name, spelling)
-                self._fail(message, sid)
+                self._fail(message, sid, domain=e.domain)
             finally:
                 _CALL_ENGINE.reset(token)
         if not kwargs and len(args) == 1:
@@ -4333,7 +4394,7 @@ class Engine:
         try:
             return f(a, b)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def add(self, a: AdValue, b: AdValue, sid: int) -> AdValue:
         return self._binop(nadd, a, b, sid)
@@ -4366,7 +4427,7 @@ class Engine:
         try:
             return nnot(a)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def logic(self, kind: str, left: AdValue, right: Callable, lsid: int, rsid: int) -> bool:
         """`∧ ∨ →`: the right operand's thunk runs only when the left does not decide."""
@@ -4393,19 +4454,19 @@ class Engine:
         try:
             return nneg(a)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def fact(self, a: AdValue, sid: int) -> AdValue:
         try:
             return nfact(a)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def dfact(self, a: AdValue, sid: int) -> AdValue:
         try:
             return ndfact(a)
         except NumError as e:
-            self._fail(e.args[0], sid)
+            self._fail(e.args[0], sid, domain=e.domain)
 
     def out(self, v: AdValue | str, sid: int) -> str:
         result = f"= {nshow(v)}"

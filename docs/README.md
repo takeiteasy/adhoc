@@ -11,6 +11,7 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [Integer congruence](congruence.md) | Modular comparisons and reusable predicates |
 | [Notation](notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](operators.md) | Spellings, declarations, precedence, sections and scope |
+| [Graph sampling](graph-sampling.md) | Adaptive real sampling, gaps and graph data |
 | [Calculus](calculus.md) | Derivatives and integrals |
 | [Infinite interval bounds](intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](symbolic.md) | Simplification, expansion, factoring and solving |

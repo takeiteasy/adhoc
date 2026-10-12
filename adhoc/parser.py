@@ -123,6 +123,7 @@ from .runtime import PRELUDE, RESERVED_NAMES
 from .span import Span
 from .syntax import (
     is_short_name,
+    free_names,
     ArrayLit,
     Assign,
     BackslashRef,
@@ -141,6 +142,7 @@ from .syntax import (
     Import,
     Index,
     Integral,
+    Graph,
     KwArg,
     Lambda,
     Limit,
@@ -1272,6 +1274,19 @@ class _Parser:
                     and any(isinstance(a, Hole) for a in node.args)):
                 raise ParseError(
                     f"`{self._form_label(node.head)}` cannot take a `·` placeholder", node.span)
+            if isinstance(node.head, BackslashRef) and node.head.name == "graph":
+                axes = tuple(kw for kw in node.kwargs if kw.name not in {"tol", "maxpoints"})
+                if len(node.args) != 1 or len(axes) != 1 or isinstance(node.args[0], Hole):
+                    raise ParseError("`\\graph` takes one function or expression and one axis range",
+                                     node.span)
+                axis = axes[0]
+                if not is_short_name(axis.name):
+                    raise ParseError("`\\graph` axis must be a single-letter name", axis.span)
+                node = Graph(target=node.args[0], axis=axis,
+                             expression_mode=axis.name in free_names(node.args[0]),
+                             options=tuple(kw for kw in node.kwargs if kw is not axis),
+                             spelling=node.head.spelling, span=node.span)
+                continue
             if isinstance(node.head, BackslashRef) and node.head.name == "eval":
                 if len(node.args) != 1:
                     raise ParseError("`\\eval` takes one expression value followed by bindings",

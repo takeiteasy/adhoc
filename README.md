@@ -65,6 +65,7 @@ Heavyweight tests are marked `slow`;
 | [Collection slicing](docs/slicing.md) | Range selectors, tensor shapes and bounds |
 | [Notation](docs/notation.md) | Math glyphs and ASCII spellings |
 | [Custom operators](docs/operators.md) | Spellings, declarations, precedence, sections and scope |
+| [Graph sampling](docs/graph-sampling.md) | Adaptive real sampling, gaps and graph data |
 | [Calculus](docs/calculus.md) | Derivatives and integrals |
 | [Infinite interval bounds](docs/intervals.md) | Reusable integration bounds and real membership |
 | [Symbolic rewriting](docs/symbolic.md) | Simplification, expansion, factoring and solving |

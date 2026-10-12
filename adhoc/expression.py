@@ -6,7 +6,7 @@ from .lexer import SUPERSCRIPTS
 from .syntax import (
     is_short_name,
     BackslashRef, BinOp, BinOperator, Call, Congruence, Compare, CompareOperator, Equation, Eval,
-    Assign, ArrayLit, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
+    Assign, ArrayLit, Diff, Fold, FuncDef, Hole, IfExpr, Import, Index, Integral, Graph, KwArg, Lambda, Limit, Node, NumLit, OP_SYMBOLS, OpRef, Piecewise, PowCall,
     PyImport, Quote, Range, Seq, SetBuilder, Generator, Guard, SetLit, StrLit, TensorLit, Transpose, UnaryOperator, UnOp, Var, WholeAxis,
 )
 
@@ -117,6 +117,11 @@ def _show(node: Node, *, statement: bool = False) -> str:
             return f"({_show(start)}{middle}..{_show(end) if end is not None else ''})"
         case IfExpr(condition=condition, then_branch=yes, otherwise=no):
             return f"({_show(condition)} ? {_show(yes)} : {_show(no)})"
+        case Graph(target=target, axis=axis, options=options, spelling=spelling):
+            values = [_show(target)] + [f"{_show(kw_name(kw))}={_show(kw.value)}"
+                                       for kw in (axis, *options)]
+            head = spelling or "\\graph"
+            return f"{head}({', '.join(values)})"
         case Call(head=head, args=args, kwargs=kwargs):
             values = [_show(arg) for arg in args]
             values += [f"{_show(kw_name(kw))}={_show(kw.value)}" for kw in kwargs]

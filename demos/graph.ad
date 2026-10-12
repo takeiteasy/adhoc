@@ -1,0 +1,17 @@
+"Callable and expression sampling"
+f(x) = x^2
+g = \graph(f, x=-1..1)
+g
+\graph(x^2, x=-1..1)
+
+"Accuracy controls and a deliberate sample budget"
+\graph(\sin, x=0..2π, \tol=0.0001, \maxpoints=8193)
+\graph(x, x=0..1, \maxpoints=33)
+
+"Undefined points remain gaps"
+\graph(1/x, x=-1..1)
+\graph(\sqrt(x), x=-1..1)
+
+"Stored bounds and constant functions"
+r = 0..1
+\graph((x ↦ 3), t=r)

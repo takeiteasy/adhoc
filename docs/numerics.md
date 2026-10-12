@@ -93,7 +93,7 @@ Values outside the single-atom form pass to the algebraic or RRA tier:
 |---|---|---|
 | `\sqrt(-1)` | `i` | `1.0i` |
 | `\ln(-1)` | `π·i` | `3.141592653589793i` |
-| `\ln(0)` | Typed domain error | Wrapped `ValueError` |
+| `\ln(0)` | Typed domain error | Typed domain error retaining the `ValueError` diagnostic |
 | `\tan(π/2)` | Typed domain error | A float approximation to π/2 gives a huge finite value |
 | `0^(-1/2)` | Typed division-by-zero error | `Inf` |
 
@@ -207,6 +207,13 @@ A complex result drops a component below the scaled tolerance:
 
 `\diff` and `\int` also use float iteration and typed cap errors, with Ridders
 extrapolation and adaptive Gauss–Kronrod estimators. See [calculus](calculus.md).
+
+### Graph sampling
+
+`\graph` widens finite real bounds and samples to floats. Adaptive checks use
+local interpolation error rather than calculus convergence. Invalid numeric
+points remain gaps; exhausted budgets return flagged graph data.
+See [graph sampling](graph-sampling.md).
 
 ## Float semantics
 

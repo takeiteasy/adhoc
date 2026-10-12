@@ -31,6 +31,13 @@ Errors point to the source span:
 | `$ADHOC_HISTORY` | `~/.adhoc_history` | Persistent REPL history |
 | `$ADHOC_SYMBOLIC_TIMEOUT` | `5` seconds | [Symbolic rewrite](symbolic.md) timeout; `0` disables it |
 
+## Graph sampling
+
+`\graph(f, x=a..b)` samples a callable; `\graph(x^2, x=a..b)` binds `x`
+locally in an expression. Both return immutable graph data with gaps and a
+completion status. `\tol` and `\maxpoints` control detail and cost.
+See [graph sampling](graph-sampling.md) for examples and limits.
+
 ## Physical quantities
 
 [Units](units.md) attach dimensions to numeric values. `2\metre +

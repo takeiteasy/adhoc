@@ -295,6 +295,15 @@ Errors inside either reading point at the whole call node's span (wider than a b
 the cost of deciding late). Applying a string result falls into the product path and dies as
 the usual typed "strings are not numbers".
 
+### Graph calls
+
+`\graph(target, x=a..b, \tol=0.001, \maxpoints=4097)` is a special form
+with ordinary call-shaped syntax. Exactly one keyword supplies a single-letter
+axis name and range; the two options are optional. A free occurrence of the axis
+name in `target` selects local expression sampling; otherwise `target` must
+produce a callable. Nested binders mask their variables and quotes do not read
+names. See [graph sampling](graph-sampling.md).
+
 ## Functions and conditionals
 
 Function definitions are callable values. Multi-character function and parameter names use

@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from types import CodeType
 
 from .runtime import parse_literal
-from .expression import ExpressionValue
+from .expression import ExpressionValue, show
 from .span import Span
 from .syntax import (
     ArrayLit,
@@ -60,6 +60,7 @@ from .syntax import (
     Import,
     Index,
     Integral,
+    Graph,
     Lambda,
     Limit,
     Node,
@@ -364,6 +365,20 @@ class _Lowerer:
                 return _call("integral", [pyast.Constant(var), self.expr(bound),
                                           pyast.Constant(sid), pyast.Constant(spelling),
                                           pyast.Constant(var_spelling)])
+            case Graph(target=target, axis=axis, options=options, expression_mode=expression_mode,
+                       spelling=spelling, span=span):
+                sid = self._push(span)
+                if expression_mode:
+                    self.definitions[sid] = _compile_body(target, self.source)
+                return _call("graph", [
+                    pyast.Constant(axis.name), pyast.Constant(axis.spelling),
+                    pyast.Constant(show(target)),
+                    pyast.Constant(None) if expression_mode else self.expr(target),
+                    self.expr(axis.value),
+                    pyast.Dict(keys=[pyast.Constant(kw.name) for kw in options],
+                               values=[self.expr(kw.value) for kw in options]),
+                    pyast.Constant(expression_mode), pyast.Constant(sid),
+                    pyast.Constant(spelling)])
             case Piecewise(conditions=conditions, values=values, otherwise=otherwise, span=span):
                 sid = self._push(span)
                 return _call("piecewise", [

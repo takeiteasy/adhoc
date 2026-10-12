@@ -5,8 +5,8 @@ from itertools import count
 
 from .expression import ExpressionValue
 from .syntax import (
-    is_short_name,
-    Assign, BackslashRef, Call, Diff, Fold, FuncDef, Import, Integral, Lambda, Limit, Node,
+    is_short_name, free_names,
+    Assign, BackslashRef, Call, Diff, Fold, FuncDef, Import, Integral, Graph, Lambda, Limit, Node,
     NoOp, PyImport, Quote, Seq, SetBuilder, Generator, Var,
 )
 
@@ -60,6 +60,14 @@ def _builder(node, context, transform, enter):
                    else transform(node.element, context))
 
 
+def _graph(node, context, transform, enter):
+    inner = enter(context, node.axis.name) if node.expression_mode else context
+    return replace(node, target=transform(node.target, inner),
+                   axis=replace(node.axis, value=transform(node.axis.value, context)),
+                   options=tuple(replace(kw, value=transform(kw.value, context))
+                                 for kw in node.options))
+
+
 def _encode(node: Node, context: tuple[str, ...]) -> Node:
     if isinstance(node, _STATEMENTS):
         raise ReduceError("\\reduce needs an expression without statements")
@@ -70,6 +78,8 @@ def _encode(node: Node, context: tuple[str, ...]) -> Node:
         if name in context:
             return _Bound(node.span, context.index(name), name, node.spelling)
         return node
+    if isinstance(node, Graph):
+        return _graph(node, context, _encode, lambda ctx, name: (name,) + ctx)
     if isinstance(node, Lambda):
         return replace(node, body=_encode(node.body, tuple(reversed(node.params)) + context))
     if isinstance(node, Fold | Integral):
@@ -89,6 +99,9 @@ def _shift(node: Node, amount: int, depth: int = 0) -> Node:
         return node
     if isinstance(node, _Bound):
         return replace(node, index=node.index + amount) if node.index >= depth else node
+    if isinstance(node, Graph):
+        return _graph(node, depth, lambda child, level: _shift(child, amount, level),
+                      lambda level, name: level + 1)
     if isinstance(node, Lambda):
         return replace(node, body=_shift(node.body, amount, depth + len(node.params)))
     if isinstance(node, Fold | Integral):
@@ -114,6 +127,9 @@ def _substitute(node: Node, args: tuple[Node, ...], depth: int = 0) -> Node:
         if slot < len(args):
             return _shift(args[-slot - 1], depth)
         return replace(node, index=node.index - len(args))
+    if isinstance(node, Graph):
+        return _graph(node, depth, lambda child, level: _substitute(child, args, level),
+                      lambda level, name: level + 1)
     if isinstance(node, Lambda):
         return replace(node, body=_substitute(node.body, args, depth + len(node.params)))
     if isinstance(node, Fold | Integral):
@@ -180,6 +196,8 @@ def _all_names(node: Node) -> set[str]:
         names.add(node.ch)
     elif isinstance(node, BackslashRef):
         names.add(node.name)
+    elif isinstance(node, Graph):
+        names.add(node.axis.name)
     elif isinstance(node, Lambda):
         names.update(node.params)
     elif isinstance(node, Fold | Limit | Diff | Integral | Generator):
@@ -214,6 +232,28 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
         if is_short_name(name):
             return Var(node.span, name, written)
         return BackslashRef(node.span, name, written)
+    if isinstance(node, Graph):
+        name, spelling = node.axis.name, node.axis.spelling
+        inner = context
+        if node.expression_mode:
+            forbidden = _free_names(node.target) | {bound for bound, _ in context}
+            if name in forbidden:
+                name = fresh(name)
+                spelling = name
+            inner = ((name, spelling),) + context
+        target = _reify(node.target, inner, fresh)
+        expression_mode = node.expression_mode
+        if expression_mode and name not in free_names(target):
+            target = Lambda(target.span, (name,), target, (spelling or name,))
+            expression_mode = False
+        elif not expression_mode and name in free_names(target):
+            name = fresh(name)
+            spelling = name
+        return replace(node, axis=replace(node.axis, name=name, spelling=spelling,
+                                         value=_reify(node.axis.value, context, fresh)),
+                       target=target, expression_mode=expression_mode,
+                       options=tuple(replace(kw, value=_reify(kw.value, context, fresh))
+                                     for kw in node.options))
     if isinstance(node, Lambda):
         names = []
         spellings = []
@@ -279,9 +319,10 @@ def reduce_expression(value: ExpressionValue) -> ExpressionValue:
     used = _all_names(node)
     numbers = count()
 
-    def fresh() -> str:
+    def fresh(base: str | None = None) -> str:
         while True:
-            name = "reduce_" + _letters(next(numbers))
+            number = next(numbers)
+            name = f"{base[0]}_{number}" if base is not None else "reduce_" + _letters(number)
             if name not in used:
                 used.add(name)
                 return name

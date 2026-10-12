@@ -13,7 +13,7 @@ from . import tensor as tn
 from .syntax import (
     SUBSCRIPTS, is_short_name,
     Assign, ArrayLit, BackslashRef, BinOp, BinOperator, Call, Congruence, Compare, CompareOperator, Diff, Equation,
-    Eval, Fold, Hole, IfExpr, Index, Integral, KwArg, Lambda, Limit, Node, NumLit, OpRef,
+    Eval, Fold, Hole, IfExpr, Index, Integral, Graph, KwArg, Lambda, Limit, Node, NumLit, OpRef,
     Piecewise, PowCall, Quote, Range, SetBuilder, Generator, Guard, SetLit, StrLit, TensorLit, Transpose,
     UnaryOperator, UnOp, Var, WholeAxis,
 )
@@ -232,6 +232,9 @@ def node_tex(node: Node, prec: int = 0) -> str:
                 name in _KNOWN or name in _FUNCTIONS):
             values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
             return rf"\{_FUNCTIONS.get(name, name)}\left({', '.join(values)}\right)"
+        case Graph(target=target, axis=axis, options=options, expression_mode=expression_mode):
+            target_text = _bound_tex(target, (axis.name,)) if expression_mode else node_tex(target)
+            return rf"\operatorname{{graph}}\left({target_text}, {_args((axis, *options))}\right)"
         case Call(head=head, args=args, kwargs=kwargs):
             values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
             return rf"{_head(head)}\left({', '.join(values)}\right)"

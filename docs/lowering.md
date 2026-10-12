@@ -77,6 +77,20 @@ emit `_e.fold(...)` or `_e.limit(...)`. Each term or probe runs in a fresh child
 frame with parent read-through and local writes. Accumulation and convergence
 checks remain in `runtime.py`. See [convergence](numerics.md#convergence).
 
+## Graph sampling
+
+`Graph` lowers to `_e.graph(...)` with its source-span ID, axis metadata, bound
+and options. Expression targets compile once into the definitions table; every
+sample uses a fresh child frame. Callable targets evaluate once and each sample
+uses the existing application path. `syntax.free_names` determines expression
+mode during parsing, respecting lexical binders and excluding quoted syntax.
+
+`runtime.py` validates inputs and widens real values. The sampler in `graph.py`
+operates on floats supplied by that seam and returns immutable graph data.
+`NumericDomainError` is a `NumError` subtype; `EvalError.domain` preserves its
+category through wrapping so mathematical failures become gaps while other
+errors retain their spans.
+
 ## Outputs and unexpected errors
 
 Each top-level statement has a generated line number and a corresponding span.

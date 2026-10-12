@@ -8,7 +8,7 @@ so quoting and rewriting them (the phase-4 symbolic-algebra plan) is ordinary
 match-and-rebuild over these classes.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 
 from .span import Span
@@ -259,6 +259,15 @@ class KwArg(Node):
 
 
 @dataclass(frozen=True)
+class Graph(Node):
+    target: Node
+    axis: KwArg
+    expression_mode: bool
+    options: tuple[KwArg, ...] = ()
+    spelling: str | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
 class Call(Node):
     """Postfix application `head(arg, ...)`. The syntactic rule: a trailer `(…)`
     attaches only to name-ish heads (Var/BackslashRef) or to another Call —
@@ -438,3 +447,56 @@ class Transpose(Node):
 
     operand: Node
     glyph: str = "'"
+
+
+def free_names(node: Node) -> set[str]:
+    """Names read outside lexical binders; quoted syntax does not read names."""
+    match node:
+        case Var(ch=name) | BackslashRef(name=name):
+            return {name}
+        case Quote():
+            return set()
+        case Lambda(params=params, body=body):
+            return free_names(body) - set(params)
+        case FuncDef(name=name, params=params, body=body):
+            return free_names(body) - {name, *params}
+        case Fold(var=var, bound=bound, body=body) | Integral(var=var, bound=bound, body=body):
+            return free_names(bound) | (free_names(body) - {var})
+        case Limit(var=var, point=point, body=body):
+            return free_names(point) | (free_names(body) - {var})
+        case Diff(var=var, point=point, body=body, order=order):
+            return free_names(point) | (free_names(body) - {var}) | (
+                free_names(order) if order is not None else set())
+        case Graph(target=target, axis=axis, options=options):
+            return (free_names(target) - {axis.name}) | free_names(axis.value) | set().union(
+                *(free_names(option.value) for option in options))
+        case Seq(statements=statements):
+            names, bound = set(), set()
+            for statement in statements:
+                names.update(free_names(statement) - bound)
+                if isinstance(statement, Assign | FuncDef):
+                    bound.add(statement.name)
+                elif isinstance(statement, Import | PyImport):
+                    bound.update(statement.members)
+            return names
+        case SetBuilder(clauses=clauses, element=element):
+            names, bound = set(), set()
+            for clause in clauses:
+                if isinstance(clause, Generator):
+                    names.update(free_names(clause.domain) - bound)
+                    bound.add(clause.var)
+                else:
+                    names.update(free_names(clause.test) - bound)
+            if element is not None:
+                names.update(free_names(element) - bound)
+            return names
+    names = set()
+    for item in fields(node):
+        value = getattr(node, item.name)
+        if isinstance(value, Node):
+            names.update(free_names(value))
+        elif isinstance(value, tuple):
+            for child in value:
+                if isinstance(child, Node):
+                    names.update(free_names(child))
+    return names

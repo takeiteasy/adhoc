@@ -12,6 +12,7 @@ from adhoc.runtime import (
     NOT_A_NUMBER,
     STRINGS_NOT_NUMBERS,
     NumError,
+    NumericDomainError,
     _to_ad,
     ndiv,
     neq,
@@ -606,14 +607,11 @@ def test_prelude_builtins_recognize_exact_forms():
 
 
 def test_prelude_builtins_domain_errors():
-    # Domain failures stay typed; sqrt of a negative is a value now, so only ln(0)/tan(π/2) remain domain errors.
     with pytest.raises(NumError, match="defined only for positive"):
         PRELUDE["ln"](0)
     with pytest.raises(NumError, match="odd multiples of pi/2"):
         PRELUDE["tan"](ndiv(PI_SYM, 2))
-    # The float tier keeps math.*'s own raising behavior (wrapped and spanned
-    # by `app` at the engine layer) where no complex principal value exists.
-    with pytest.raises(ValueError, match="math domain error"):
+    with pytest.raises(NumericDomainError, match="math domain error"):
         PRELUDE["ln"](0.0)
     assert nshow(PRELUDE["sqrt"](-2.0)) == "1.4142135623730951i"
 
