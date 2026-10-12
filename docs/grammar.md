@@ -1184,7 +1184,9 @@ alias with the same precedence and associativity as `/`. Long unit names such as
 
 ## Limitations
 
-Graphing is not implemented.
+Graphing uses [real sampling](graph-sampling.md) and [file/window rendering](plotting.md);
+see their [sampling](graph-sampling.md#limitations) and
+[rendering limitations](plotting.md#limitations).
 `!=` is unsupported; use `≠` / `\neq`. Equality uses `=`; `==` denotes
 [integer congruence](congruence.md) and requires a modulus suffix.
 Custom infix declarations are described in [custom operators](operators.md).

@@ -300,7 +300,9 @@ persist in the REPL and stay local to each script or module. See [custom operato
 
 ## Limitations
 
-- Graphing is not implemented (#30).
+- Graphing covers sampled real curves and file/window rendering; see
+  [sampling limitations](graph-sampling.md#limitations) and
+  [plotting limitations](plotting.md#limitations).
 - Set construction and membership compare elements pairwise; construction is
   quadratic in set size: [#4](https://github.com/takeiteasy/adhoc/issues/4).
 - Numeric derivatives use [order-dependent tolerances and resource budgets](calculus.md#derivatives).
