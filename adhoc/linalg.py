@@ -16,17 +16,16 @@ MAX_ITEMS = 1_000_000
 
 @dataclass(frozen=True)
 class Scalars:
-    """The seam operations linear algebra needs. `larger(a, b)` compares magnitudes and
-    `pivot_zero(rows, width)` builds the coefficient-scaled zero predicate."""
+    """Scalar arithmetic, entry validation and numerical matrix computation from the seam."""
 
     add: Callable
     sub: Callable
     mul: Callable
     div: Callable
     is_zero: Callable
-    larger: Callable
     inexact: Callable
-    pivot_zero: Callable
+    validate: Callable
+    numerical: Callable
 
 
 def _from_rows(rows: list[list]) -> TensorValue:
@@ -47,18 +46,8 @@ def _square(t: Any, name: str) -> list[list]:
     return rows
 
 
-def _pick(s: Scalars, rows: list[list], r: int, c: int,
-          by_size: bool, is_zero: Callable) -> int | None:
-    candidates = [i for i in range(r, len(rows)) if not is_zero(rows[i][c])]
-    if not candidates:
-        return None
-    if not by_size:
-        return candidates[0]
-    best = candidates[0]
-    for i in candidates[1:]:
-        if s.larger(rows[i][c], rows[best][c]):
-            best = i
-    return best
+def _pick(s: Scalars, rows: list[list], r: int, c: int) -> int | None:
+    return next((i for i in range(r, len(rows)) if not s.is_zero(rows[i][c])), None)
 
 
 def _eliminate(s: Scalars, rows: list[list], width: int) -> tuple[list[list], list[int], Any]:
@@ -66,16 +55,14 @@ def _eliminate(s: Scalars, rows: list[list], width: int) -> tuple[list[list], li
     rows, the pivot columns, and the product of the pivots with the sign of the row swaps —
     the determinant when every column pivoted."""
     rows = [list(row) for row in rows]
-    is_zero = s.pivot_zero(rows, width)
-    if any(s.inexact(v) for row in rows for v in row[:width]):
-        return _eliminate_inexact(s, rows, width, is_zero)
+    s.validate(rows)
     pivots: list[int] = []
     det: Any = 1
     r = 0
     for c in range(width):
         if r == len(rows):
             break
-        p = _pick(s, rows, r, c, False, is_zero)
+        p = _pick(s, rows, r, c)
         if p is None:
             continue
         if p != r:
@@ -93,46 +80,10 @@ def _eliminate(s: Scalars, rows: list[list], width: int) -> tuple[list[list], li
     return rows, pivots, det
 
 
-def _eliminate_inexact(s: Scalars, rows: list[list], width: int,
-                       is_zero: Callable) -> tuple[list[list], list[int], Any]:
-    """Select pivots before row normalization so the cutoff retains its original scale."""
-    pivots: list[int] = []
-    det: Any = 1
-    for c in range(width):
-        r = len(pivots)
-        if r == len(rows):
-            break
-        p = _pick(s, rows, r, c, True, is_zero)
-        if p is None:
-            for row in rows[r:]:
-                row[c] = 0
-            continue
-        if p != r:
-            rows[r], rows[p] = rows[p], rows[r]
-            det = s.sub(0, det)
-        pivot = rows[r][c]
-        det = s.mul(det, pivot)
-        for i in range(r + 1, len(rows)):
-            factor = s.div(rows[i][c], pivot)
-            if not s.is_zero(factor):
-                rows[i] = [s.sub(v, s.mul(factor, w)) for v, w in zip(rows[i], rows[r])]
-            rows[i][c] = 0
-        pivots.append(c)
-    for r in reversed(range(len(pivots))):
-        c = pivots[r]
-        pivot = rows[r][c]
-        rows[r] = [s.div(v, pivot) for v in rows[r]]
-        rows[r][c] = 1
-        for i in range(r):
-            factor = rows[i][c]
-            if not s.is_zero(factor):
-                rows[i] = [s.sub(v, s.mul(factor, w)) for v, w in zip(rows[i], rows[r])]
-            rows[i][c] = 0
-    return rows, pivots, det
-
-
 def det(s: Scalars, t: Any) -> Any:
     rows = _square(t, "\\det")
+    if any(s.inexact(v) for row in rows for v in row):
+        return s.numerical("det", rows)
     _, pivots, product = _eliminate(s, rows, len(rows))
     return product if len(pivots) == len(rows) else 0
 
@@ -140,6 +91,8 @@ def det(s: Scalars, t: Any) -> Any:
 def inv(s: Scalars, t: Any) -> TensorValue:
     rows = _square(t, "\\inv")
     n = len(rows)
+    if any(s.inexact(v) for row in rows for v in row):
+        return _from_rows(s.numerical("inv", rows))
     augmented = [row + [1 if i == j else 0 for j in range(n)] for i, row in enumerate(rows)]
     reduced, pivots, _ = _eliminate(s, augmented, n)
     if len(pivots) < n:
@@ -154,21 +107,30 @@ def linsolve(s: Scalars, a: Any, b: Any) -> TensorValue:
     if not isinstance(b, TensorValue) or b.order not in (1, 2) or b.shape[0] != n:
         raise TensorError(f"\\linsolve needs a right-hand side with {n} rows")
     right = [[x] for x in b.items] if b.order == 1 else _rows(b, "\\linsolve")
-    reduced, pivots, _ = _eliminate(s, [row + rhs for row, rhs in zip(rows, right)], n)
-    if len(pivots) < n:
-        raise TensorError("\\linsolve of a singular matrix")
-    solution = [row[n:] for row in reduced]
+    if any(s.inexact(v) for row in rows for v in row):
+        solution = s.numerical("linsolve", rows, right)
+    else:
+        reduced, pivots, _ = _eliminate(s, [row + rhs for row, rhs in zip(rows, right)], n)
+        if len(pivots) < n:
+            raise TensorError("\\linsolve of a singular matrix")
+        solution = [row[n:] for row in reduced]
     if b.order == 1:
         return TensorValue((n,), tuple(row[0] for row in solution))
     return _from_rows(solution)
 
 
 def rank(s: Scalars, t: Any) -> int:
-    return len(_eliminate(s, _rows(t, "\\rank"), t.shape[1])[1])
+    rows = _rows(t, "\\rank")
+    if any(s.inexact(v) for row in rows for v in row):
+        return s.numerical("rank", rows)
+    return len(_eliminate(s, rows, t.shape[1])[1])
 
 
 def rref(s: Scalars, t: Any) -> TensorValue:
-    return _from_rows(_eliminate(s, _rows(t, "\\rref"), t.shape[1])[0])
+    rows = _rows(t, "\\rref")
+    if any(s.inexact(v) for row in rows for v in row):
+        return _from_rows(s.numerical("rref", rows))
+    return _from_rows(_eliminate(s, rows, t.shape[1])[0])
 
 
 def trace(s: Scalars, t: Any) -> Any:

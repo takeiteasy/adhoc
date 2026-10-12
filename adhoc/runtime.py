@@ -192,7 +192,7 @@ import sympy
 import types
 from typing import Any, Callable, NoReturn
 
-from . import algebraic, eigen, gauss, linalg, rra, symbolic
+from . import algebraic, eigen, gauss, linalg, matrix_numeric, rra, symbolic
 from . import tensor as tn
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
@@ -3328,33 +3328,30 @@ def _linalg(f: Callable, *args: Any) -> Any:
         raise NumError(e.args[0]) from e
 
 
-def _larger(a: AdValue, b: AdValue) -> bool:
-    return ncompare("gt", _abs_call(a), _abs_call(b))
-
-
-def _pivot_zero(rows: list[list], width: int) -> Callable:
+def _validate_matrix(rows: list[list]) -> None:
     for row in rows:
         for value in row:
             if _is_inexact(value) and not cmath.isfinite(value):
                 raise NumError("matrix elimination needs finite numeric entries")
-    coefficients = [v for row in rows for v in row[:width]]
-    if not any(_is_inexact(v) for v in coefficients):
-        return lambda v: neq(v, 0)
-    scale = 0
-    for value in coefficients:
-        magnitude = _abs_call(value)
-        if ncompare("gt", magnitude, scale):
-            scale = magnitude
-    if neq(scale, 0):
-        return lambda v: neq(v, 0)
-    # TODO: original-scale pivots miss elimination growth; use growth bounds or QR/SVD
-    # (https://github.com/takeiteasy/adhoc/issues/22).
-    tolerance = max(len(rows), width) * sys.float_info.epsilon
-    return lambda v: ncompare("le", ndiv(_abs_call(v), scale), tolerance)
 
 
-_SCALARS = linalg.Scalars(nadd, nsub, nmul, ndiv, lambda v: neq(v, 0), _larger,
-                         _is_inexact, _pivot_zero)
+def _numerical_matrix(name: str, rows: list[list], right: list[list] | None = None):
+    _validate_matrix(rows)
+    if right is not None:
+        _validate_matrix(right)
+    try:
+        coefficients = [[_to_complex(v) for v in row] for row in rows]
+        rhs = None if right is None else [[_to_complex(v) for v in row] for row in right]
+    except (OverflowError, ValueError, TypeError) as error:
+        raise NumError("matrix elimination cannot convert entries to finite floats") from error
+    result = matrix_numeric.compute(name, coefficients, rhs)
+    if isinstance(result, list):
+        return [[_inexact(complex(v)) for v in row] for row in result]
+    return result if isinstance(result, int) else _inexact(complex(result))
+
+
+_SCALARS = linalg.Scalars(nadd, nsub, nmul, ndiv, lambda v: neq(v, 0),
+                         _is_inexact, _validate_matrix, _numerical_matrix)
 
 
 def _eigen_records(spaces: list[tuple], convert: Callable) -> ArrayValue:

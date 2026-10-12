@@ -178,13 +178,16 @@ errors except for `\abs`. See [float semantics](numerics.md#float-semantics) for
 ## Linear algebra
 
 Matrices are order-2 tensors. Elimination preserves exactness for rational,
-Gaussian, symbolic and algebraic entries. Float matrices choose pivots by magnitude
-and treat pivots at or below a relative machine-precision cutoff as zero.[^pivot]
+Gaussian, symbolic and algebraic entries. Float matrices classify rank from
+singular values above a relative machine-precision cutoff.[^pivot]
 
 `\det`, `\inv`, `\linsolve`, `\rank` and `\rref` share this cutoff. A numerically
 singular matrix has determinant zero; inverse and solve report a singular-matrix
 error. The cutoff uses only the coefficient matrix, including when the
-right-hand side contains floats. Elimination rejects nonfinite float inputs.
+right-hand side contains floats. Nonfinite float inputs are rejected.
+Float RREF reduces the retained SVD row space. Full-rank determinants outside
+float range produce an error. See [matrix numerics](matrix-numerics.md) for
+conversion rules, numerical guarantees and range errors.
 
 ```
 \rank([1., 2., 3.; 4., 5., 6.; 7., 8., 9.])  -- 2
@@ -248,8 +251,8 @@ See [units](units.md) for the catalogue, dimension rules and limitations.
 
 ## Limitations
 
-- Float rank is estimated from elimination pivots. Elimination growth and column
-  ordering can affect the estimate; it does not certify the condition number:
+- SVD-based float rank is sensitive to rounding near its threshold; RREF can
+  amplify error at tiny early pivots. See [matrix limitations](matrix-numerics.md#limitations):
   [#22](https://github.com/takeiteasy/adhoc/issues/22).
 - Exact `\eig` computations depend on symbolic solvability and the time budget;
   float eigenpairs do not certify multiplicity or independence. See
@@ -266,12 +269,8 @@ See [units](units.md) for the catalogue, dimension rules and limitations.
     Rational LCM is the LCM of numerators divided by the GCD of denominators.
     Gaussian results choose an equivalent associate in the first quadrant.
 
-[^pivot]: Exact entries pivot on the first nonzero value. With a float or complex
-    float coefficient, the pivot is the largest accepted magnitude in its column.
-    A pivot is rejected when `|pivot| / scale <= max(rows, columns) × ε`, where
-    `scale` is the largest original coefficient magnitude and `ε = 2^-52`
-    (Python float machine precision). There is no absolute floor or user setting;
-    an all-zero matrix has no pivots. Augmentation columns do not affect the scale
-    or dimensions. Pivots are selected before row normalization; the cutoff does
-    not trim normalized results or right-hand sides. For example,
-    `\inv([1e-20, 1; 1, 1])` remains accurate. See [limitations](#limitations).
+[^pivot]: Exact entries pivot on the first nonzero value. Float rank counts
+    singular values strictly above `σmax × max(rows, columns) × ε`, where
+    `σmax` is the largest singular value and `ε = 2^-52`. Augmentation columns
+    affect neither classification nor arithmetic selection. There is no
+    absolute floor or user setting. See [limitations](#limitations).

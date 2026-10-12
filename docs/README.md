@@ -20,5 +20,6 @@ Start with the language guide; use the grammar for precise syntax rules.
 | [Eigenvalues and eigenvectors](eigen.md) | Eigenspace records, indexing and exact/float behavior |
 | [Units](units.md) | Quantities, conversion and dimensions |
 | [Numerics](numerics.md) | Exact arithmetic, convergence, display and Python conversions |
+| [Matrix numerics](matrix-numerics.md) | SVD rank, float RREF, singularity and range errors |
 | [Architecture](architecture.md) | Package layout and evaluation pipeline |
 | [Runtime lowering](lowering.md) | Engine calls, scope and error mapping |

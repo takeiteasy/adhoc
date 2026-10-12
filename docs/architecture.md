@@ -35,6 +35,7 @@ See [runtime lowering](lowering.md) for the operation mapping.
 | `tex` | LaTeX rendering of syntax and values |
 | `tensor` | Tensors, arrays and sets; indexing, slicing and tensor operations |
 | `linalg` | Matrix elimination, constructors and tensor products |
+| `matrix_numeric` | SVD classification, RREF, determinant, inverse and solve on backend floats |
 | `eigen` | SymPy exact eigensystems and NumPy numerical eigenpairs on backend scalars |
 | `runtime` | Numeric dispatch, `Engine`, lazy ranges, interval bounds, Python interop and numeric calculus |
 | `units` | Exact unit scales, quantities and dimension arithmetic |

@@ -1,5 +1,6 @@
 import sys
 from fractions import Fraction
+from itertools import permutations
 from pathlib import Path
 
 import numpy as np
@@ -39,10 +40,10 @@ def test_inverse_is_exact():
     env = {}
     run_source("m = [2, 1, 0; 1, 3, 1; 0, 1, 4]", env)
     assert ev("\\inv(m) @ m", env) == "= [1, 0, 0; 0, 1, 0; 0, 0, 1]"
-    assert ev("\\inv([2., 1; 1, 3])", env) == "= [0.6, -0.2; -0.2, 0.4]"
+    assert PRELUDE["inv"](matrix([[2., 1], [1, 3]])).items == pytest.approx((0.6, -0.2, -0.2, 0.4))
 
 
-def test_float_elimination_pivots_by_size():
+def test_float_inverse_handles_small_leading_entry():
     assert ev("\\inv([1e-20, 1; 1, 1]) @ [1e-20, 1; 1, 1]") == "= [1.0, 0.0; 0.0, 1.0]"
 
 
@@ -165,7 +166,7 @@ def test_near_singular_functions_agree(multiplier):
     assert ev(r"\rank(m)", env) == "= 1"
     for source in (r"\det(m)", r"\abs(m)", "|m|"):
         assert ev(source, env) == "= 0"
-    assert PRELUDE["rref"](a).items == (1, 1, 0, 0)
+    assert PRELUDE["rref"](a).items == pytest.approx((1, 1, 0, 0))
     fails(r"\inv(m)", "singular", env)
     fails(r"\linsolve(m, [1, 1])", "singular", env)
 
@@ -211,10 +212,10 @@ def test_rectangular_float_rref(rows, rank, reduced):
     assert PRELUDE["rref"](a).items == reduced
 
 
-def test_pivot_cutoff_precedes_normalization():
+def test_rref_retains_small_leading_columns_and_coefficients():
     a = matrix([[1e-10, 1.], [1e-10, 1 + sys.float_info.epsilon]])
     assert PRELUDE["rank"](a) == 1
-    assert PRELUDE["rref"](a).items == (1, 1e10, 0, 0)
+    assert PRELUDE["rref"](a).items == pytest.approx((1, 1e10, 0, 0))
     assert PRELUDE["rref"](matrix([[1e20, 1e10, 1.], [0, 1e20, 1.]])).items == \
         pytest.approx((1, 0, 1e-20 - 1e-30, 0, 1, 1e-20), rel=1e-12, abs=0)
 
@@ -288,5 +289,163 @@ def test_nonfinite_rhs_is_rejected():
 
 def test_tensor_demo():
     source = Path(__file__).resolve().parents[1] / "demos" / "tensors.ad"
-    outputs = run_source(source.read_text(), {})
-    assert outputs[-3:] == ["= 2", "= [1, 0.0, -1.0; 0.0, 1, 2.0; 0.0, 0, 0]", "= 0"]
+    env = {}
+    outputs = run_source(source.read_text(), env)
+    assert outputs[-5] == "= 2"
+    assert outputs[-3:] == ["= 0", "= 1", "= 1"]
+    assert PRELUDE["rref"](env["f"]).items == pytest.approx((1, 0, -1, 0, 1, 2, 0, 0, 0))
+
+
+@pytest.mark.parametrize("multiplier", [1, 1j])
+@pytest.mark.parametrize("scale", [1e-300, 1., 1e300])
+def test_svd_rank_is_independent_of_small_leading_column_order(multiplier, scale):
+    rows = np.array([[1e-10, 1.], [0., 1e-10]]) * multiplier * scale
+    for order in permutations(range(2)):
+        a = matrix(rows[:, order].tolist())
+        assert PRELUDE["rank"](a) == 1
+        assert PRELUDE["det"](a) == 0
+        reduced = np.array(PRELUDE["rref"](a).items).reshape(2, 2)
+        assert np.count_nonzero(np.any(reduced != 0, axis=1)) == 1
+        reconstructed = rows[:, order][:, :1] @ reduced[:1]
+        np.testing.assert_allclose(reconstructed / scale, rows[:, order] / scale,
+                                   rtol=1e-8, atol=1e-9)
+        for name in ("inv", "linsolve"):
+            args = (a,) if name == "inv" else (a, TensorValue((2,), (1e100, 1e-100)))
+            with pytest.raises(NumError, match="singular"):
+                PRELUDE[name](*args)
+
+
+@pytest.mark.parametrize("size", [12, 56])
+@pytest.mark.parametrize("dependent", [False, True])
+@pytest.mark.parametrize("complex_values", [False, True])
+def test_wilkinson_growth_and_column_permutations(size, dependent, complex_values):
+    rows = np.eye(size) - np.tril(np.ones((size, size)), -1)
+    rows[:, -1] = 1
+    if dependent:
+        rows[-1] = 0.1 * rows[-2] + 0.3 * rows[0]
+    if complex_values:
+        rows = rows * (1 + 1j)
+    expected_rank = size - int(dependent)
+    for order in (np.arange(size), np.arange(size)[::-1], np.roll(np.arange(size), 1)):
+        coefficients = rows[:, order]
+        a = matrix(coefficients.tolist())
+        assert PRELUDE["rank"](a) == expected_rank
+        reduced = np.array(PRELUDE["rref"](a).items).reshape(size, size)
+        assert np.count_nonzero(np.any(reduced != 0, axis=1)) == expected_rank
+        pivot_columns = [int(np.flatnonzero(row)[0]) for row in reduced[:expected_rank]]
+        np.testing.assert_allclose(reduced[:expected_rank, pivot_columns], np.eye(expected_rank))
+        residual = coefficients - coefficients[:, pivot_columns] @ reduced[:expected_rank]
+        scale = np.linalg.norm(coefficients) * np.linalg.norm(reduced)
+        assert np.linalg.norm(residual) / scale < 1e-12
+        if dependent:
+            assert PRELUDE["det"](a) == 0
+            with pytest.raises(NumError, match="singular"):
+                PRELUDE["inv"](a)
+            with pytest.raises(NumError, match="singular"):
+                PRELUDE["linsolve"](a, TensorValue((size,), (1.,) * size))
+        else:
+            inverse = np.array(PRELUDE["inv"](a).items).reshape(size, size)
+            np.testing.assert_allclose(coefficients @ inverse, np.eye(size), atol=1e-12)
+            expected = np.ones(size)
+            right = TensorValue((size,), tuple(coefficients @ expected))
+            np.testing.assert_allclose(PRELUDE["linsolve"](a, right).items, expected, atol=1e-12)
+            sign = -1 if sum(order[i] > order[j] for i in range(size)
+                            for j in range(i + 1, size)) % 2 else 1
+            determinant = sign * 2 ** (size - 1)
+            if complex_values:
+                determinant *= (1 + 1j) ** size
+            assert PRELUDE["det"](a) == pytest.approx(determinant, rel=1e-12)
+
+
+@pytest.mark.parametrize("shape", [(2, 4), (4, 2)])
+def test_svd_rectangular_retained_row_space(shape):
+    rows = np.outer(np.arange(1., shape[0] + 1), np.arange(1., shape[1] + 1))
+    for order in permutations(range(shape[1])):
+        coefficients = rows[:, order]
+        a = matrix(coefficients.tolist())
+        assert PRELUDE["rank"](a) == 1
+        reduced = np.array(PRELUDE["rref"](a).items).reshape(shape)
+        np.testing.assert_allclose(reduced[0], coefficients[0] / coefficients[0, 0])
+        assert np.all(reduced[1:] == 0)
+
+
+def test_svd_solve_scales_rhs_columns_independently():
+    a = matrix([[1e-300, 0], [0, 1e-300]])
+    right = matrix([[1e-300, 1e-320], [1e-300, 0]])
+    result = PRELUDE["linsolve"](a, right)
+    assert result.items == pytest.approx((1., 1e-320 / 1e-300, 1., 0.), abs=0)
+    a = matrix([[1e300, 0], [0, 1e300]])
+    right = matrix([[1e300, 1e-20], [0, 1e-20]])
+    assert PRELUDE["linsolve"](a, right).items == pytest.approx((1., 1e-320, 0., 1e-320), abs=0)
+
+
+@pytest.mark.parametrize("scale", [1e-300, 1e300])
+def test_full_rank_determinant_range_errors_are_not_singularity(scale):
+    a = matrix([[scale, 0], [0, scale]])
+    assert PRELUDE["rank"](a) == 2
+    assert PRELUDE["inv"](a).items == pytest.approx((1 / scale, 0, 0, 1 / scale), rel=1e-12, abs=0)
+    with pytest.raises(EvalError, match="outside float range") as error:
+        run_source(r"\det(m)", {"m": a})
+    assert error.value.span is not None
+
+
+@pytest.mark.parametrize("value", [5e-324, sys.float_info.max, 1e308 + 1e308j])
+def test_one_entry_determinants_at_float_range_edges(value):
+    a = matrix([[value]])
+    assert PRELUDE["rank"](a) == 1
+    assert PRELUDE["det"](a) == pytest.approx(value, rel=1e-12, abs=0)
+
+
+def test_numerical_inverse_and_solve_reject_nonfinite_results():
+    a = matrix([[5e-324]])
+    for name in ("inv", "linsolve"):
+        args = (a,) if name == "inv" else (a, TensorValue((1,), (1.,)))
+        with pytest.raises(NumError, match="numerical result is not finite"):
+            PRELUDE[name](*args)
+
+
+@pytest.mark.parametrize("name", ["rank", "rref", "det", "inv", "linsolve"])
+def test_mixed_matrix_rejects_unrepresentable_exact_entries(name):
+    a = matrix([[1., 0], [0, 10 ** 1000]])
+    args = (a,) if name != "linsolve" else (a, TensorValue((2,), (1, 2)))
+    with pytest.raises(NumError, match="cannot convert entries to finite floats"):
+        PRELUDE[name](*args)
+
+
+def test_float_solve_rejects_unrepresentable_rhs():
+    with pytest.raises(NumError, match="cannot convert entries to finite floats"):
+        PRELUDE["linsolve"](matrix([[1.]]), TensorValue((1,), (10 ** 1000,)))
+
+
+@pytest.mark.parametrize("name", ["rank", "rref", "det", "inv", "linsolve"])
+def test_svd_nonconvergence_has_a_call_site_span(monkeypatch, name):
+    def fail(*args, **kwargs):
+        raise np.linalg.LinAlgError("failed")
+
+    monkeypatch.setattr(np.linalg, "svd", fail)
+    source = f"\\{name}([1., 0; 0, 1]" + (", [1, 2])" if name == "linsolve" else ")")
+    with pytest.raises(EvalError, match="did not converge") as error:
+        run_source(source, {})
+    assert source[error.value.span.start:error.value.span.end] == source
+
+
+def test_rref_rejects_unrepresentable_retained_basis(monkeypatch):
+    def decomposition(*args, **kwargs):
+        return np.array([[1.]]), np.array([1.]), np.array([[1e-310, 1.]])
+
+    monkeypatch.setattr(np.linalg, "svd", decomposition)
+    with pytest.raises(NumError, match="numerical result is not finite"):
+        PRELUDE["rref"](matrix([[1e-310, 1.]]))
+
+
+def test_zero_matrix_does_not_need_svd(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("zero matrices do not need SVD")
+
+    monkeypatch.setattr(np.linalg, "svd", fail)
+    a = matrix([[0., 0.], [0., 0.]])
+    assert PRELUDE["rank"](a) == 0
+    assert PRELUDE["det"](a) == 0
+    assert PRELUDE["rref"](a).items == (0, 0, 0, 0)
+    with pytest.raises(NumError, match="singular"):
+        PRELUDE["inv"](a)
