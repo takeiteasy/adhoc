@@ -49,11 +49,10 @@ data from `\graph`; unknown options are errors.
 
 | Limit | Ticket |
 |---|---|
+| Window plotting blocks the REPL | [#53](https://github.com/takeiteasy/adhoc/issues/53) |
+| Styling uses Matplotlib defaults without per-call controls | [#54](https://github.com/takeiteasy/adhoc/issues/54) |
 | Terminal delivery, protocol detection and braille fallback | [#25](https://github.com/takeiteasy/adhoc/issues/25) |
 | Several curves on shared axes | [#26](https://github.com/takeiteasy/adhoc/issues/26) |
-
-Window plotting blocks the REPL. Styling uses Matplotlib defaults without
-per-call controls.
 
 [^files]: The destination is opened in exclusive binary creation mode, and the
     format is passed explicitly to Matplotlib. Export errors retain the plot

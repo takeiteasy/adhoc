@@ -49,6 +49,7 @@ def _window(graph: GraphValue) -> None:
             raise ValueError("window plotting requires an available Matplotlib GUI backend; "
                              "use backend=\"file\" in a headless session")
         draw(graph, axes)
+        # TODO: blocking REPL; integrate GUI event handling for responsive input (#53).
         pyplot.show(block=True)
     finally:
         if figure is not None:
