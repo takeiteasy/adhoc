@@ -58,6 +58,11 @@ class GraphValue:
         return tuple(result)
 
 
+@dataclass(frozen=True)
+class GraphCollectionValue:
+    graphs: tuple[GraphValue, ...]
+
+
 def _coordinate(lo: float, hi: float, fraction: float) -> float:
     return min(hi, max(lo, lo * (1 - fraction) + hi * fraction))
 

@@ -197,9 +197,9 @@ from . import tensor as tn
 from .gauss import Gaussian, make as _make_gaussian
 from .gauss import show as _show_gaussian
 from .span import Span
-from .graph import (GraphValue, DEFAULT_TOLERANCE, DEFAULT_MAX_POINTS, INITIAL_POINTS,
+from .graph import (GraphCollectionValue, GraphValue, DEFAULT_TOLERANCE, DEFAULT_MAX_POINTS, INITIAL_POINTS,
                     sample as sample_graph)
-from .plot import plot
+from .plot import SeriesValue, plot, series
 from .solution_set import SymbolicSetValue
 from .expression import ExpressionValue, show_quote
 from .syntax import OP_SYMBOLS, Seq, is_short_name
@@ -211,7 +211,8 @@ from .units import Quantity, UnitValue
 from .tensor import ArrayValue, SetValue, TensorError, TensorValue
 
 AdValue = (int | Fraction | float | complex | bool | str | Gaussian | Symbolic | Algebraic | RRA
-           | ExpressionValue | TensorValue | ArrayValue | SetValue | SymbolicSetValue | GraphValue | Quantity | UnitValue)
+           | ExpressionValue | TensorValue | ArrayValue | SetValue | SymbolicSetValue
+           | GraphValue | GraphCollectionValue | SeriesValue | Quantity | UnitValue)
 
 DIVISION_BY_ZERO = "division by zero"
 STRINGS_NOT_NUMBERS = "strings are not numbers"
@@ -1282,6 +1283,12 @@ def _show_tensor(t: TensorValue, digits: int | None) -> str:
 def nshow(v: AdValue | str, digits: int | None = None) -> str:
     if isinstance(v, Quantity | UnitValue):
         return units.show(v, lambda x: nshow(x, digits))
+    if isinstance(v, GraphCollectionValue):
+        return f"<graphs; {len(v.graphs)} curves>"
+    if isinstance(v, SeriesValue):
+        settings = dict(v.options)
+        count = v.graph.evaluations if v.graph else len(v.y)
+        return f"<series {settings.get('type', 'line')}; {count} samples>"
     if isinstance(v, GraphValue):
         status = "complete" if v.complete else "incomplete: " + ", ".join(v.stopping_reasons)
         return (f"<graph {v.axis_spelling}={nshow(v.bounds[0], digits)}..{nshow(v.bounds[1], digits)}; "
@@ -1993,7 +2000,8 @@ def _to_ad(value: Any, preserve_bool: bool = False) -> Any:
         raise NumError("the call returned nothing")
     if isinstance(value, AdFunction | PreludeFn | Composed | Partial | OperatorFn | Derivative | Inverse
                       | ExpressionValue
-                      | TensorValue | ArrayValue | SetValue | SymbolicSetValue | GraphValue | Quantity | UnitValue):
+                      | TensorValue | ArrayValue | SetValue | SymbolicSetValue
+                      | GraphValue | GraphCollectionValue | SeriesValue | Quantity | UnitValue):
         return value
     if isinstance(value, RangeValue | IntervalValue | LazySeq):
         return value
@@ -3526,9 +3534,30 @@ PRELUDE.update({
 _PRELUDE_PROTECTED = frozenset(PRELUDE)
 
 
+def _plot_value(value):
+    if isinstance(value, TensorValue | ArrayValue):
+        return [_plot_value(item) for item in _to_py(value)]
+    if isinstance(value, list | tuple):
+        return [_plot_value(item) for item in value]
+    if (isinstance(value, _NUMERIC_TYPES) and not isinstance(value, bool | int)
+            and not _is_complex(value)):
+        return _as_float(value)
+    return value
+
+
+def _series_call(*args, **options):
+    return series(*(_plot_value(value) for value in args),
+                  **{name: _plot_value(value) for name, value in options.items()})
+
+
+def _plot_call(*args, **options):
+    return plot(*args, **{name: _plot_value(value) for name, value in options.items()})
+
+
 PRELUDE.update(units.catalogue())
 PRELUDE.update({
-    "plot": PreludeFn("plot", plot),
+    "plot": PreludeFn("plot", _plot_call),
+    "series": PreludeFn("series", _series_call),
     "convert": PreludeFn("convert", units.convert),
     "magnitude": PreludeFn("magnitude", units.extract),
     "unit": PreludeFn("unit", units.make_unit),
@@ -3957,6 +3986,12 @@ class Engine:
                 point_value, order, label)
         except NumError as e:
             self._fail(e.args[0], sid, domain=e.domain)
+
+    def graphs(self, name, axis_spelling, entries, bound, options, spelling=None):
+        graphs = tuple(self.graph(name, axis_spelling, label, target, bound, options,
+                                  mode, sid, spelling)
+                       for label, target, mode, sid in entries)
+        return graphs[0] if len(graphs) == 1 else GraphCollectionValue(graphs)
 
     def graph(self, name: str, axis_spelling: str | None, label: str, target: Any,
               bound: Any, options: dict[str, Any], expression_mode: bool, sid: int,

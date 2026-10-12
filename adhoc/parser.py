@@ -1276,14 +1276,14 @@ class _Parser:
                     f"`{self._form_label(node.head)}` cannot take a `·` placeholder", node.span)
             if isinstance(node.head, BackslashRef) and node.head.name == "graph":
                 axes = tuple(kw for kw in node.kwargs if kw.name not in {"tol", "maxpoints"})
-                if len(node.args) != 1 or len(axes) != 1 or isinstance(node.args[0], Hole):
-                    raise ParseError("`\\graph` takes one function or expression and one axis range",
+                if not node.args or len(axes) != 1 or any(isinstance(arg, Hole) for arg in node.args):
+                    raise ParseError("`\\graph` takes functions or expressions and one axis range",
                                      node.span)
                 axis = axes[0]
                 if not is_short_name(axis.name):
                     raise ParseError("`\\graph` axis must be a single-letter name", axis.span)
-                node = Graph(target=node.args[0], axis=axis,
-                             expression_mode=axis.name in free_names(node.args[0]),
+                node = Graph(targets=node.args, axis=axis,
+                             expression_modes=tuple(axis.name in free_names(arg) for arg in node.args),
                              options=tuple(kw for kw in node.kwargs if kw is not axis),
                              spelling=node.head.spelling, span=node.span)
                 continue

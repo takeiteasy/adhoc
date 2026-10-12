@@ -79,8 +79,8 @@ checks remain in `runtime.py`. See [convergence](numerics.md#convergence).
 
 ## Graph sampling
 
-`Graph` lowers to `_e.graph(...)` with its source-span ID, axis metadata, bound
-and options. Expression targets compile once into the definitions table; every
+`Graph` lowers to `_e.graphs(...)` with per-target source-span IDs, axis metadata,
+shared bound and options. Each target retains its expression/callable mode. Expression targets compile once into the definitions table; every
 sample uses a fresh child frame. Callable targets evaluate once and each sample
 uses the existing application path. `syntax.free_names` determines expression
 mode during parsing, respecting lexical binders and excluding quoted syntax.

@@ -35,7 +35,10 @@ Errors point to the source span:
 
 `\graph(f, x=a..b)` samples a callable; `\graph(x^2, x=a..b)` binds `x`
 locally in an expression. Both return immutable graph data with gaps and a
-completion status. `\tol` and `\maxpoints` control detail and cost.
+completion status. Several targets, such as `\graph(\sin, \cos, x=0..2π)`, return
+an immutable bundle. `\tol` and `\maxpoints` control detail and cost per curve.
+`\plot` draws several graphs or styled `\series` values on shared axes, with
+line, scatter, step, bar and histogram types. See [plotting](plotting.md).
 See [graph sampling](graph-sampling.md) for examples and limits.
 
 ## Physical quantities

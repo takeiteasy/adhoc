@@ -96,8 +96,8 @@ def test_bounds_options_and_callable_are_evaluated_once():
 def test_axis_inference_respects_lexical_scope(target, expected):
     node = parse_program(r'\graph(' + target + ', x=0..1)')
     assert isinstance(node, Graph)
-    assert node.expression_mode is expected
-    assert ('x' in free_names(node.target)) is expected
+    assert node.expression_modes == (expected,)
+    assert ('x' in free_names(node.targets[0])) is expected
 
 
 @pytest.mark.parametrize('target', [r"f'", r'f ∘ f', r'\sin', r'f(·)'])
@@ -327,7 +327,7 @@ def test_graph_value_is_immutable_and_preserved_by_internal_calls():
 
 def test_compiler_lowers_to_span_carrying_engine_call():
     compiled = compile_source(r'\graph(x^2, x=0..1)')
-    assert '_e.graph(' in compiled.source
+    assert '_e.graphs(' in compiled.source
     assert len(compiled.definitions) == 1
     assert compiled.spans[0] == Span(0, len(r'\graph(x^2, x=0..1)'))
 
@@ -362,3 +362,73 @@ def test_graph_demo_runs_through_cli():
     assert 'incomplete: budget' in result.stdout
     assert 'incomplete: depth' in result.stdout
     assert 'ERROR' not in result.stdout
+
+
+def test_multiple_targets_keep_independent_samples_and_budgets():
+    from adhoc.graph import GraphCollectionValue
+
+    calls = []
+    env = {'f': lambda x: calls.append(x) or x * x}
+    value = graph(r'\graph(f, 1/x, x=-1..1, \maxpoints=129)', env)
+    assert isinstance(value, GraphCollectionValue)
+    first, second = value.graphs
+    assert first.evaluations == len(calls) == 129
+    assert second.evaluations <= 129
+    assert first.bounds == second.bounds == (-1.0, 1.0)
+    assert not first.breaks
+    assert second.breaks
+    assert len(set(calls)) == len(calls)
+    assert_breaks_disconnect(second)
+    with pytest.raises(FrozenInstanceError):
+        value.graphs = ()
+    assert run_source('g', env) == ['= <graphs; 2 curves>']
+
+
+def test_multiple_targets_evaluate_shared_inputs_once_before_sampling():
+    seen = []
+    env = {
+        'f': lambda: seen.append('f') or env['u'],
+        'h': lambda: seen.append('h') or env['v'],
+        'p': lambda x: seen.append('probe') or x,
+        'b': lambda: seen.append('bound') or 1,
+        't': lambda: seen.append('tol') or 0.001,
+        'm': lambda: seen.append('maxpoints') or 129,
+    }
+    run_source('u(x) = p(x)', env)
+    run_source('v(x) = x*x', env)
+    value = graph(r'\graph(f(), h(), x=0..b(), \tol=t(), \maxpoints=m())', env)
+    assert seen[:5] == ['f', 'h', 'bound', 'tol', 'maxpoints']
+    assert all(seen.count(name) == 1 for name in ('f', 'h', 'bound', 'tol', 'maxpoints'))
+    assert len(value.graphs) == 2
+
+
+def test_multi_graph_scope_alias_quote_and_tex():
+    env, aliases = {}, {}
+    run_source(r'\alias \graph, γ; x = 99; a = 2; g = γ(x+a, (t ↦ t^2), x=0..1)',
+               env, aliases=aliases)
+    assert env['g'].graphs[0].samples[0] == (0.0, 2.0)
+    assert env['g'].graphs[1].samples[-1] == (1.0, 1.0)
+    assert env['x'] == 99
+    source = r'\graph(x+a, \sin, x=0..1)'
+    assert free_names(parse_program(source)) == {'a', 'sin'}
+    value = graph(source, env)
+    reparsed = graph(show(parse_program(source)), env)
+    assert reparsed == value
+    assert graph(r'\eval(\expr(' + source + '))', env) == value
+    tex = run_source(r'\tex(\expr(' + source + '))', env)[-1]
+    assert 'graph' in tex and 'sin' in tex
+
+
+@pytest.mark.parametrize('source, binding', [
+    (r'\reduce(\expr((y ↦ \graph(x+y, \sin, x=0..1))(x)))', 'x = 3'),
+    (r'\reduce(\expr((y ↦ \graph(y, x^2, x=0..1))(x)))', 'x(t) = 2t'),
+    (r'\reduce(\expr(\graph((y ↦ 3)(x), x^2, x=0..1)))', ''),
+])
+def test_multi_graph_reduction_preserves_each_target_mode(source, binding):
+    env = {}
+    run_source('q = ' + source, env)
+    if binding:
+        run_source(binding, env)
+    original = graph(r'\eval(q)', env)
+    reparsed = graph(show(env['q'].node), env)
+    assert original == reparsed

@@ -90,7 +90,7 @@ quote      ::= ("\\expr" | "`") "(" expr ")"
              | ("\\expr" | "`") "(" "(" sequence ")" ")" ;
 equation   ::= expr "=" expr | "(" equation ")" ;
 eval       ::= "\\eval" "(" expr ("," kwarg)* ")" ;
-graph      ::= "\\graph" "(" expr "," identifier "=" expr ("," graph-option)* ")" ;
+graph      ::= "\\graph" "(" expr ("," expr)* "," identifier "=" expr ("," graph-option)* ")" ;
 graph-option ::= "\\tol" "=" expr | "\\maxpoints" "=" expr ;
 sequence   ::= statement (sep statement)* sep? ;
 lambda     ::= ("\λ" | "\fn") "(" params? ")" expr ;
@@ -102,9 +102,10 @@ equality; a call argument beginning `name =` takes priority as a named argument.
 Their right-hand sides are expressions, including equality.
 
 Graph calls use ordinary argument parsing: axis and option keywords may appear
-in any order, including before the positional target. Exactly one target and one
-axis are required; each option appears at most once. A free axis reference in the
-target selects expression sampling. See [graph sampling](graph-sampling.md).
+in any order, including before positional targets. One or more targets and
+exactly one axis are required; each option appears at most once. A free axis reference in the
+target selects expression sampling independently for that target.
+See [graph sampling](graph-sampling.md).
 
 Parentheses select `expr` unless a statement separator follows a complete
 expression or the head is an explicit statement form such as `\let`.

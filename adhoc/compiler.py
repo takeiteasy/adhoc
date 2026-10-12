@@ -365,19 +365,22 @@ class _Lowerer:
                 return _call("integral", [pyast.Constant(var), self.expr(bound),
                                           pyast.Constant(sid), pyast.Constant(spelling),
                                           pyast.Constant(var_spelling)])
-            case Graph(target=target, axis=axis, options=options, expression_mode=expression_mode,
+            case Graph(targets=targets, axis=axis, options=options, expression_modes=modes,
                        spelling=spelling, span=span):
-                sid = self._push(span)
-                if expression_mode:
-                    self.definitions[sid] = _compile_body(target, self.source)
-                return _call("graph", [
+                entries = []
+                for target, mode in zip(targets, modes):
+                    sid = self._push(span)
+                    if mode:
+                        self.definitions[sid] = _compile_body(target, self.source)
+                    entries.append(pyast.Tuple(elts=[
+                        pyast.Constant(show(target)),
+                        pyast.Constant(None) if mode else self.expr(target),
+                        pyast.Constant(mode), pyast.Constant(sid)], ctx=pyast.Load()))
+                return _call("graphs", [
                     pyast.Constant(axis.name), pyast.Constant(axis.spelling),
-                    pyast.Constant(show(target)),
-                    pyast.Constant(None) if expression_mode else self.expr(target),
-                    self.expr(axis.value),
+                    pyast.Tuple(elts=entries, ctx=pyast.Load()), self.expr(axis.value),
                     pyast.Dict(keys=[pyast.Constant(kw.name) for kw in options],
                                values=[self.expr(kw.value) for kw in options]),
-                    pyast.Constant(expression_mode), pyast.Constant(sid),
                     pyast.Constant(spelling)])
             case Piecewise(conditions=conditions, values=values, otherwise=otherwise, span=span):
                 sid = self._push(span)

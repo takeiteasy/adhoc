@@ -297,12 +297,12 @@ the usual typed "strings are not numbers".
 
 ### Graph calls
 
-`\graph(target, x=a..b, \tol=0.001, \maxpoints=4097)` is a special form
+`\graph(target, ..., x=a..b, \tol=0.001, \maxpoints=4097)` is a special form
 with ordinary call-shaped syntax. Exactly one keyword supplies a single-letter
 axis name and range; the two options are optional. A free occurrence of the axis
-name in `target` selects local expression sampling; otherwise `target` must
-produce a callable. Nested binders mask their variables and quotes do not read
-names. See [graph sampling](graph-sampling.md).
+name in each target selects local expression sampling for that target; otherwise
+the target must produce a callable. At least one target is required. Nested
+binders mask their variables and quotes do not read names. See [graph sampling](graph-sampling.md).
 
 ## Functions and conditionals
 

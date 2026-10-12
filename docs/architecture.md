@@ -36,8 +36,8 @@ See [runtime lowering](lowering.md) for the operation mapping.
 | `tensor` | Tensors, arrays and sets; indexing, slicing and tensor operations |
 | `linalg` | Matrix elimination, constructors and tensor products |
 | `matrix_numeric` | SVD classification, RREF, determinant, inverse and solve on backend floats |
-| `graph` | Immutable graph data, adaptive float sampling and disconnected segments |
-| `plot` | Shared Matplotlib drawing and file/window destination delivery |
+| `graph` | Immutable graphs/bundles, adaptive float sampling and disconnected segments |
+| `plot` | Immutable styled series, shared Matplotlib drawing and file/window delivery |
 | `eigen` | SymPy exact eigensystems and NumPy numerical eigenpairs on backend scalars |
 | `runtime` | Numeric dispatch, `Engine`, lazy ranges, interval bounds, Python interop and numeric calculus |
 | `units` | Exact unit scales, quantities and dimension arithmetic |

@@ -232,8 +232,9 @@ def node_tex(node: Node, prec: int = 0) -> str:
                 name in _KNOWN or name in _FUNCTIONS):
             values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]
             return rf"\{_FUNCTIONS.get(name, name)}\left({', '.join(values)}\right)"
-        case Graph(target=target, axis=axis, options=options, expression_mode=expression_mode):
-            target_text = _bound_tex(target, (axis.name,)) if expression_mode else node_tex(target)
+        case Graph(targets=targets, axis=axis, options=options, expression_modes=modes):
+            target_text = ", ".join(_bound_tex(target, (axis.name,)) if mode else node_tex(target)
+                                    for target, mode in zip(targets, modes))
             return rf"\operatorname{{graph}}\left({target_text}, {_args((axis, *options))}\right)"
         case Call(head=head, args=args, kwargs=kwargs):
             values = [node_tex(a) for a in args] + [node_tex(k) for k in kwargs]

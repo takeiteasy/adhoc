@@ -1,0 +1,18 @@
+"Shared axes and per-curve styling"
+g = \graph(\sin, \cos, x=0..2π)
+h = \series(\graph(x/4, x=0..2π), \type="scatter", \color="red", \label="Trend")
+\plot(g, h, \backend="file", \path="curves.svg", \legend=\true, \title="Curves", \grid=\true)
+
+"Explicit step data"
+s = \series([0,1,2,3], [1,3,2,4], \type="step", \where="post", \marker="o")
+\plot(s, \backend="file", \path="steps.png", \figsize=[6,4], \dpi=100)
+
+"Grouped categorical bars"
+b = \series(\arr("A","B"), [3,5], \type="bar", \label="First")
+c = \series(\arr("B","C"), [4,2], \type="bar", \label="Second")
+\plot(b, c, \backend="file", \path="bars.svg", \legend=\true)
+
+"Overlaid histograms with shared bins"
+d = \series([1,2,2,3,4], \type="hist", \bins=4, \density=\true, \label="First")
+k = \series([2,3,3,4,5], \type="hist", \bins=4, \density=\true, \label="Second")
+\plot(d, k, \backend="file", \path="hist.svg", \alpha=0.5, \legend=\true)

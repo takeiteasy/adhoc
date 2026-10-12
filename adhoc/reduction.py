@@ -61,8 +61,9 @@ def _builder(node, context, transform, enter):
 
 
 def _graph(node, context, transform, enter):
-    inner = enter(context, node.axis.name) if node.expression_mode else context
-    return replace(node, target=transform(node.target, inner),
+    targets = tuple(transform(target, enter(context, node.axis.name) if mode else context)
+                    for target, mode in zip(node.targets, node.expression_modes))
+    return replace(node, targets=targets,
                    axis=replace(node.axis, value=transform(node.axis.value, context)),
                    options=tuple(replace(kw, value=transform(kw.value, context))
                                  for kw in node.options))
@@ -234,24 +235,24 @@ def _reify(node: Node, context: tuple[tuple[str, str | None], ...], fresh) -> No
         return BackslashRef(node.span, name, written)
     if isinstance(node, Graph):
         name, spelling = node.axis.name, node.axis.spelling
-        inner = context
-        if node.expression_mode:
-            forbidden = _free_names(node.target) | {bound for bound, _ in context}
-            if name in forbidden:
-                name = fresh(name)
-                spelling = name
-            inner = ((name, spelling),) + context
-        target = _reify(node.target, inner, fresh)
-        expression_mode = node.expression_mode
-        if expression_mode and name not in free_names(target):
-            target = Lambda(target.span, (name,), target, (spelling or name,))
-            expression_mode = False
-        elif not expression_mode and name in free_names(target):
+        forbidden = {bound for bound, _ in context}
+        for target in node.targets:
+            forbidden.update(_free_names(target))
+        if name in forbidden:
             name = fresh(name)
             spelling = name
+        targets, modes = [], []
+        for target, mode in zip(node.targets, node.expression_modes):
+            inner = ((name, spelling),) + context if mode else context
+            target = _reify(target, inner, fresh)
+            if mode and name not in free_names(target):
+                target = Lambda(target.span, (name,), target, (spelling or name,))
+                mode = False
+            targets.append(target)
+            modes.append(mode)
         return replace(node, axis=replace(node.axis, name=name, spelling=spelling,
                                          value=_reify(node.axis.value, context, fresh)),
-                       target=target, expression_mode=expression_mode,
+                       targets=tuple(targets), expression_modes=tuple(modes),
                        options=tuple(replace(kw, value=_reify(kw.value, context, fresh))
                                      for kw in node.options))
     if isinstance(node, Lambda):

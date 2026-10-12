@@ -117,8 +117,8 @@ def _show(node: Node, *, statement: bool = False) -> str:
             return f"({_show(start)}{middle}..{_show(end) if end is not None else ''})"
         case IfExpr(condition=condition, then_branch=yes, otherwise=no):
             return f"({_show(condition)} ? {_show(yes)} : {_show(no)})"
-        case Graph(target=target, axis=axis, options=options, spelling=spelling):
-            values = [_show(target)] + [f"{_show(kw_name(kw))}={_show(kw.value)}"
+        case Graph(targets=targets, axis=axis, options=options, spelling=spelling):
+            values = [_show(target) for target in targets] + [f"{_show(kw_name(kw))}={_show(kw.value)}"
                                        for kw in (axis, *options)]
             head = spelling or "\\graph"
             return f"{head}({', '.join(values)})"

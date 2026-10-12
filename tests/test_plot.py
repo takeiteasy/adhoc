@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from matplotlib import pyplot
 from matplotlib.figure import Figure
+from matplotlib.colors import to_rgba
 from PIL import Image
 
 from adhoc.driver import run_source
@@ -57,7 +58,7 @@ def test_draw_preserves_segments_and_labels(source):
     assert len(axes.lines) == len(value.segments)
     for line, segment in zip(axes.lines, value.segments):
         assert list(zip(*line.get_data())) == list(segment)
-        assert line.get_color() == "C0"
+        assert to_rgba(line.get_color()) == to_rgba("C0")
         if len(segment) == 1:
             assert line.get_marker() == "o"
     assert axes.get_xlabel() == value.axis_spelling
@@ -79,8 +80,8 @@ def test_draw_preserves_segments_and_labels(source):
     ('g, \\backend="file", \\path="plot"', "extension"),
     ('g, \\backend="file", \\path="plot.jpeg"', "extension"),
     ('g, \\backend="window", \\path="plot.svg"', "does not accept"),
-    ('g, \\backend="file", \\path="plot.svg", \\dpi=200', "dpi"),
-    ('g, g, \\backend="window"', "positional"),
+    ('g, \\backend="file", \\path="plot.svg", \\dpi=0', "dpi"),
+    ('\\backend="window"', "at least one"),
 ])
 def test_invalid_calls_have_source_spans(arguments, message):
     source = r"\plot(" + arguments + ")"

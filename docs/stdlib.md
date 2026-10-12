@@ -22,6 +22,11 @@ strings and explicit quantity magnitude extraction.
 | Function | Result | Example |
 |---|---|---|
 | `\graph(f, x=a..b)` | Immutable sampled graph data | `\graph(x^2, x=-1..1)` |
+| `\graph(f, h, x=a..b)` | Immutable bundle of sampled graphs | `\graph(\sin, \cos, x=0..2π)` |
+| `\series(g, options)` | Reusable graph appearance | `\series(g, \type="scatter", \color="red")` |
+| `\series(xs, ys, options)` | Explicit coordinates and values | `\series([0,1], [2,3], \type="bar")` |
+| `\series(values, \type="hist")` | Histogram observations | `\series([1,2,2,3], \type="hist")` |
+| `\plot(g, h, options)` | Shared-axis plot; return an array of inputs | `\plot(g, h, \backend="window")` |
 | `\plot(g, \backend="file", \path=p)` | Export SVG, PNG or PDF; return `g` | `\plot(g, \backend="file", \path="plot.svg")` |
 | `\plot(g, \backend="window")` | Wait for a plot window to close; return `g` | `\plot(g, \backend="window")` |
 

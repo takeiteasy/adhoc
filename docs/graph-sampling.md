@@ -1,7 +1,7 @@
 # Graph sampling
 
 `\graph` samples a real function or expression over a finite range and returns
-immutable graph data. It refines curved regions and preserves gaps around
+immutable graph data. Several targets return an immutable graph bundle. It refines curved regions and preserves gaps around
 undefined points. Use [`\plot`](plotting.md) to render the result to a file or window.
 
 ## Forms
@@ -9,6 +9,7 @@ undefined points. Use [`\plot`](plotting.md) to render the result to a file or w
 | Form | Samples |
 |---|---|
 | `\graph(f, x=a..b)` | A one-argument callable |
+| `\graph(f, x^2, x=a..b)` | Several independently sampled targets |
 | `\graph(x^2, x=a..b)` | An expression using the axis variable |
 | `\graph((x ↦ 3), x=a..b)` | A constant function |
 | `\graph(f, t=r)` | A callable over a stored range, with axis label `t` |
@@ -21,12 +22,17 @@ g                            -> = <graph x=-1.0..1.0; 129 samples; 0 gaps; compl
 \graph(1/x, x=-1..1)          -> graph data with a break around zero
 ```
 
+A multi-target call samples each curve independently, with its own tolerance
+checks, point budget, gaps and completion status. Callable targets, shared bounds
+and options evaluate once before sampling begins. Targets sample in input order.
+Pass the bundle directly to `\plot`, or combine separately sampled graphs there.
+
 The axis name is one letter, optionally subscripted. A free reference to that
-name in the first argument selects expression sampling, even if the name is
+name in a target selects expression sampling for that target, even if the name is
 already bound outside the call. Each probe binds it in a fresh local frame;
 other names read through to the surrounding scope. Lambda parameters and nested
 calculus or collection binders mask their own variables; quoted syntax does not
-read names. An argument with no free axis reference must evaluate to a callable.
+read names. A target with no free axis reference must evaluate to a callable.
 For dynamic quoted evaluation, bind the axis in an explicit lambda.
 
 Bounds, options and callable expressions evaluate once in the surrounding scope.
@@ -84,7 +90,10 @@ flag and stopping reasons. An absent `y` marks an invalid sample. Each break has
 `start`, `end` and `reason` fields. The `segments` property returns connected finite
 sample runs; it never joins across a break.
 
-Graph values bind to names, pass through functions and display compact summaries.
+`GraphCollectionValue.graphs` stores an ordered tuple of individual graph values.
+Single-target calls return `GraphValue`; multi-target calls return this bundle.
+
+Graph values and bundles bind to names, pass through functions and display compact summaries.
 Quoted graph calls round-trip through expression display and render with `\tex`.
 
 ## Limitations
@@ -94,7 +103,6 @@ Quoted graph calls round-trip through expression display and render with `\tex`.
 | Narrow features and oscillations can evade finite probing; completion is not a proof of continuity or accuracy | [#52](https://github.com/takeiteasy/adhoc/issues/52) |
 | Complex and dimensioned axes or outputs | [Graphing](https://github.com/takeiteasy/adhoc/issues/30) |
 | Terminal rendering | [#25](https://github.com/takeiteasy/adhoc/issues/25) |
-| Several curves on shared axes | [#26](https://github.com/takeiteasy/adhoc/issues/26) |
 
 [^adaptive]: Interpolation error is the maximum departure at the midpoint and
     quarter points divided by `max(1, absolute values of the five probes)`.
@@ -106,5 +114,5 @@ Quoted graph calls round-trip through expression display and render with `\tex`.
 [^limits]: Each initial interval permits 24 levels of bisection. Refinement also
     stops when quarter-point coordinates are no longer distinct floats. The
     evaluation budget includes initial coordinates, interior checks and invalid
-    samples. Limits apply per graph call; they do not interrupt an individual
+    samples. Limits apply per sampled target; they do not interrupt an individual
     function evaluation.

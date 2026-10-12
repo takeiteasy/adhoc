@@ -260,9 +260,9 @@ class KwArg(Node):
 
 @dataclass(frozen=True)
 class Graph(Node):
-    target: Node
+    targets: tuple[Node, ...]
     axis: KwArg
-    expression_mode: bool
+    expression_modes: tuple[bool, ...]
     options: tuple[KwArg, ...] = ()
     spelling: str | None = field(default=None, compare=False)
 
@@ -467,8 +467,9 @@ def free_names(node: Node) -> set[str]:
         case Diff(var=var, point=point, body=body, order=order):
             return free_names(point) | (free_names(body) - {var}) | (
                 free_names(order) if order is not None else set())
-        case Graph(target=target, axis=axis, options=options):
-            return (free_names(target) - {axis.name}) | free_names(axis.value) | set().union(
+        case Graph(targets=targets, axis=axis, options=options):
+            names = set().union(*(free_names(target) for target in targets)) - {axis.name}
+            return names | free_names(axis.value) | set().union(
                 *(free_names(option.value) for option in options))
         case Seq(statements=statements):
             names, bound = set(), set()
